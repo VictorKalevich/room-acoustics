@@ -1,0 +1,52 @@
+import { test, expect } from '@playwright/test';
+
+// Сквозные сценарии quickstart.md в эмуляции iPhone.
+// Перед запуском: npm run fixtures (создаёт tests/fixtures/out/sample-room.obj).
+
+test('US1: моды по ручным размерам', async ({ page }) => {
+  await page.goto('/#room');
+  await page.getByLabel('Глубина', { exact: true }).fill('5');
+  await page.getByLabel('Ширина', { exact: true }).fill('4');
+  await page.getByLabel('Высота', { exact: true }).fill('2,5');
+  await page.getByRole('button', { name: 'Моды' }).click();
+  const rows = page.locator('.modes-table tbody tr');
+  await expect(rows.nth(0)).toContainText('34,3');
+  await expect(rows.nth(1)).toContainText('42,9');
+  await expect(rows.nth(2)).toContainText('54,9');
+  await expect(page.getByText('Глубина ≈ 2 × высота')).toBeVisible();
+});
+
+test('US2: подбор расстановки за ≤ 10 с, лучший не хуже базового', async ({ page }) => {
+  await page.goto('/#placement');
+  const t0 = Date.now();
+  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await expect(page.locator('.score__value')).toBeVisible({ timeout: 10_000 });
+  expect(Date.now() - t0).toBeLessThan(10_000);
+  await expect(page.getByRole('tab')).toHaveCount(4);
+  await expect(page.locator('.score__delta')).toContainText(/ровнее|как базовая/);
+});
+
+test('US3: загрузка скана и распознавание размеров', async ({ page }) => {
+  await page.goto('/#room');
+  await page.setInputFiles('#scan-file', 'tests/fixtures/out/sample-room.obj');
+  await expect(page.locator('.scan-dims')).toContainText('5,00 × 4,00 × 2,50', { timeout: 30_000 });
+  await page.getByRole('button', { name: 'Применить размеры' }).click();
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
+});
+
+test('US3: неподдерживаемый файл — понятная ошибка', async ({ page }) => {
+  await page.goto('/#room');
+  await page.setInputFiles('#scan-file', { name: 'scan.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+  await expect(page.locator('.note--warn')).toContainText(/OBJ|поверхност/);
+});
+
+test('US4: толстый ковёр уменьшает RT60', async ({ page }) => {
+  await page.goto('/#room');
+  const rt = page.locator('.stat__value').first();
+  const before = Number((await rt.textContent())!.replace(',', '.').replace(/[^\d.]/g, ''));
+  await page.getByLabel('Пол').selectOption('carpet-thick');
+  await expect(async () => {
+    const after = Number((await rt.textContent())!.replace(',', '.').replace(/[^\d.]/g, ''));
+    expect(after).toBeLessThan(before);
+  }).toPass();
+});
