@@ -1,4 +1,7 @@
-import type { Complex, Mode, ReverbResult, Room, Vec3 } from './types';
+import type { Complex, Leakage, Mode, ReverbResult, Room, Vec3 } from './types';
+
+/** Частота «утечки» воздуха для нулевой моды, Гц (research R15). */
+export const LEAK_HZ: Record<Leakage, number> = { sealed: 0, typical: 8, door: 25, open: 45 };
 import { speedOfSound } from './physics';
 import { computeReverb, surfaceAbsorptionAt } from './reverb';
 
@@ -64,7 +67,10 @@ export function prepareModes(room: Room, fMax: number, rev?: ReverbResult): Prep
     pm.kz[i] = (m.n[2] * Math.PI) / L[2];
     const w = 2 * Math.PI * m.f;
     pm.omega2[i] = w * w;
-    pm.delta[i] = modeDamping(m, room, r);
+    const scale = room.calibration?.dampingScale ?? 1;
+    let delta = modeDamping(m, room, r) * scale;
+    if (i === 0) delta = Math.max(delta, Math.PI * LEAK_HZ[room.leakage ?? 'typical']);
+    pm.delta[i] = delta;
     pm.invLambda[i] = (m.n[0] > 0 ? 2 : 1) * (m.n[1] > 0 ? 2 : 1) * (m.n[2] > 0 ? 2 : 1);
     pm.freq[i] = m.f;
   });

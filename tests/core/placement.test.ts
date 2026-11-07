@@ -84,3 +84,24 @@ describe('optimizePlacement', () => {
     expect(sub.x).toBeLessThan(0.5);
   });
 });
+
+describe('места и зоны в автоподборе', () => {
+  it('три места: все внутри комнаты, оценка по местам', () => {
+    const c3 = { ...constraints, seats: { count: 3, spacing: 0.6 } };
+    const r = optimizePlacement({ room, sources, constraints: c3 });
+    expect(r.best[0].seats.length).toBe(3);
+    for (const s of r.best[0].seats) { expect(s.y).toBeGreaterThan(0); expect(s.y).toBeLessThan(room.width); }
+  });
+
+  it('зона на лучшем месте сабвуфера → сабвуфер ставится в другом месте', () => {
+    const r1 = optimizePlacement({ room, sources, constraints });
+    const p = r1.best[0].sources.find((s) => s.id === 'sub1')!.pos;
+    const zr = { ...room, zones: [{ id: 'z', kind: 'furniture' as const, x0: Math.max(0, p.x - 0.4), x1: Math.min(room.depth, p.x + 0.4), y0: Math.max(0, p.y - 0.4), y1: Math.min(room.width, p.y + 0.4), canSit: false }] };
+    const r2 = optimizePlacement({ room: zr, sources, constraints });
+    for (const v of r2.best) {
+      const q = v.sources.find((s) => s.id === 'sub1')!.pos;
+      const inside = q.x >= zr.zones[0].x0 && q.x <= zr.zones[0].x1 && q.y >= zr.zones[0].y0 && q.y <= zr.zones[0].y1;
+      if (v !== r2.baseline) expect(inside).toBe(false);
+    }
+  });
+});

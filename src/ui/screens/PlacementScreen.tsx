@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { defaultSources, validateSources } from '../../state/project';
-import type { Constraints, PlacementResult, SourceSpec, SubZone, Placement } from '../../core/types';
-import { NumberField, Panel, Segmented, Note, Details } from '../components/Fields';
+import type { Constraints, PlacementResult, SourceSpec, SubZone, Placement, Setup, PhaseMode } from '../../core/types';
+import { NumberField, Panel, Segmented, Note, Details, SelectField } from '../components/Fields';
+import { compute, type ComputeJob } from '../compute';
+import { ManualScreen } from './ManualScreen';
 import { PlanView } from '../components/PlanView';
 import { ResponseChart } from '../components/Charts';
 import { S } from '../strings';
@@ -14,17 +16,21 @@ interface Props {
   onConstraints: (c: Constraints) => void;
   onResult: (r: PlacementResult, selected: number) => void;
   onSelect: (i: number) => void;
+  mode: 'auto' | 'manual';
+  onMode: (m: 'auto' | 'manual') => void;
+  onSetup: (s: Setup) => void;
+  onSetups: (list: Setup[]) => void;
 }
 
-export function PlacementScreen({ project, onSources, onConstraints, onResult, onSelect }: Props) {
+export function PlacementScreen({ project, onSources, onConstraints, onResult, onSelect, mode, onMode, onSetup, onSetups }: Props) {
   const { room, sources, constraints: c, result } = project;
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const worker = useRef<Worker | null>(null);
+  const job = useRef<ComputeJob<PlacementResult> | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => () => worker.current?.terminate(), []);
+  useEffect(() => () => job.current?.cancel(), []);
 
   const spk = sources.filter((s) => s.kind === 'speaker');
   const subs = sources.filter((s) => s.kind === 'sub');
@@ -36,7 +42,11 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
     const firstSpk = spk[0];
     for (const s of next) {
       const old = sources.find((o) => o.id === s.id) ?? (s.kind === 'speaker' ? firstSpk : subs[0]);
-      if (old && old.kind === s.kind) Object.assign(s, { fLow: old.fLow, fHigh: old.fHigh, height: old.height });
+      if (old && old.kind === s.kind) {
+        const { id: _id, ...rest } = old;
+        void _id;
+        Object.assign(s, rest);
+      }
     }
     // при появлении/исчезновении сабвуфера меняем нижнюю границу колонок по умолчанию
     if (nSub > 0 && subs.length === 0) next.forEach((s) => s.kind === 'speaker' && s.fLow < 80 && (s.fLow = 80));
@@ -56,35 +66,31 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
     setError(null);
     setRunning(true);
     setProgress(0);
-    worker.current?.terminate();
-    const w = new Worker(new URL('../../workers/placement.worker.ts', import.meta.url), { type: 'module' });
-    worker.current = w;
-    w.onmessage = (e) => {
-      const m = e.data;
-      if (m.type === 'progress') setProgress(m.value);
-      else {
+    job.current?.cancel();
+    const j = compute<PlacementResult>('optimize', { room, sources, constraints: c }, setProgress);
+    job.current = j;
+    j.promise
+      .then((r) => {
         setRunning(false);
-        w.terminate();
-        worker.current = null;
-        if (m.type === 'done') {
-          onResult(m.result, 0);
-          requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-        } else setError(m.error);
-      }
-    };
-    w.onerror = (e) => {
-      setRunning(false);
-      setError(e.message || S.errors.generic);
-    };
-    w.postMessage(JSON.parse(JSON.stringify({ room, sources, constraints: c })));
+        onResult(r, 0);
+        requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      })
+      .catch((e) => { setRunning(false); setError(e.message || S.errors.generic); });
+  };
+
+  const openManual = (p: Placement) => {
+    const positions = Object.fromEntries(p.sources.filter((s) => s.pos).map((s) => [s.id, s.pos]));
+    onSetup({ ...project.current, listener: p.listener, positions, subSettings: {}, crossoverHz: null });
+    onMode('manual');
+    scrollTo({ top: 0 });
   };
 
   const variants: Placement[] = result ? [...result.best, result.baseline] : [];
   const sel = Math.min(project.selectedIndex, Math.max(0, variants.length - 1));
   const current = variants[sel] ?? null;
 
-  return (
-    <div class="screen">
+  const settingsPanels = (
+    <>
       <Panel title={S.placement.system}>
         <Segmented
           label={S.placement.speakers}
@@ -116,6 +122,48 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
           />
         ))}
         {srcErrors.map((e) => <Note tone="warn">{e.message}</Note>)}
+        {subs.length > 0 && (
+          <Details summary={S.sub.caps}>
+            {subs.map((s, i) => (
+              <div class="sub-caps">
+                <span class="range-row__label">{S.placement.subRange(i + 1)}</span>
+                <Segmented
+                  label={S.sub.delay}
+                  value={s.delayMode ?? 'none'}
+                  options={[{ value: 'none', label: S.sub.delayModes.none }, { value: 'adjustable', label: S.sub.delayModes.adjustable }]}
+                  onChange={(v) => updateSource(s.id, { delayMode: v as SourceSpec['delayMode'] })}
+                />
+                {s.delayMode === 'adjustable' && (
+                  <NumberField id={`${s.id}-maxd`} label={S.sub.maxDelay} value={s.maxDelayMs ?? 20} unit="мс" min={1} max={50} digits={0} onChange={(v) => updateSource(s.id, { maxDelayMs: v })} />
+                )}
+                <SelectField
+                  label={`${S.sub.phase} (${S.placement.subRange(i + 1).toLowerCase()})`}
+                  value={s.phaseMode ?? 'none'}
+                  options={(['none', 'polarity', 'continuous', 'full'] as PhaseMode[]).map((m) => ({ value: m, label: S.sub.phaseModes[m] }))}
+                  onChange={(v) => updateSource(s.id, { phaseMode: v as PhaseMode })}
+                />
+                <label class="check">
+                  <input type="checkbox" checked={!!s.levelAdjustable} onChange={(e) => updateSource(s.id, { levelAdjustable: (e.target as HTMLInputElement).checked })} />
+                  <span>{S.sub.level}</span>
+                </label>
+              </div>
+            ))}
+            {spk.length > 0 && (
+              <>
+                <label class="check">
+                  <input type="checkbox" checked={c.crossover.adjustable} onChange={(e) => setC({ crossover: { ...c.crossover, adjustable: (e.target as HTMLInputElement).checked } })} />
+                  <span>{S.sub.crossover}</span>
+                </label>
+                {c.crossover.adjustable && (
+                  <div class="grid-2">
+                    <NumberField id="xo-min" label={S.sub.xoMin} value={c.crossover.min} unit="Гц" min={30} max={c.crossover.max - 10} digits={0} onChange={(v) => setC({ crossover: { ...c.crossover, min: v } })} />
+                    <NumberField id="xo-max" label={S.sub.xoMax} value={c.crossover.max} unit="Гц" min={c.crossover.min + 10} max={250} digits={0} onChange={(v) => setC({ crossover: { ...c.crossover, max: v } })} />
+                  </div>
+                )}
+              </>
+            )}
+          </Details>
+        )}
         <Details summary={S.placement.heights}>
           <div class="grid-2">
             <NumberField label={S.placement.speakerHeight} value={spk[0]?.height ?? 1} unit="м" min={0} max={3} onChange={(v) => updateSpeakers({ height: v })} />
@@ -144,11 +192,54 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             onChange={(z) => setC({ subZone: z })}
           />
         )}
+        <Segmented
+          label={S.seats.count}
+          value={c.seats.count}
+          options={[1, 2, 3, 4, 5].map((n) => ({ value: n, label: String(n) }))}
+          onChange={(n) => setC({ seats: { ...c.seats, count: n } })}
+        />
+        {c.seats.count > 1 && (
+          <NumberField id="seat-spacing" label={S.seats.spacing} value={c.seats.spacing} unit="м" min={0.4} max={1.2} onChange={(v) => setC({ seats: { ...c.seats, spacing: v } })} />
+        )}
+        <p class="muted small">{S.seats.hint}</p>
         <Details summary={S.placement.earHeight}>
           <NumberField label={S.placement.earHeight} value={c.earHeight} unit="м" min={0.5} max={2} onChange={(v) => setC({ earHeight: v })} />
         </Details>
       </Panel>
 
+    </>
+  );
+
+  if (mode === 'manual') {
+    return (
+      <div class="screen">
+      <div class="mode-switch">
+        <Segmented
+          label="Режим"
+          value={mode}
+          options={[{ value: 'auto', label: S.manual.modeAuto }, { value: 'manual', label: S.manual.modeManual }]}
+          onChange={onMode}
+        />
+      </div>
+        <ManualScreen project={project} onSetup={onSetup} onSetups={onSetups} />
+        <Details summary={`${S.placement.system} и ${S.placement.limits.toLowerCase()}`}>
+          <div class="screen">{settingsPanels}</div>
+        </Details>
+      </div>
+    );
+  }
+
+  return (
+    <div class="screen">
+      <div class="mode-switch">
+        <Segmented
+          label="Режим"
+          value={mode}
+          options={[{ value: 'auto', label: S.manual.modeAuto }, { value: 'manual', label: S.manual.modeManual }]}
+          onChange={onMode}
+        />
+      </div>
+      {settingsPanels}
       <div class="run-bar">
         <button type="button" class="btn btn--primary btn--wide" onClick={run} disabled={running || srcErrors.length > 0}>
           {running ? S.placement.running : result ? S.placement.rerun : S.placement.run}
@@ -164,7 +255,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
       <div ref={resultRef}>
         {!result && !running && (
           <Panel>
-            <PlanView depth={room.depth} width={room.width} zone={[c.listenerMinX, c.listenerMaxX]} />
+            <PlanView depth={room.depth} width={room.width} zones={room.zones} listenerZone={[c.listenerMinX, c.listenerMaxX]} />
             <p class="small">{S.placement.empty}</p>
           </Panel>
         )}
@@ -185,7 +276,8 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
               ))}
             </div>
             <ScoreLine p={current} baseline={result.baseline} isBaseline={sel === variants.length - 1} />
-            <PlanView depth={room.depth} width={room.width} placement={current} />
+            <PlanView depth={room.depth} width={room.width} placement={current} zones={room.zones} />
+            <button type="button" class="btn" onClick={() => openManual(current)}>{S.manual.openManual}</button>
             <Positions p={current} />
             <h3 class="subhead">{S.placement.response}</h3>
             <ResponseChart

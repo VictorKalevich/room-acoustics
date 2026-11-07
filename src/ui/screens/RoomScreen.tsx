@@ -2,8 +2,8 @@ import { useMemo, useRef, useState } from 'preact/hooks';
 import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
 import type { Project } from '../../state/project';
-import { defaultConstraints, rotateRoom } from '../../state/project';
-import type { Room, SurfaceId, ReverbResult, Furnishing } from '../../core/types';
+import { defaultConstraints, makeId, rotateRoom, rotateSetup } from '../../state/project';
+import type { Room, SurfaceId, ReverbResult, Furnishing, Zone, ZoneKind, Leakage } from '../../core/types';
 import { SURFACES } from '../../core/types';
 import { MATERIALS, FURNISHING_LABEL } from '../../core/materials';
 import { speedOfSound } from '../../core/physics';
@@ -41,13 +41,17 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
   return (
     <div class="screen">
       <Panel class="panel--hero">
-        <PlanView depth={room.depth} width={room.width} />
+        <PlanView depth={room.depth} width={room.width} zones={room.zones} />
         <div class="dims">
           <NumberField label={S.room.depth} hint={S.room.depthHint} value={room.depth} unit="м" min={1} max={50} onChange={(v) => set({ depth: v })} />
           <NumberField label={S.room.width} hint={S.room.widthHint} value={room.width} unit="м" min={1} max={50} onChange={(v) => set({ width: v })} />
           <NumberField label={S.room.height} value={room.height} unit="м" min={1} max={20} onChange={(v) => set({ height: v })} />
         </div>
-        <button type="button" class="btn btn--ghost" onClick={() => onRoom(rotateRoom(room))}>
+        <button
+          type="button"
+          class="btn btn--ghost"
+          onClick={() => onRoom(rotateRoom(room), { current: rotateSetup(room, project.current), setups: project.setups.map((x) => rotateSetup(room, x)) })}
+        >
           <RotateIcon /> {S.room.rotate}
         </button>
         <Details summary={S.room.temperature}>
@@ -65,6 +69,8 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
       </Panel>
 
       <ScanPanel project={project} onRoom={onRoom} />
+
+      <ZonesPanel room={room} onRoom={(r) => onRoom(r)} />
 
       <Panel title={S.room.materials}>
         <div class="grid-2">
@@ -259,6 +265,66 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
           </button>
         </div>
       )}
+    </Panel>
+  );
+}
+
+function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
+  const zones = room.zones ?? [];
+  const setZone = (id: string, patch: Partial<Zone>) => {
+    const next = zones.map((z) => {
+      if (z.id !== id) return z;
+      const n = { ...z, ...patch };
+      // держим границы внутри комнаты и в правильном порядке
+      n.x0 = Math.max(0, Math.min(n.x0, room.depth - 0.1));
+      n.x1 = Math.min(room.depth, Math.max(n.x1, n.x0 + 0.1));
+      n.y0 = Math.max(0, Math.min(n.y0, room.width - 0.1));
+      n.y1 = Math.min(room.width, Math.max(n.y1, n.y0 + 0.1));
+      return n;
+    });
+    onRoom({ ...room, zones: next });
+  };
+  const add = () => {
+    const z: Zone = { id: makeId(), kind: 'door', x0: Math.max(0, room.depth - 1), x1: room.depth, y0: 0, y1: Math.min(1, room.width), canSit: false };
+    onRoom({ ...room, zones: [...zones, z] });
+  };
+  return (
+    <Panel title={S.zones.title}>
+      <p class="small">{S.zones.intro}</p>
+      {zones.length === 0 && <p class="muted small">{S.zones.none}</p>}
+      {zones.map((z, i) => (
+        <div class="zone-card">
+          <div class="zone-card__head">
+            <SelectField
+              label={`${S.zones.kind} ${i + 1}`}
+              value={z.kind}
+              options={(['door', 'window', 'furniture', 'other'] as ZoneKind[]).map((k) => ({ value: k, label: S.zones.kinds[k] }))}
+              onChange={(v) => setZone(z.id, { kind: v as ZoneKind })}
+            />
+            <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, zones: zones.filter((x) => x.id !== z.id) })}>
+              {S.zones.remove}
+            </button>
+          </div>
+          <div class="grid-2">
+            <NumberField compact id={`${z.id}-x0`} label={S.zones.x0} value={z.x0} unit="м" min={0} max={room.depth} onChange={(v) => setZone(z.id, { x0: v })} />
+            <NumberField compact id={`${z.id}-x1`} label={S.zones.x1} value={z.x1} unit="м" min={0} max={room.depth} onChange={(v) => setZone(z.id, { x1: v })} />
+            <NumberField compact id={`${z.id}-y0`} label={S.zones.y0} value={z.y0} unit="м" min={0} max={room.width} onChange={(v) => setZone(z.id, { y0: v })} />
+            <NumberField compact id={`${z.id}-y1`} label={S.zones.y1} value={z.y1} unit="м" min={0} max={room.width} onChange={(v) => setZone(z.id, { y1: v })} />
+          </div>
+          <label class="check">
+            <input type="checkbox" checked={z.canSit} onChange={(e) => setZone(z.id, { canSit: (e.target as HTMLInputElement).checked })} />
+            <span>{S.zones.canSit}</span>
+          </label>
+        </div>
+      ))}
+      <button type="button" class="btn" onClick={add}>{S.zones.add}</button>
+      <SelectField
+        label={S.zones.leakage}
+        value={room.leakage ?? 'typical'}
+        options={(['sealed', 'typical', 'door', 'open'] as Leakage[]).map((k) => ({ value: k, label: S.zones.leakages[k] }))}
+        onChange={(v) => onRoom({ ...room, leakage: v as Leakage })}
+      />
+      <p class="muted small">{S.zones.leakageHint}</p>
     </Panel>
   );
 }

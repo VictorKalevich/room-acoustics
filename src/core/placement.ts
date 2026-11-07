@@ -1,13 +1,12 @@
-import type {
-  Constraints, Placement, PlacementResult, Penalty, Room, SourceSpec, Vec3, Complex, ReverbResult,
-} from './types';
+import type { Constraints, Placement, PlacementResult, Room, SourceSpec, Vec3 } from './types';
 import { PlacementError } from './types';
-import { computeReverb } from './reverb';
-import { speedOfSound } from './physics';
 import { logFreqs, db20 } from './frequency';
-import { sourceFilter } from './filters';
-import { prepareModes, receiverKernel, applyKernel, modeShapes, type PreparedModes, type Kernel } from './response';
+import { receiverKernel, applyKernel, modeShapes, type Kernel } from './response';
 import { flatnessScore } from './metric';
+import {
+  MIN_LISTEN_DIST, evaluateSetup, filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed,
+  speakerPenalties, sumPenalties, type EvalCtx, type Spectrum,
+} from './system';
 
 export interface PlacementInput {
   room: Room;
@@ -15,106 +14,11 @@ export interface PlacementInput {
   constraints: Constraints;
 }
 
-const SEAT_OFFSET = 0.3; // м, смещение головы влево/вправо для оценки устойчивости
-const W_CENTER = 0.6;
-const W_SEATS = 0.4;
-const MIN_LISTEN_DIST = 1.0; // м, минимальное расстояние от колонок до слушателя
 const EPS = 1e-9;
-
-// ---------- Контекст расчёта ----------
-
-interface Ctx {
-  room: Room;
-  sources: SourceSpec[];
-  rev: ReverbResult;
-  c: number;
-  fLo: number;
-  fHi: number;
-  pm: PreparedModes;
-  notes: string[];
-}
-
-function makeCtx(room: Room, sources: SourceSpec[]): Ctx {
-  const rev = computeReverb(room);
-  const notes: string[] = [];
-  const fHi = Math.min(300, Math.max(120, rev.schroeder));
-  const minLow = Math.min(...sources.map((s) => s.fLow));
-  let fLo = Math.max(20, minLow);
-  if (fLo > fHi / 1.5) {
-    notes.push(
-      'Все источники воспроизводят только частоты выше модальной области — оценка модальной ' +
-        'неровности ограничена; расстановка выбирается в основном по геометрическим правилам.',
-    );
-    fLo = Math.max(20, fHi / 2);
-  }
-  const fModes = Math.max(fHi * 1.3, fHi + 40);
-  return {
-    room, sources, rev, c: speedOfSound(room.temperatureC), fLo, fHi,
-    pm: prepareModes(room, fModes, rev), notes,
-  };
-}
-
-/** Комплексные характеристики фильтров источников и целевая кривая (дБ) на частотах. */
-function filterSet(ctx: Ctx, freqs: number[]) {
-  const filt: Record<string, { re: Float64Array; im: Float64Array }> = {};
-  const tRe = new Float64Array(freqs.length);
-  const tIm = new Float64Array(freqs.length);
-  for (const s of ctx.sources) {
-    const re = new Float64Array(freqs.length);
-    const im = new Float64Array(freqs.length);
-    freqs.forEach((f, i) => {
-      const h: Complex = sourceFilter(s, ctx.sources, f);
-      re[i] = h.re;
-      im[i] = h.im;
-      tRe[i] += h.re;
-      tIm[i] += h.im;
-    });
-    filt[s.id] = { re, im };
-  }
-  const target = Array.from(tRe, (r, i) => db20(Math.hypot(r, tIm[i])));
-  return { filt, target };
-}
-
-/** Целевая кривая только для подмножества источников. */
-function targetFor(ids: string[], filt: Record<string, { re: Float64Array; im: Float64Array }>, n: number) {
-  const re = new Float64Array(n);
-  const im = new Float64Array(n);
-  for (const id of ids) for (let i = 0; i < n; i++) { re[i] += filt[id].re[i]; im[i] += filt[id].im[i]; }
-  return Array.from(re, (r, i) => db20(Math.hypot(r, im[i])));
-}
-
-// ---------- Геометрия и штрафы ----------
-
-function speakerPenalties(ctx: Ctx, listener: Vec3, spk: Vec3[]): { penalties: Penalty[]; angle: number | null } {
-  const penalties: Penalty[] = [];
-  let angle: number | null = null;
-  if (!spk.length) return { penalties, angle };
-  const { room, c, fHi } = ctx;
-  if (spk.length === 2) {
-    const half = Math.abs(spk[1].y - spk[0].y) / 2;
-    const dist = listener.x - spk[0].x;
-    angle = (2 * Math.atan2(half, dist) * 180) / Math.PI;
-    const off = angle < 50 ? 50 - angle : angle > 70 ? angle - 70 : 0;
-    if (off > 0) penalties.push({ name: `Угол раскрытия ${angle.toFixed(0)}° вне 50–70°`, value: 0.1 * off });
-  }
-  const s = spk[0];
-  const qFront = c / (4 * s.x);
-  if (qFront > fHi && qFront <= 500) {
-    penalties.push({ name: `Провал от передней стены около ${qFront.toFixed(0)} Гц`, value: 0.5 });
-  }
-  const side = Math.min(s.y, room.width - s.y);
-  const qSide = c / (4 * side);
-  if (qSide > fHi && qSide <= 500) {
-    penalties.push({ name: `Провал от боковой стены около ${qSide.toFixed(0)} Гц`, value: 0.3 });
-  }
-  return { penalties, angle };
-}
-
-const sum = (p: Penalty[]) => p.reduce((a, b) => a + b.value, 0);
 
 // ---------- Кандидаты ----------
 
-function range(lo: number, hi: number, step: number): number[] {
+export function range(lo: number, hi: number, step: number): number[] {
   const out: number[] = [];
   if (hi < lo - EPS) return out;
   const n = Math.floor((hi - lo) / step + EPS);
@@ -136,23 +40,25 @@ function speakerPoints(cfg: SpeakerCfg, room: Room, h: number): Vec3[] {
   ];
 }
 
-function subCandidates(room: Room, c: Constraints, h: number): Vec3[] {
+/** Кандидаты положения сабвуфера по зоне «углы / вдоль стен / где угодно», без запретных зон. */
+export function subCandidates(room: Room, c: Constraints, h: number, step = 0.25): Vec3[] {
   const g = c.subWallGap;
   const X = room.depth;
   const Y = room.width;
   const pts: Vec3[] = [];
   const add = (x: number, y: number) => {
     const p = { x: round(x), y: round(y), z: h };
+    if (!sourceAllowed(room, p)) return;
     if (!pts.some((q) => Math.abs(q.x - p.x) < 1e-6 && Math.abs(q.y - p.y) < 1e-6)) pts.push(p);
   };
   // углы — первыми (детерминированный порядок)
   add(g, g); add(g, Y - g); add(X - g, g); add(X - g, Y - g);
   if (c.subZone === 'corners') return pts;
-  for (const x of range(g, X - g, 0.25)) { add(x, g); add(x, Y - g); }
-  for (const y of range(g, Y - g, 0.25)) { add(g, y); add(X - g, y); }
+  for (const x of range(g, X - g, step)) { add(x, g); add(x, Y - g); }
+  for (const y of range(g, Y - g, step)) { add(g, y); add(X - g, y); }
   if (c.subZone === 'anywhere') {
-    for (const x of range(0.5, X - 0.5, 0.5))
-      for (const y of range(0.5, Y - 0.5, 0.5)) {
+    for (const x of range(0.5, X - 0.5, step * 2))
+      for (const y of range(0.5, Y - 0.5, step * 2)) {
         const inListenerZone = x >= c.listenerMinX - 0.3 && x <= c.listenerMaxX + 0.3 && Math.abs(y - Y / 2) < 0.6;
         if (!inListenerZone) add(x, y);
       }
@@ -163,7 +69,12 @@ function subCandidates(room: Room, c: Constraints, h: number): Vec3[] {
 function listenerPositions(room: Room, c: Constraints): number[] {
   const len = c.listenerMaxX - c.listenerMinX;
   const step = Math.max(0.05, Math.ceil((len / 30) * 20) / 20);
-  return range(c.listenerMinX, c.listenerMaxX, step).filter((x) => x > 0 && x < room.depth);
+  return range(c.listenerMinX, c.listenerMaxX, step).filter((x) => {
+    if (x <= 0 || x >= room.depth) return false;
+    const { pts } = receiverSet(room, c, { x, y: room.width / 2, z: c.earHeight });
+    const seats = (c.seats?.count ?? 1) > 1 ? pts : [pts[0]];
+    return seats.every((p) => seatAllowed(room, p));
+  });
 }
 
 function validate(input: PlacementInput) {
@@ -189,82 +100,13 @@ function validate(input: PlacementInput) {
   }
 }
 
-// ---------- Оценка ----------
+// ---------- Базовый вариант ----------
 
-function receivers(room: Room, c: Constraints, x: number): Vec3[] {
-  const y = room.width / 2;
-  const off = Math.min(SEAT_OFFSET, y - 0.1);
-  return [
-    { x, y, z: c.earHeight },
-    { x, y: y - off, z: c.earHeight },
-    { x, y: y + off, z: c.earHeight },
-  ];
-}
-
-/** dB суммы источников с фильтрами: H = Σ filt_s · Hroom(p_s). */
-function combinedDb(
-  parts: { re: Float64Array; im: Float64Array; fre: Float64Array; fim: Float64Array }[],
-  n: number,
-): Float64Array {
-  const re = new Float64Array(n);
-  const im = new Float64Array(n);
-  for (const p of parts) {
-    for (let i = 0; i < n; i++) {
-      re[i] += p.re[i] * p.fre[i] - p.im[i] * p.fim[i];
-      im[i] += p.re[i] * p.fim[i] + p.im[i] * p.fre[i];
-    }
-  }
-  const out = new Float64Array(n);
-  for (let i = 0; i < n; i++) out[i] = 20 * Math.log10(Math.max(Math.hypot(re[i], im[i]), 1e-12));
-  return out;
-}
-
-/** Полная оценка одного варианта на частотах freqs (используется для финальных и базового). */
-function evaluateFull(
-  ctx: Ctx,
-  constraints: Constraints,
-  listenerX: number,
-  positions: Record<string, Vec3>,
-  freqs: number[],
-): Placement {
-  const { room, sources, pm } = ctx;
-  const { filt, target } = filterSet(ctx, freqs);
-  const rcv = receivers(room, constraints, listenerX);
-  const dbs = rcv.map((r) => {
-    const k = receiverKernel(pm, r, freqs);
-    const parts = sources.map((s) => {
-      const [re, im] = applyKernel(k, modeShapes(pm, positions[s.id]));
-      return { re, im, fre: filt[s.id].re, fim: filt[s.id].im };
-    });
-    return combinedDb(parts, freqs.length);
-  });
-  const scores = dbs.map((d) => flatnessScore(d, target));
-  const spk = sources.filter((s) => s.kind === 'speaker').map((s) => positions[s.id]);
-  const { penalties, angle } = speakerPenalties(ctx, rcv[0], spk);
-  const seats = (scores[1] + scores[2]) / 2;
-  const center = dbs[0];
-  let off = 0;
-  for (let i = 0; i < center.length; i++) off += center[i] - target[i];
-  off /= center.length;
-  return {
-    listener: rcv[0],
-    sources: sources.map((s) => ({ id: s.id, pos: positions[s.id] })),
-    score: W_CENTER * scores[0] + W_SEATS * seats + sum(penalties),
-    scoreCenter: scores[0],
-    scoreSeats: seats,
-    penalties,
-    angleDeg: angle,
-    response: { f: freqs, db: Array.from(center, (v) => v - off), target },
-  };
-}
-
-function baselinePositions(room: Room, sources: SourceSpec[], c: Constraints): { listenerX: number; positions: Record<string, Vec3> } {
+export function baselinePositions(room: Room, sources: SourceSpec[], c: Constraints): { listener: Vec3; positions: Record<string, Vec3> } {
   const listenerX = Math.min(c.listenerMaxX, Math.max(c.listenerMinX, 0.38 * room.depth));
   const positions: Record<string, Vec3> = {};
   const g = c.subWallGap;
-  const corners = [
-    [g, g], [g, room.width - g], [room.depth - g, g], [room.depth - g, room.width - g],
-  ];
+  const corners = [[g, g], [g, room.width - g], [room.depth - g, g], [room.depth - g, room.width - g]];
   const spkX = Math.max(c.speakerMinFront, Math.min(0.5, listenerX - MIN_LISTEN_DIST));
   let subIdx = 0;
   for (const s of sources) {
@@ -276,29 +118,43 @@ function baselinePositions(room: Room, sources: SourceSpec[], c: Constraints): {
       positions[s.id] = { x, y, z: s.height };
     }
   }
-  return { listenerX, positions };
+  return { listener: { x: listenerX, y: room.width / 2, z: c.earHeight }, positions };
+}
+
+function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listener: Vec3, positions: Record<string, Vec3>): Placement {
+  const e = evaluateSetup(ctx.room, sources, c, { listener, positions, subSettings: {}, crossoverHz: null }, { ctx });
+  const single = (c.seats?.count ?? 1) <= 1;
+  const others = e.perReceiver.slice(1);
+  return {
+    listener,
+    seats: e.seats,
+    sources: sources.map((s) => ({ id: s.id, pos: positions[s.id] })),
+    score: e.score,
+    scoreCenter: e.perReceiver[0],
+    scoreSeats: single ? (others[0] + others[1]) / 2 : e.perReceiver.reduce((a, b) => a + b, 0) / e.perReceiver.length,
+    penalties: e.penalties,
+    angleDeg: e.angleDeg,
+    response: e.response,
+  };
 }
 
 /** Базовый вариант: сабвуфер в переднем углу, колонки на ¼ ширины, слушатель на 38 % глубины. */
 export function baselinePlacement(room: Room, sources: SourceSpec[], c: Constraints): Placement {
   const ctx = makeCtx(room, sources);
-  const { listenerX, positions } = baselinePositions(room, sources, c);
-  return evaluateFull(ctx, c, listenerX, positions, logFreqs(ctx.fLo, ctx.fHi, 24));
+  const b = baselinePositions(room, sources, c);
+  return toPlacement(ctx, sources, c, b.listener, b.positions);
 }
 
-/** Оценка произвольного варианта (например, расстановки пользователя). */
-export function evaluatePlacement(
-  room: Room, sources: SourceSpec[], c: Constraints, listenerX: number, positions: Record<string, Vec3>,
-): Placement {
-  const ctx = makeCtx(room, sources);
-  return evaluateFull(ctx, c, listenerX, positions, logFreqs(ctx.fLo, ctx.fHi, 24));
+/** Оценка произвольного варианта (например, расстановки пользователя) без регулировок. */
+export function evaluatePlacement(room: Room, sources: SourceSpec[], c: Constraints, listener: Vec3, positions: Record<string, Vec3>): Placement {
+  return toPlacement(makeCtx(room, sources), sources, c, listener, positions);
 }
 
 // ---------- Поиск ----------
 
 interface Found {
   score: number;
-  listenerX: number;
+  listener: Vec3;
   positions: Record<string, Vec3>;
 }
 
@@ -314,88 +170,102 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   const { pm } = ctx;
   const freqs = logFreqs(ctx.fLo, ctx.fHi, 12);
   const nF = freqs.length;
-  const { filt, target } = filterSet(ctx, freqs);
+  const { filt, target } = filterSet(sources, freqs);
 
   const spkSpecs = sources.filter((s) => s.kind === 'speaker');
   const subSpecs = sources.filter((s) => s.kind === 'sub');
   const spkIds = spkSpecs.map((s) => s.id);
-  const spkTarget = spkSpecs.length ? targetFor(spkIds, filt, nF) : [];
-  // Полоса, где колонки влияют на НЧ-оценку
+  // Целевая кривая только колонок и полоса, где они влияют на НЧ-оценку
+  const spkTarget = (() => {
+    const re = new Float64Array(nF);
+    const im = new Float64Array(nF);
+    for (const id of spkIds) for (let i = 0; i < nF; i++) { re[i] += filt[id].re[i]; im[i] += filt[id].im[i]; }
+    return Array.from(re, (r, i) => db20(Math.hypot(r, im[i])));
+  })();
   const spkLow = spkSpecs.length ? Math.min(...spkSpecs.map((s) => s.fLow)) : Infinity;
   const spkBandStart = freqs.findIndex((f) => f >= spkLow * 0.7);
   const spkBandOk = subSpecs.length > 0 && spkBandStart >= 0 && nF - spkBandStart >= 6;
 
-  // Кандидаты колонок
+  // Кандидаты колонок (вне запретных зон)
   const spkH = spkSpecs[0]?.height ?? 1;
   const xsAll = range(c.speakerMinFront, Math.max(c.speakerMinFront, 0.45 * room.depth), 0.1);
   const halves = spkSpecs.length === 2 ? range(0.4, room.width / 2 - c.speakerMinSide, 0.1) : [0];
   const cfgs: SpeakerCfg[] = [];
-  for (const x of xsAll) for (const half of halves) cfgs.push({ x, half });
+  for (const x of xsAll)
+    for (const half of halves) {
+      const cfg = { x, half };
+      if (speakerPoints(cfg, room, spkH).every((p) => sourceAllowed(room, p))) cfgs.push(cfg);
+    }
+  if (spkSpecs.length && !cfgs.length) {
+    throw new PlacementError('Все допустимые места колонок заняты запретными зонами — уменьшите зоны у передней стены.');
+  }
 
-  // Кандидаты сабвуферов
   const subH = subSpecs[0]?.height ?? 0.3;
   const subPts = subSpecs.length ? subCandidates(room, c, subH) : [];
+  if (subSpecs.length && subPts.length < subSpecs.length) {
+    throw new PlacementError('Для сабвуферов не осталось мест вне запретных зон — расширьте зону сабвуфера или уменьшите зоны.');
+  }
 
-  // Собственные функции всех точек
   const cfgPts = cfgs.map((cfg) => speakerPoints(cfg, room, spkH));
   const cfgPsi = cfgPts.map((pts) => pts.map((p) => modeShapes(pm, p)));
   const subPsi = subPts.map((p) => modeShapes(pm, p));
 
   const listeners = listenerPositions(room, c);
+  if (!listeners.length) {
+    throw new PlacementError('В зоне слушателя все места попадают в запретные зоны — поправьте зоны или зону слушателя.');
+  }
   const found: Found[] = [];
   let evaluated = 0;
-  const filtOf = (id: string) => filt[id];
+
+  type Resp = Spectrum;
+  const withFilter = (h: [Float64Array, Float64Array], id: string): Resp => {
+    const f = filt[id];
+    const re = new Float64Array(nF);
+    const im = new Float64Array(nF);
+    for (let j = 0; j < nF; j++) {
+      re[j] = h[0][j] * f.re[j] - h[1][j] * f.im[j];
+      im[j] = h[0][j] * f.im[j] + h[1][j] * f.re[j];
+    }
+    return { re, im };
+  };
+  const addInto = (acc: Resp, r: Resp) => {
+    for (let j = 0; j < nF; j++) { acc.re[j] += r.re[j]; acc.im[j] += r.im[j]; }
+  };
+  const toDb = (r: Resp, from = 0) => {
+    const out = new Float64Array(nF - from);
+    for (let j = from; j < nF; j++) out[j - from] = 10 * Math.log10(Math.max(r.re[j] * r.re[j] + r.im[j] * r.im[j], 1e-24));
+    return out;
+  };
 
   listeners.forEach((lx, li) => {
-    const rcv = receivers(room, c, lx);
+    const listener = { x: lx, y: room.width / 2, z: c.earHeight };
+    const { pts: rcv, weights } = receiverSet(room, c, listener);
+    const nR = rcv.length;
     const kernels: Kernel[] = rcv.map((r) => receiverKernel(pm, r, freqs));
-    const okCfg = cfgs
-      .map((cfg, i) => ({ cfg, i }))
-      .filter(({ cfg }) => lx - cfg.x >= MIN_LISTEN_DIST - EPS);
+    const weighted = (rs: Resp[], tgt: number[], from = 0) => {
+      const t = from ? tgt.slice(from) : tgt;
+      let s = 0;
+      for (let r = 0; r < nR; r++) s += weights[r] * flatnessScore(toDb(rs[r], from), t);
+      return s;
+    };
+    const okCfg = cfgs.map((cfg, i) => ({ cfg, i })).filter(({ cfg }) => lx - cfg.x >= MIN_LISTEN_DIST - EPS);
     if (spkSpecs.length && okCfg.length === 0) return;
 
-    // Отклики колонок для каждой конфигурации и приёмника (уже с фильтрами)
-    type Resp = { re: Float64Array; im: Float64Array };
-    const withFilter = (h: [Float64Array, Float64Array], id: string): Resp => {
-      const f = filtOf(id);
-      const re = new Float64Array(nF);
-      const im = new Float64Array(nF);
-      for (let j = 0; j < nF; j++) {
-        re[j] = h[0][j] * f.re[j] - h[1][j] * f.im[j];
-        im[j] = h[0][j] * f.im[j] + h[1][j] * f.re[j];
-      }
-      return { re, im };
-    };
-    const addInto = (acc: Resp, r: Resp) => {
-      for (let j = 0; j < nF; j++) { acc.re[j] += r.re[j]; acc.im[j] += r.im[j]; }
-    };
-    const toDb = (r: Resp, from = 0) => {
-      const out = new Float64Array(nF - from);
-      for (let j = from; j < nF; j++) out[j - from] = 20 * Math.log10(Math.max(Math.hypot(r.re[j], r.im[j]), 1e-12));
-      return out;
-    };
-    const scoreOf = (rs: Resp[], tgt: number[], from = 0) => {
-      const t = from ? tgt.slice(from) : tgt;
-      const s = rs.map((r) => flatnessScore(toDb(r, from), t));
-      return { center: s[0], seats: (s[1] + s[2]) / 2, total: W_CENTER * s[0] + W_SEATS * (s[1] + s[2]) / 2 };
-    };
-
     // Этап 1: колонки
-    type SpkEval = { cfg: SpeakerCfg; idx: number; resp: Resp[]; pen: number; rank: number };
+    type SpkEval = { idx: number; resp: Resp[]; pen: number; rank: number };
     const spkEvals: SpkEval[] = [];
     if (spkSpecs.length) {
-      for (const { cfg, i } of okCfg) {
+      for (const { i } of okCfg) {
         const resp = kernels.map((k) => {
           const acc: Resp = { re: new Float64Array(nF), im: new Float64Array(nF) };
           cfgPsi[i].forEach((psi, si) => addInto(acc, withFilter(applyKernel(k, psi), spkIds[si])));
           return acc;
         });
-        const { penalties } = speakerPenalties(ctx, rcv[0], cfgPts[i]);
-        const pen = sum(penalties);
+        const pen = sumPenalties(speakerPenalties(ctx, listener, cfgPts[i]).penalties);
         let rank = pen;
-        if (!subSpecs.length) rank += scoreOf(resp, target).total;
-        else if (spkBandOk) rank += scoreOf(resp, spkTarget, spkBandStart).total;
-        spkEvals.push({ cfg, idx: i, resp, pen, rank });
+        if (!subSpecs.length) rank += weighted(resp, target);
+        else if (spkBandOk) rank += weighted(resp, spkTarget, spkBandStart);
+        spkEvals.push({ idx: i, resp, pen, rank });
         evaluated++;
       }
       spkEvals.sort((a, b) => a.rank - b.rank);
@@ -405,17 +275,15 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
       const positions: Record<string, Vec3> = {};
       if (se) cfgPts[se.idx].forEach((p, k) => (positions[spkIds[k]] = p));
       subs.forEach((pi, k) => (positions[subSpecs[k].id] = subPts[pi]));
-      found.push({ score, listenerX: lx, positions });
+      found.push({ score, listener, positions });
     };
 
     if (!subSpecs.length) {
-      const best = spkEvals[0];
-      recordFound(best.rank, best, []);
+      recordFound(spkEvals[0].rank, spkEvals[0], []);
       onProgress?.((li + 1) / listeners.length);
       return;
     }
 
-    // Отклики сабвуферов в каждой точке-кандидате (для каждого сабвуфера свой фильтр)
     const subResp: Resp[][][] = subSpecs.map((s) =>
       subPts.map((_, pi) => kernels.map((k) => withFilter(applyKernel(k, subPsi[pi]), s.id))),
     );
@@ -425,31 +293,23 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     let bestSe: SpkEval | null = null;
     let bestSubs: number[] = [];
 
-    // Предвыделенные буферы: оценка комбинации без аллокаций
     const accRe = new Float64Array(nF);
     const accIm = new Float64Array(nF);
     const dev = new Float64Array(nF);
-    const scoreRcv = (r: number, se: SpkEval | null, subs: number[]) => {
-      if (se) { accRe.set(se.resp[r].re); accIm.set(se.resp[r].im); }
-      else { accRe.fill(0); accIm.fill(0); }
-      for (let k = 0; k < subs.length; k++) {
-        const sr = subResp[k][subs[k]][r];
-        for (let j = 0; j < nF; j++) { accRe[j] += sr.re[j]; accIm[j] += sr.im[j]; }
-      }
-      for (let j = 0; j < nF; j++) {
-        dev[j] = 10 * Math.log10(Math.max(accRe[j] * accRe[j] + accIm[j] * accIm[j], 1e-24));
-      }
-      return flatnessScore(dev, target);
-    };
     const evalCombo = (se: SpkEval | null, subs: number[]) => {
       evaluated++;
-      const c0 = scoreRcv(0, se, subs);
-      const c1 = scoreRcv(1, se, subs);
-      const c2 = scoreRcv(2, se, subs);
-      return W_CENTER * c0 + W_SEATS * (c1 + c2) / 2 + (se ? se.pen : 0);
+      let total = se ? se.pen : 0;
+      for (let r = 0; r < nR; r++) {
+        if (se) { accRe.set(se.resp[r].re); accIm.set(se.resp[r].im); } else { accRe.fill(0); accIm.fill(0); }
+        for (let k = 0; k < subs.length; k++) {
+          const sr = subResp[k][subs[k]][r];
+          for (let j = 0; j < nF; j++) { accRe[j] += sr.re[j]; accIm[j] += sr.im[j]; }
+        }
+        for (let j = 0; j < nF; j++) dev[j] = 10 * Math.log10(Math.max(accRe[j] * accRe[j] + accIm[j] * accIm[j], 1e-24));
+        total += weights[r] * flatnessScore(dev, target);
+      }
+      return total;
     };
-
-    // Индекс зеркальной точки (через ось комнаты по ширине и по глубине)
     const findPt = (x: number, y: number) =>
       subPts.findIndex((q) => Math.abs(q.x - x) < 1e-6 && Math.abs(q.y - y) < 1e-6);
 
@@ -461,16 +321,15 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
           if (s < bestScore) { bestScore = s; bestSe = se; bestSubs = [a]; }
         }
       } else if (n === 2) {
-        // Пары из 24 лучших одиночных позиций + все зеркальные пары
         const singles = subPts.map((_, a) => ({ a, s: evalCombo(se, [a]) })).sort((p, q) => p.s - q.s);
         const pool = singles.slice(0, 24).map((x) => x.a);
-        const pairs = new Set<string>();
+        const seen = new Set<string>();
         const pairList: [number, number][] = [];
         const addPair = (a: number, b: number) => {
           if (a < 0 || b < 0 || a === b) return;
           const key = a < b ? `${a},${b}` : `${b},${a}`;
-          if (pairs.has(key)) return;
-          pairs.add(key);
+          if (seen.has(key)) return;
+          seen.add(key);
           pairList.push(a < b ? [a, b] : [b, a]);
         };
         for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) addPair(pool[i], pool[j]);
@@ -483,16 +342,13 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
           if (s < bestScore) { bestScore = s; bestSe = se; bestSubs = [a, b]; }
         }
       } else {
-        // Жадный выбор + одно уточнение по координатам
         const chosen: number[] = [];
         for (let k = 0; k < n; k++) {
           let bS = Infinity;
           let bI = 0;
           for (let a = 0; a < subPts.length; a++) {
             if (chosen.includes(a)) continue;
-            const trial = [...chosen, a];
-            // недостающие сабвуферы временно не учитываются
-            const s = evalCombo(se, trial);
+            const s = evalCombo(se, [...chosen, a]);
             if (s < bS) { bS = s; bI = a; }
           }
           chosen.push(bI);
@@ -519,20 +375,17 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     throw new PlacementError('Не удалось подобрать ни одного варианта: ослабьте ограничения расстановки.');
   }
 
-  // Финальная оценка на подробной сетке; базовый вариант тоже участвует в отборе
-  const finalFreqs = logFreqs(ctx.fLo, ctx.fHi, 24);
   const base = baselinePositions(room, sources, c);
-  const baseline = evaluateFull(ctx, c, base.listenerX, base.positions, finalFreqs);
+  const baseline = toPlacement(ctx, sources, c, base.listener, base.positions);
 
   found.sort((a, b) => a.score - b.score);
-  const shortlist = found.slice(0, 8).map((f) => evaluateFull(ctx, c, f.listenerX, f.positions, finalFreqs));
+  const shortlist = found.slice(0, 8).map((f) => toPlacement(ctx, sources, c, f.listener, f.positions));
   shortlist.push(baseline);
   shortlist.sort((a, b) => a.score - b.score);
 
   const best: Placement[] = [];
   for (const p of shortlist) {
     if (best.length >= 3) break;
-    if (best.some((q) => Math.abs(q.listener.x - p.listener.x) < 0.2 && samePositions(q, p))) continue;
     if (best.some((q) => Math.abs(q.listener.x - p.listener.x) < 0.2 - EPS)) continue;
     best.push(p);
   }
@@ -543,9 +396,7 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   best.sort((a, b) => a.score - b.score);
 
   const notes = [...ctx.notes];
-  if (baseline.score - best[0].score < 0.3) {
-    notes.push('Базовая расстановка уже близка к оптимальной для этой комнаты.');
-  }
+  if (baseline.score - best[0].score < 0.3) notes.push('Базовая расстановка уже близка к оптимальной для этой комнаты.');
   return {
     best,
     baseline,
@@ -556,11 +407,4 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     elapsedMs: Date.now() - t0,
     notes,
   };
-}
-
-function samePositions(a: Placement, b: Placement): boolean {
-  return a.sources.every((s) => {
-    const o = b.sources.find((x) => x.id === s.id);
-    return !!o && Math.hypot(o.pos.x - s.pos.x, o.pos.y - s.pos.y) < 0.3;
-  });
 }

@@ -1,11 +1,12 @@
 // Локальное хранение проектов (IndexedDB) и файл проекта (contracts/project-file.md).
 import type { Project } from './project';
-import { defaultConstraints, defaultRoom, defaultSources, makeId, validateRoom, validateSources } from './project';
+import { defaultConstraints, defaultRoom, defaultSetup, defaultSources, defaultSub, makeId, syncSetup, validateRoom, validateSources } from './project';
+import type { Setup, SourceSpec } from '../core/types';
 import { SURFACES } from '../core/types';
 import { MATERIAL_BY_ID } from '../core/materials';
 
 export const FILE_FORMAT = 'room-acoustics-project';
-export const FILE_VERSION = 1;
+export const FILE_VERSION = 2;
 export const FILE_EXT = '.roomacoustics.json';
 
 export function serializeProject(p: Project): string {
@@ -31,21 +32,47 @@ export function normalizeProject(raw: any): Project {
   const room = { ...defaultRoom(), ...(raw.room ?? {}) };
   room.materials = { ...defaultRoom().materials, ...(raw.room?.materials ?? {}) };
   for (const s of SURFACES) if (!MATERIAL_BY_ID[room.materials[s]]) room.materials[s] = defaultRoom().materials[s];
+  if (!Array.isArray(room.zones)) room.zones = [];
+  if (!['sealed', 'typical', 'door', 'open'].includes(room.leakage)) room.leakage = 'typical';
+  if (room.calibration && !(room.calibration.dampingScale > 0)) room.calibration = null;
   const roomErr = validateRoom(room);
   if (roomErr.length) throw new Error(`Неверные данные комнаты: ${roomErr.map((e) => e.message).join('; ')}`);
-  const sources = Array.isArray(raw.sources) && raw.sources.length ? raw.sources : defaultSources(2, 1);
+  const rawSources: SourceSpec[] = Array.isArray(raw.sources) && raw.sources.length ? raw.sources : defaultSources(2, 1);
+  const sources = rawSources.map((s, i) => (s.kind === 'sub' ? { ...defaultSub(i + 1), ...s } : s));
   const srcErr = validateSources(sources);
   if (srcErr.length) throw new Error(`Неверные источники: ${srcErr.map((e) => e.message).join('; ')}`);
+  const dc = defaultConstraints(room);
+  const constraints = {
+    ...dc,
+    ...(raw.constraints ?? {}),
+    seats: { ...dc.seats, ...(raw.constraints?.seats ?? {}) },
+    crossover: { ...dc.crossover, ...(raw.constraints?.crossover ?? {}) },
+  };
+  const fixSetup = (s: any, name: string): Setup =>
+    syncSetup(
+      {
+        ...defaultSetup(room, sources, constraints, name),
+        ...(s ?? {}),
+        subSettings: s?.subSettings ?? {},
+        crossoverHz: s?.crossoverHz ?? null,
+        measurement: s?.measurement ?? null,
+      },
+      room,
+      sources,
+      constraints,
+    );
   return {
     id: typeof raw.id === 'string' ? raw.id : makeId(),
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : 'Комната',
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
     room,
     sources,
-    constraints: { ...defaultConstraints(room), ...(raw.constraints ?? {}) },
+    constraints,
     scanInfo: raw.scanInfo ?? null,
     result: raw.result ?? null,
     selectedIndex: typeof raw.selectedIndex === 'number' ? raw.selectedIndex : 0,
+    current: fixSetup(raw.current, 'Текущая'),
+    setups: Array.isArray(raw.setups) ? raw.setups.map((s: any) => fixSetup(s, s?.name ?? 'Вариант')) : [],
   };
 }
 

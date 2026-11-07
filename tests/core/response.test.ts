@@ -50,3 +50,14 @@ describe('модальная передаточная функция', () => {
     expect(delta).toBeCloseTo(expected, 6);
   });
 });
+
+describe('негерметичность', () => {
+  it('утечка воздуха ослабляет «эффект герметичного объёма» ниже первой моды', () => {
+    const src = { x: 0.2, y: 0.2, z: 0.3 };
+    const rcv = { x: 3, y: 2, z: 1.1 };
+    const f = [15];
+    const sealed = cabs(transfer(prepareModes({ ...room, leakage: 'sealed' }, 200), src, rcv, f)[0]);
+    const open = cabs(transfer(prepareModes({ ...room, leakage: 'open' }, 200), src, rcv, f)[0]);
+    expect(db20(sealed) - db20(open)).toBeGreaterThan(3);
+  });
+});

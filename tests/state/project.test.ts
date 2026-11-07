@@ -14,7 +14,7 @@ describe('файл проекта', () => {
 
   it('чужой формат и новая версия отклоняются', () => {
     expect(() => parseProjectFile('{"format":"x","version":1}')).toThrow(/не файл проекта/);
-    expect(() => parseProjectFile('{"format":"room-acoustics-project","version":2}')).toThrow(/новой версией/);
+    expect(() => parseProjectFile('{"format":"room-acoustics-project","version":3}')).toThrow(/новой версией/);
     expect(() => parseProjectFile('not json')).toThrow();
   });
 
@@ -32,6 +32,30 @@ describe('файл проекта', () => {
   });
 });
 
+describe('миграция версии 1', () => {
+  it('файл версии 1 получает текущую расстановку, места, зоны и возможности сабвуфера', () => {
+    const v1 = {
+      format: 'room-acoustics-project', version: 1,
+      project: {
+        name: 'Старый', room: { depth: 5, width: 4, height: 2.5 },
+        sources: [
+          { id: 'spkL', kind: 'speaker', fLow: 80, fHigh: 20000, height: 1 },
+          { id: 'spkR', kind: 'speaker', fLow: 80, fHigh: 20000, height: 1 },
+          { id: 'sub1', kind: 'sub', fLow: 20, fHigh: 80, height: 0.3 },
+        ],
+        constraints: { speakerMinFront: 0.2, speakerMinSide: 0.3, listenerMinX: 1.5, listenerMaxX: 4.4, earHeight: 1.1, subZone: 'walls', subWallGap: 0.15 },
+      },
+    };
+    const p = parseProjectFile(JSON.stringify(v1));
+    expect(p.room.zones).toEqual([]);
+    expect(p.room.leakage).toBe('typical');
+    expect(p.constraints.seats.count).toBe(1);
+    expect(p.sources.find((s) => s.id === 'sub1')!.phaseMode).toBe('polarity');
+    expect(Object.keys(p.current.positions).sort()).toEqual(['spkL', 'spkR', 'sub1']);
+    expect(p.setups).toEqual([]);
+  });
+});
+
 describe('модель проекта', () => {
   it('поворот комнаты меняет глубину и ширину и переносит материалы стен', () => {
     const p = newProject();
@@ -41,6 +65,15 @@ describe('модель проекта', () => {
     expect(r.width).toBe(p.room.depth);
     expect(r.materials.front).toBe('glass');
     expect(rotateRoom(rotateRoom(rotateRoom(rotateRoom(p.room))))).toEqual(p.room);
+  });
+
+  it('зоны поворачиваются вместе с комнатой', () => {
+    const p = newProject();
+    p.room.zones = [{ id: 'z', kind: 'door', x0: 4, x1: 5, y0: 0, y1: 1, canSit: false }];
+    const r = rotateRoom(p.room);
+    expect(r.zones[0]).toMatchObject({ x0: 0, x1: 1, y0: 0, y1: 1 });
+    const back = rotateRoom(rotateRoom(rotateRoom(r)));
+    expect(back.zones[0]).toMatchObject({ x0: 4, x1: 5, y0: 0, y1: 1 });
   });
 
   it('валидация размеров: 1–50 м, высота ≤ 20 м', () => {

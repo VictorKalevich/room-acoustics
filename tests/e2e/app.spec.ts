@@ -50,3 +50,37 @@ test('US4: толстый ковёр уменьшает RT60', async ({ page }) 
     expect(after).toBeLessThan(before);
   }).toPass();
 });
+
+test('002 US1: ручной режим — карта мест слушателя и «Сесть сюда»', async ({ page }) => {
+  await page.goto('/#manual');
+  await expect(page.locator('.best-list li')).toHaveCount(3, { timeout: 15_000 });
+  const before = await page.locator('.topbar__room').textContent();
+  await page.locator('.best-list li').first().getByRole('button', { name: 'Сесть сюда' }).click();
+  await expect(page.locator('.plan__listener')).toBeVisible();
+  expect(before).toContain('5,00');
+});
+
+test('002 US2: карта мест сабвуфера', async ({ page }) => {
+  await page.goto('/#manual');
+  await page.getByRole('radio', { name: 'Место сабвуфера' }).click();
+  await expect(page.locator('.best-list li').first().getByRole('button', { name: 'Поставить сюда' })).toBeVisible({ timeout: 15_000 });
+});
+
+test('002 US3/US5: настройка сабвуфера и эквалайзер', async ({ page }) => {
+  await page.goto('/#tuning');
+  await page.getByRole('button', { name: 'Подобрать настройки' }).click();
+  await expect(page.locator('.tuning-result')).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await expect(page.getByRole('button', { name: 'Применено' })).toBeVisible();
+  await page.getByRole('button', { name: 'Рассчитать фильтры' }).click();
+  await expect(page.locator('#eq-apo')).toHaveValue(/Filter 1: ON PK/);
+});
+
+test('002 US8: импорт замера REW', async ({ page }) => {
+  await page.goto('/#tuning');
+  const lines = ['* REW export', ...Array.from({ length: 300 }, (_, i) => { const f = 10 * Math.pow(2, i / 48); return `${f.toFixed(3)} ${(80 + 6 * Math.sin(f / 7)).toFixed(2)} 0`; })];
+  await page.setInputFiles('#rew-file', { name: 'rew.txt', mimeType: 'text/plain', buffer: Buffer.from(lines.join('\n')) });
+  await expect(page.getByText(/Расхождение модели и замера/)).toBeVisible();
+  await page.getByRole('button', { name: 'Подстроить модель' }).click();
+  await expect(page.getByText(/Затухание мод ×/)).toBeVisible({ timeout: 20_000 });
+});
