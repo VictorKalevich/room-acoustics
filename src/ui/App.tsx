@@ -13,6 +13,7 @@ import { ProjectsScreen } from './screens/ProjectsScreen';
 import { TuningScreen } from './screens/TuningScreen';
 import { S } from './strings';
 import { fmt } from './format';
+import { consumeJustUpdated, setBeforeReload } from './updates';
 
 type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects';
 const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects'];
@@ -52,6 +53,7 @@ export function App() {
   const [placementMode, setPlacementMode] = useState<'auto' | 'manual'>(location.hash === '#manual' ? 'manual' : 'auto');
   const [project, setProject] = useState<Project>(() => newProject());
   const [ready, setReady] = useState(false);
+  const [justUpdated, setJustUpdated] = useState(consumeJustUpdated);
 
   useEffect(() => {
     loadDraft()
@@ -62,6 +64,10 @@ export function App() {
     addEventListener('hashchange', onHash);
     return () => removeEventListener('hashchange', onHash);
   }, []);
+
+  useEffect(() => {
+    if (ready) setBeforeReload(() => saveDraft(project));
+  }, [project, ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -116,6 +122,13 @@ export function App() {
           </span>
         </div>
       </header>
+
+      {justUpdated && (
+        <div class="update-banner" role="status">
+          <span>{S.projects.updated}</span>
+          <button type="button" class="update-banner__close" aria-label="Закрыть" onClick={() => setJustUpdated(false)}>×</button>
+        </div>
+      )}
 
       <main class="content">
         <div hidden={tab !== 'room'}>

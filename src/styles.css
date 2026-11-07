@@ -422,3 +422,29 @@ td.num { text-align: right; }
 .layout-editor__dims { fill: var(--ink); font-size: 13px; font-weight: 600; }
 .model-tag { display: inline-block; align-self: flex-start; margin-top: 2px; padding: 1px 8px; border-radius: var(--r-chip); background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; }
 .sysmodes-table td.is-corridor { color: var(--arch); }
+
+/* Сообщение после автообновления */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 720px;
+  margin: 12px auto 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 0.9rem;
+  width: calc(100% - 32px);
+}
+.update-banner__close {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}

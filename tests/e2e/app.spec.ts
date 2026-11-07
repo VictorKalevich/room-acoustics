@@ -105,3 +105,8 @@ test('003: скан с коридором — найдены арка и кор�
   await page.getByRole('button', { name: 'Применить размеры' }).click();
   await expect(page.locator('.topbar__room')).toContainText(/5,00 × (3,99|4,00)/);
 });
+
+test('версия приложения видна на экране «Проекты»', async ({ page }) => {
+  await page.goto('/#projects');
+  await expect(page.locator('.app-version')).toContainText(/Версия от .*\(\w+\)/);
+});

@@ -7,11 +7,14 @@ import '@fontsource/golos-text/latin-500.css';
 import '@fontsource/golos-text/latin-600.css';
 import './styles.css';
 import { App } from './ui/App';
+import { startUpdates } from './ui/updates';
 
 render(<App />, document.getElementById('app')!);
 
-// Офлайн-режим: service worker регистрируется только в собранной версии по HTTPS
+// Офлайн-режим и автообновление: service worker регистрируется только в собранной версии по HTTPS
+// (на localhost — с параметром ?sw, для проверки обновлений в тестах)
 const inFrame = (() => { try { return window.top !== window; } catch { return true; } })();
-if (import.meta.env.PROD && !inFrame && 'serviceWorker' in navigator && location.protocol === 'https:') {
-  import('virtual:pwa-register').then(({ registerSW }) => registerSW({ immediate: true })).catch(() => undefined);
+const swAllowed = location.protocol === 'https:' || (location.hostname === 'localhost' && new URLSearchParams(location.search).has('sw'));
+if (import.meta.env.PROD && !inFrame && 'serviceWorker' in navigator && swAllowed) {
+  startUpdates();
 }
