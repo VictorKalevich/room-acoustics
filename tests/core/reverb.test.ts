@@ -55,3 +55,14 @@ describe('computeReverb', () => {
     expect(t).toBeLessThan(1.0);
   });
 });
+
+describe('проёмы', () => {
+  it('арка 1,4 × 2,1 м добавляет ≈ 2,9 м² поглощения и уменьшает RT60', () => {
+    const r0 = computeReverb(defaultRoom());
+    const room = { ...defaultRoom(), openings: [{ id: 'o', wall: 'right' as const, a0: 1, a1: 2.4, height: 2.1 }] };
+    const r1 = computeReverb(room);
+    const i = r0.bands.indexOf(125);
+    expect(r1.absorptionArea[i] - r0.absorptionArea[i]).toBeCloseTo(1.4 * 2.1 * (1 - 0.013), 6);
+    expect(r1.used[i]).toBeLessThan(r0.used[i]);
+  });
+});

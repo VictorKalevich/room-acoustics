@@ -9,6 +9,8 @@ import { db20, logFreqs } from './frequency';
 import { sourceFilter } from './filters';
 import { applyKernel, modeShapes, prepareModes, receiverKernel, type PreparedModes } from './response';
 import { flatnessScore } from './metric';
+import { isWave } from './geometry';
+import { hasSim, waveFMax, waveSpectra } from './acoustics';
 
 export const MIN_LISTEN_DIST = 1.0; // м, минимум между колонками и слушателем
 export const SEAT_OFFSET = 0.3; // м, сдвиг головы влево/вправо при одном месте
@@ -108,13 +110,17 @@ export function seatPositions(room: Room, listener: Vec3, c: Pick<Constraints, '
   return Array.from({ length: n }, (_, i) => ({ x: listener.x, y: y0 + i * s, z: listener.z }));
 }
 
-/** Точки оценки и их веса: при одном месте — центр и сдвиги головы ±0,3 м, иначе все места поровну. */
+/**
+ * Точки оценки и их веса: при одном месте — центр и сдвиги головы ±0,3 м (в волновой модели — только
+ * центр, чтобы не умножать число расчётов), иначе все места поровну.
+ */
 export function receiverSet(room: Room, c: Constraints, listener: Vec3): { pts: Vec3[]; weights: number[] } {
   const n = Math.max(1, Math.round(c.seats?.count ?? 1));
   if (n > 1) {
     const pts = seatPositions(room, listener, c);
     return { pts, weights: pts.map(() => 1 / pts.length) };
   }
+  if (isWave(room)) return { pts: [listener], weights: [1] };
   const off = Math.min(SEAT_OFFSET, listener.y - 0.1, room.width - listener.y - 0.1);
   return {
     pts: [listener, { ...listener, y: listener.y - off }, { ...listener, y: listener.y + off }],
@@ -169,10 +175,36 @@ export const sumPenalties = (p: Penalty[]) => p.reduce((a, b) => a + b.value, 0)
 
 // ---------- Отклики и оценка ----------
 
-/** Отклик комнаты (без фильтра) от источника в p к приёмникам, предвычисленным как ядра. */
-export function rawResponses(ctx: EvalCtx, rcv: Vec3[], freqs: number[], points: Record<string, Vec3>): Record<string, Spectrum[]> {
-  const kernels = rcv.map((r) => receiverKernel(ctx.pm, r, freqs));
+/**
+ * Отклик комнаты (без фильтра) от источников points к приёмникам rcv: out[id][r].
+ * В волновой модели выбирается расчёт из источников или из приёмников (по взаимности) — что уже есть в кэше
+ * или требует меньше расчётов.
+ */
+export function rawResponses(ctx: EvalCtx, rcv: Vec3[], freqs: number[], points: Record<string, Vec3>, onProgress?: (v: number) => void): Record<string, Spectrum[]> {
   const out: Record<string, Spectrum[]> = {};
+  if (isWave(ctx.room)) {
+    const fMax = waveFMax(ctx.fHi);
+    const ids = Object.keys(points);
+    const srcHeights = ids.map((id) => points[id].z);
+    const rcvHeights = rcv.map((r) => r.z);
+    const srcCached = ids.every((id) => hasSim(ctx.room, fMax, points[id], rcvHeights));
+    const rcvCached = rcv.every((r) => hasSim(ctx.room, fMax, r, srcHeights));
+    const fromReceivers = rcvCached || (!srcCached && rcv.length <= ids.length);
+    if (fromReceivers) {
+      const pts = ids.map((id) => points[id]);
+      ids.forEach((id) => (out[id] = []));
+      rcv.forEach((r, ri) => {
+        const sp = waveSpectra(ctx.room, fMax, r, pts, freqs, onProgress && ((v) => onProgress((ri + v) / rcv.length)));
+        ids.forEach((id, k) => (out[id][ri] = sp[k]));
+      });
+    } else {
+      ids.forEach((id, k) => {
+        out[id] = waveSpectra(ctx.room, fMax, points[id], rcv, freqs, onProgress && ((v) => onProgress((k + v) / ids.length)));
+      });
+    }
+    return out;
+  }
+  const kernels = rcv.map((r) => receiverKernel(ctx.pm, r, freqs));
   for (const [id, p] of Object.entries(points)) {
     const psi = modeShapes(ctx.pm, p);
     out[id] = kernels.map((k) => {
@@ -212,6 +244,7 @@ export interface SetupEval {
   response: { f: number[]; db: number[]; target: number[] };
   fLo: number;
   fHi: number;
+  model: 'modal' | 'wave';
 }
 
 /** Оценка произвольного варианта расстановки с регулировками сабвуферов. */
@@ -220,14 +253,14 @@ export function evaluateSetup(
   sources: SourceSpec[],
   c: Constraints,
   setup: Pick<Setup, 'listener' | 'positions' | 'subSettings' | 'crossoverHz'>,
-  opts: { ppo?: number; ctx?: EvalCtx } = {},
+  opts: { ppo?: number; ctx?: EvalCtx; onProgress?: (v: number) => void } = {},
 ): SetupEval {
   const ctx = opts.ctx ?? makeCtx(room, sources);
   const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? 24);
   const n = freqs.length;
   const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings);
   const { pts, weights } = receiverSet(room, c, setup.listener);
-  const raw = rawResponses(ctx, pts, freqs, setup.positions);
+  const raw = rawResponses(ctx, pts, freqs, setup.positions, opts.onProgress);
   const ids = sources.map((s) => s.id).filter((id) => setup.positions[id]);
   const dbs = pts.map((_, r) => sumDb(raw, filt, r, n, ids));
   const perReceiver = dbs.map((d) => flatnessScore(d, target));
@@ -251,6 +284,7 @@ export function evaluateSetup(
     response: { f: freqs, db: shown.map((v) => v - off), target },
     fLo: ctx.fLo,
     fHi: ctx.fHi,
+    model: isWave(room) ? 'wave' : 'modal',
   };
 }
 

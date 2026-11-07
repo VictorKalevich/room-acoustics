@@ -14,6 +14,7 @@ export interface SynthOptions {
   ceiling?: boolean;
   openings?: boolean; // дверь и окно (дыры в стенах)
   lShape?: boolean; // ниша 1,5 × 1,5 м за правой стеной
+  corridor?: boolean; // арка 1,0–2,4 м (высота 2,1) в правой стене и коридор 1,2 м вдоль неё; конец x = depth открыт
   cell?: number; // размер ячейки сетки, м
   seed?: number;
 }
@@ -66,7 +67,14 @@ export function makeRoomScan(o: SynthOptions): Float32Array {
   quad(t, [0, 0, 0], [0, Y, 0], [0, 0, Z], cell); // передняя x=0
   quad(t, [X, 0, 0], [0, Y, 0], [0, 0, Z], cell, door); // задняя
   quad(t, [0, 0, 0], [X, 0, 0], [0, 0, Z], cell, win); // левая y=0
-  if (o.lShape) {
+  if (o.corridor) {
+    const C = 1.2;
+    quad(t, [0, Y, 0], [X, 0, 0], [0, 0, Z], cell, (s, u) => s > 1.0 && s < 2.4 && u < 2.1); // правая стена с аркой
+    quad(t, [0, Y + C, 0], [X, 0, 0], [0, 0, Z], cell); // дальняя стена коридора
+    quad(t, [0, Y, 0], [0, C, 0], [0, 0, Z], cell); // торец коридора у x = 0 (закрыт)
+    quad(t, [0, Y, 0], [X, 0, 0], [0, C, 0], cell); // пол коридора
+    if (o.ceiling !== false) quad(t, [0, Y, Z], [X, 0, 0], [0, C, 0], cell);
+  } else if (o.lShape) {
     // правая стена с проёмом в нишу 1,5 × 1,5 м
     quad(t, [0, Y, 0], [X, 0, 0], [0, 0, Z], cell, (s) => s > 1 && s < 2.5);
     quad(t, [1, Y + 1.5, 0], [1.5, 0, 0], [0, 0, Z], cell);

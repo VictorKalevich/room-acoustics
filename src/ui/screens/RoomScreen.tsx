@@ -3,11 +3,14 @@ import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
 import type { Project } from '../../state/project';
 import { defaultConstraints, makeId, rotateRoom, rotateSetup } from '../../state/project';
-import type { Room, SurfaceId, ReverbResult, Furnishing, Zone, ZoneKind, Leakage } from '../../core/types';
+import type { Room, SurfaceId, ReverbResult, Furnishing, Zone, ZoneKind, Leakage, Opening, Extension, WallId, AcousticModel } from '../../core/types';
+import { validateExtension, wallLength } from '../../core/geometry';
 import { SURFACES } from '../../core/types';
 import { MATERIALS, FURNISHING_LABEL } from '../../core/materials';
 import { speedOfSound } from '../../core/physics';
 import type { DetectResult, Units } from '../../scan/detect';
+import type { LayoutResult } from '../../scan/layout';
+import { LayoutEditor, type Rect } from '../components/LayoutEditor';
 import { NumberField, Panel, SelectField, Note, Details, Segmented } from '../components/Fields';
 import { PlanView } from '../components/PlanView';
 import { S } from '../strings';
@@ -41,7 +44,7 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
   return (
     <div class="screen">
       <Panel class="panel--hero">
-        <PlanView depth={room.depth} width={room.width} zones={room.zones} />
+        <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} />
         <div class="dims">
           <NumberField label={S.room.depth} hint={S.room.depthHint} value={room.depth} unit="м" min={1} max={50} onChange={(v) => set({ depth: v })} />
           <NumberField label={S.room.width} hint={S.room.widthHint} value={room.width} unit="м" min={1} max={50} onChange={(v) => set({ width: v })} />
@@ -69,6 +72,8 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
       </Panel>
 
       <ScanPanel project={project} onRoom={onRoom} />
+
+      <OpeningsPanel room={room} onRoom={(r) => onRoom(r)} />
 
       <ZonesPanel room={room} onRoom={(r) => onRoom(r)} />
 
@@ -135,19 +140,39 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
   const [units, setUnits] = useState<Units | 'auto'>('auto');
   const [applied, setApplied] = useState(false);
   const [Preview, setPreview] = useState<FunctionComponent<any> | null>(null);
+  const [layout, setLayout] = useState<LayoutResult | null>(null);
+  const [rect, setRect] = useState<Rect | null>(null);
+  const [useLayout, setUseLayout] = useState(true);
   const input = useRef<HTMLInputElement>(null);
 
-  const detect = (l: Loaded, u: Units | 'auto') =>
-    new Promise<DetectResult>((resolve, reject) => {
+  const runWorker = <T,>(msg: Record<string, unknown>, tri: Float32Array) =>
+    new Promise<T>((resolve, reject) => {
       const w = new Worker(new URL('../../workers/detect.worker.ts', import.meta.url), { type: 'module' });
       w.onmessage = (e) => {
         w.terminate();
-        e.data.ok ? resolve(e.data.result) : reject(new Error(e.data.error));
+        e.data.ok ? resolve(e.data as T) : reject(new Error(e.data.error));
       };
       w.onerror = (e) => { w.terminate(); reject(new Error(e.message || 'Ошибка анализа скана')); };
-      const copy = l.triangles.slice();
-      w.postMessage({ triangles: copy, units: u === 'auto' ? undefined : u }, [copy.buffer]);
+      const copy = tri.slice();
+      w.postMessage({ ...msg, triangles: copy }, [copy.buffer]);
     });
+  const detect = async (l: Loaded, u: Units | 'auto') => {
+    const r = await runWorker<{ result: DetectResult; layout: LayoutResult }>({ units: u === 'auto' ? undefined : u }, l.triangles);
+    setLayout(r.layout);
+    setRect({ x0: 0, x1: r.result.depth, y0: 0, y1: r.result.width });
+    return r.result;
+  };
+  /** Повторный поиск проёмов и коридора для выбранного прямоугольника (контур скана сохраняется). */
+  const relayout = async (rc: Rect) => {
+    if (!loaded || !det || !layout) return;
+    const t = det.transform.slice();
+    t[12] -= rc.x0;
+    t[13] -= rc.y0;
+    try {
+      const r = await runWorker<{ layout: LayoutResult }>({ type: 'layout', transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: det.height } }, loaded.triangles);
+      setLayout({ ...layout, openings: r.layout.openings, extension: r.layout.extension });
+    } catch { /* оставляем прежние */ }
+  };
 
   const onFile = async (file: File) => {
     setApplied(false);
@@ -186,7 +211,19 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
 
   const apply = () => {
     if (!det || !loaded) return;
-    const room: Room = { ...project.room, depth: det.depth, width: det.width, height: det.height, source: 'scan' };
+    const rc = rect ?? { x0: 0, x1: det.depth, y0: 0, y1: det.width };
+    const depth = Math.round((rc.x1 - rc.x0) * 1000) / 1000;
+    const width = Math.round((rc.y1 - rc.y0) * 1000) / 1000;
+    const lay = useLayout && layout ? layout : null;
+    const room: Room = {
+      ...project.room,
+      depth,
+      width,
+      height: det.height,
+      source: 'scan',
+      openings: lay ? lay.openings.map((o) => ({ ...o, id: makeId() })) : project.room.openings,
+      extensions: lay?.extension ? [{ ...lay.extension, id: makeId(), name: S.openings.corridor }] : lay ? [] : project.room.extensions,
+    };
     const { transform: _t, ...rest } = det;
     void _t;
     onRoom(room, {
@@ -239,8 +276,43 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
         <div class="scan-found">
           <h3 class="subhead">{S.room.found}</h3>
           <p class="scan-dims">
-            {fmt(det.depth, 2)} × {fmt(det.width, 2)} × {fmt(det.height, 2)} <small>м</small>
+            {fmt(rect ? rect.x1 - rect.x0 : det.depth, 2)} × {fmt(rect ? rect.y1 - rect.y0 : det.width, 2)} × {fmt(det.height, 2)} <small>м</small>
           </p>
+          {layout && rect && (
+            <>
+              <LayoutEditor
+                layout={layout}
+                rect={rect}
+                height={det.height}
+                onRect={(r) => { setRect(r); setApplied(false); }}
+                onRectDone={relayout}
+              />
+              <p class="muted small">{S.layout.hint}</p>
+              {(layout.openings.length > 0 || layout.extension) && (
+                <ul class="plain-list small">
+                  {layout.extension && (
+                    <li>
+                      {S.layout.corridorFound(
+                        S.openings.wallsShort[layout.extension.wall],
+                        fmt(layout.extension.depth, 2),
+                        fmt(layout.extension.a1 - layout.extension.a0, 2),
+                        fmt(layout.extension.arch.a1 - layout.extension.arch.a0, 2),
+                      )}
+                    </li>
+                  )}
+                  {layout.openings.map((o) => (
+                    <li>{S.layout.openingFound(S.openings.wallsShort[o.wall], fmt(o.a1 - o.a0, 2), fmt(o.height, 2))}</li>
+                  ))}
+                </ul>
+              )}
+              {(layout.openings.length > 0 || layout.extension) && (
+                <label class="check">
+                  <input type="checkbox" checked={useLayout} onChange={(e) => setUseLayout((e.target as HTMLInputElement).checked)} />
+                  <span>{S.layout.useFound}</span>
+                </label>
+              )}
+            </>
+          )}
           <div class="meter" aria-label={`${S.room.confidence} ${Math.round(det.confidence * 100)} %`}>
             <span class="meter__label">{S.room.confidence}</span>
             <span class="meter__track">
@@ -265,6 +337,113 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
           </button>
         </div>
       )}
+    </Panel>
+  );
+}
+
+const WALLS: WallId[] = ['front', 'back', 'left', 'right'];
+
+function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
+  const openings = room.openings ?? [];
+  const exts = room.extensions ?? [];
+  const setOpening = (id: string, patch: Partial<Opening>) => {
+    onRoom({
+      ...room,
+      openings: openings.map((o) => {
+        if (o.id !== id) return o;
+        const n = { ...o, ...patch };
+        const L = wallLength(room, n.wall);
+        n.a0 = Math.max(0, Math.min(n.a0, L - 0.1));
+        n.a1 = Math.min(L, Math.max(n.a1, n.a0 + 0.1));
+        n.height = Math.min(room.height, Math.max(0.3, n.height));
+        return n;
+      }),
+    });
+  };
+  const setExt = (id: string, patch: Partial<Extension>) => {
+    onRoom({ ...room, extensions: exts.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
+  };
+  const addOpening = () =>
+    onRoom({ ...room, openings: [...openings, { id: makeId(), wall: 'right', a0: Math.min(1, room.depth - 1), a1: Math.min(2, room.depth), height: Math.min(2.1, room.height) }] });
+  const addCorridor = () =>
+    onRoom({
+      ...room,
+      extensions: [...exts, {
+        id: makeId(), name: S.openings.corridor, wall: 'right', a0: 0, a1: room.depth, depth: 1.2, height: room.height,
+        arch: { a0: Math.min(1, room.depth - 1.5), a1: Math.min(2.4, room.depth), height: Math.min(2.1, room.height) },
+        openStart: false, openEnd: false, openFar: false,
+      }],
+    });
+  const along = (w: WallId) => S.openings.along(w);
+  return (
+    <Panel title={S.openings.title}>
+      <p class="small">{S.openings.intro}</p>
+      {openings.length === 0 && exts.length === 0 && <p class="muted small">{S.openings.none}</p>}
+      {exts.map((e, i) => {
+        const err = validateExtension(room, e);
+        return (
+          <div class="zone-card">
+            <div class="zone-card__head">
+              <SelectField
+                label={`${S.openings.corridor} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
+                value={e.wall}
+                options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))}
+                onChange={(v) => setExt(e.id, { wall: v as WallId })}
+              />
+              <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, extensions: exts.filter((x) => x.id !== e.id) })}>
+                {S.openings.remove}
+              </button>
+            </div>
+            <div class="grid-2">
+              <NumberField compact id={`${e.id}-a0`} label={`${S.openings.from} (${along(e.wall)})`} value={e.a0} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { a0: v })} />
+              <NumberField compact id={`${e.id}-a1`} label={S.openings.to} value={e.a1} unit="м" min={-20} max={70} onChange={(v) => setExt(e.id, { a1: v })} />
+              <NumberField compact id={`${e.id}-d`} label={S.openings.depth} value={e.depth} unit="м" min={0.3} max={20} onChange={(v) => setExt(e.id, { depth: v })} />
+              <NumberField compact id={`${e.id}-h`} label={S.openings.height} value={e.height} unit="м" min={1} max={20} onChange={(v) => setExt(e.id, { height: v })} />
+            </div>
+            <span class="range-row__label">{S.openings.arch}</span>
+            <div class="grid-3">
+              <NumberField compact id={`${e.id}-aa0`} label={S.openings.archFrom} value={e.arch.a0} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a0: v } })} />
+              <NumberField compact id={`${e.id}-aa1`} label={S.openings.to} value={e.arch.a1} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a1: v } })} />
+              <NumberField compact id={`${e.id}-ah`} label={S.openings.height} value={e.arch.height} unit="м" min={0.5} max={20} onChange={(v) => setExt(e.id, { arch: { ...e.arch, height: v } })} />
+            </div>
+            <label class="check"><input type="checkbox" checked={e.openStart} onChange={(ev) => setExt(e.id, { openStart: (ev.target as HTMLInputElement).checked })} /><span>{S.openings.openStart}</span></label>
+            <label class="check"><input type="checkbox" checked={e.openEnd} onChange={(ev) => setExt(e.id, { openEnd: (ev.target as HTMLInputElement).checked })} /><span>{S.openings.openEnd}</span></label>
+            <label class="check"><input type="checkbox" checked={e.openFar} onChange={(ev) => setExt(e.id, { openFar: (ev.target as HTMLInputElement).checked })} /><span>{S.openings.openFar}</span></label>
+            {err && <Note tone="warn">{err}</Note>}
+          </div>
+        );
+      })}
+      {openings.map((o, i) => (
+        <div class="zone-card">
+          <div class="zone-card__head">
+            <SelectField
+              label={`${S.openings.opening} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
+              value={o.wall}
+              options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))}
+              onChange={(v) => setOpening(o.id, { wall: v as WallId })}
+            />
+            <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, openings: openings.filter((x) => x.id !== o.id) })}>
+              {S.openings.remove}
+            </button>
+          </div>
+          <div class="grid-3">
+            <NumberField compact id={`${o.id}-a0`} label={`${S.openings.from} (${along(o.wall)})`} value={o.a0} unit="м" min={0} max={50} onChange={(v) => setOpening(o.id, { a0: v })} />
+            <NumberField compact id={`${o.id}-a1`} label={S.openings.to} value={o.a1} unit="м" min={0} max={50} onChange={(v) => setOpening(o.id, { a1: v })} />
+            <NumberField compact id={`${o.id}-h`} label={S.openings.height} value={o.height} unit="м" min={0.3} max={20} onChange={(v) => setOpening(o.id, { height: v })} />
+          </div>
+        </div>
+      ))}
+      <div class="btn-row">
+        <button type="button" class="btn" onClick={addCorridor}>{S.openings.addCorridor}</button>
+        <button type="button" class="btn" onClick={addOpening}>{S.openings.addOpening}</button>
+      </div>
+      <SelectField
+        label={S.model.title}
+        value={room.model ?? 'auto'}
+        options={(['auto', 'modal', 'wave'] as AcousticModel[]).map((m) => ({ value: m, label: S.model[m] }))}
+        onChange={(v) => onRoom({ ...room, model: v as AcousticModel })}
+      />
+      <p class="muted small">{S.model.hint}</p>
     </Panel>
   );
 }

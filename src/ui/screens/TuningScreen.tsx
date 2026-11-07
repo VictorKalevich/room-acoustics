@@ -1,11 +1,14 @@
 import { useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import type { Leakage, Mode, Room, Setup, SubSetting } from '../../core/types';
-import { evaluateSetup } from '../../core/system';
+import { evaluateSetup, type SetupEval } from '../../core/system';
+import { isWave } from '../../core/geometry';
+import { useSetupEval } from '../useEval';
+import { useEffect } from 'preact/hooks';
 import { hasAdjustments, optionsFor, type IntegrationResult } from '../../core/integration';
 import { designEq, exportEqualizerAPO, exportMiniDSP, exportREW, type EqResult } from '../../core/eq';
 import { bassAdvice, porousLowLimit, reflectionPoints } from '../../core/treatment';
-import { compareMeasurement, measurementAt, parseRew, type CalibrationResult } from '../../core/measure';
+import { compareMeasurement, measurementAt, parseRew, type CalibrationResult, type Comparison } from '../../core/measure';
 import { speedOfSound } from '../../core/physics';
 import { compute } from '../compute';
 import { PlanView, type PlanMark, type WallMark } from '../components/PlanView';
@@ -23,20 +26,21 @@ interface Props {
 
 export function TuningScreen({ project, modes, onSetup, onRoom }: Props) {
   const { room, sources, constraints: c, current } = project;
-  const ev = useMemo(() => evaluateSetup(room, sources, c, current), [room, sources, c, current]);
+  const { ev } = useSetupEval(room, sources, c, current);
   const subs = sources.filter((s) => s.kind === 'sub' && current.positions[s.id]);
   return (
     <div class="screen">
       <Panel title={S.tuning.setup}>
-        <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} seats={ev.seats} zones={room.zones} showDims={false} />
+        <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} seats={ev?.seats ?? []} zones={room.zones} extensions={room.extensions} openings={room.openings} showDims={false} />
         <div class="score">
           <div class="score__main">
-            <span class="score__value">{fmt(ev.score, 1)}</span>
+            <span class="score__value">{ev ? fmt(ev.score, 1) : '…'}</span>
             <span class="score__unit">дБ</span>
           </div>
           <div class="score__text">
             <span class="score__label">{S.placement.score}</span>
             <span class="muted small">{S.tuning.setupHint}</span>
+            <span class="model-tag">{isWave(room) ? S.model.waveTag : S.model.modalTag}</span>
           </div>
         </div>
       </Panel>
@@ -172,8 +176,16 @@ function EqPanel({ project }: { project: Project }) {
   const [res, setRes] = useState<{ eq: EqResult; f: number[]; before: number[]; target: number[] } | null>(null);
   const [fs, setFs] = useState<48000 | 96000>(96000);
 
+  const [eqBusy, setEqBusy] = useState(false);
   const run = () => {
-    const e = evaluateSetup(room, sources, c, current, { ppo: 48 });
+    if (isWave(room)) {
+      setEqBusy(true);
+      compute<SetupEval>('evaluate', { room, sources, constraints: c, setup: current, ppo: 48 }).promise
+        .then((e) => { setEqBusy(false); finish(e); })
+        .catch(() => setEqBusy(false));
+    } else finish(evaluateSetup(room, sources, c, current, { ppo: 48 }));
+  };
+  const finish = (e: SetupEval) => {
     let f = e.response.f;
     let db = e.response.db;
     let target = e.response.target;
@@ -195,7 +207,7 @@ function EqPanel({ project }: { project: Project }) {
       {m && (
         <Segmented label={S.tuning.eqSource} value={source} options={[{ value: 'model', label: S.tuning.eqModel }, { value: 'measured', label: S.tuning.eqMeasured }]} onChange={(v) => { setSource(v); setRes(null); }} />
       )}
-      <button type="button" class="btn btn--primary" onClick={run}>{S.tuning.eqRun}</button>
+      <button type="button" class="btn btn--primary" onClick={run} disabled={eqBusy}>{eqBusy ? S.model.computing : S.tuning.eqRun}</button>
       {res && res.eq.filters.length === 0 && <Note tone="good">{S.tuning.eqNone}</Note>}
       {res && res.eq.filters.length > 0 && (
         <>
@@ -281,10 +293,19 @@ function MeasurePanel({ project, onRoom, onSetup }: { project: Project; onRoom: 
   const [busy, setBusy] = useState(false);
   const [cal, setCal] = useState<CalibrationResult | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const cmp = useMemo(() => {
-    if (!m) return null;
+  const wave = isWave(room);
+  const cmpSync = useMemo(() => {
+    if (!m || wave) return null;
     try { return compareMeasurement(room, sources, c, current, m); } catch (e) { return { error: (e as Error).message }; }
-  }, [m, room, sources, c, current]);
+  }, [m, room, sources, c, current, wave]);
+  const [cmpAsync, setCmpAsync] = useState<Comparison | { error: string } | null>(null);
+  useEffect(() => {
+    if (!m || !wave) { setCmpAsync(null); return; }
+    const j = compute<Comparison>('compare', { room, sources, constraints: c, setup: current, measurement: m });
+    j.promise.then(setCmpAsync).catch((e) => setCmpAsync({ error: e.message }));
+    return () => j.cancel();
+  }, [m, room, sources, c, current, wave]);
+  const cmp = wave ? cmpAsync : cmpSync;
 
   const load = async (f: File) => {
     setError(null);
@@ -363,14 +384,14 @@ function TreatmentPanel({ project, modes }: { project: Project; modes: Mode[] })
   const { room, sources, constraints: c, current } = project;
   const spk = sources.filter((s) => s.kind === 'speaker' && current.positions[s.id]).map((s) => ({ id: s.id, pos: current.positions[s.id] }));
   const refl = reflectionPoints(room, spk, current.listener);
-  const ev = useMemo(() => evaluateSetup(room, sources, c, current, { ppo: 48 }), [room, sources, c, current]);
-  const advice = bassAdvice(ev.response, modes);
+  const { ev } = useSetupEval(room, sources, c, current, 48);
+  const advice = ev ? bassAdvice(ev.response, modes) : [];
   const wallMarks: WallMark[] = refl.filter((r) => r.surface !== 'ceiling').map((r) => ({ surface: r.surface as 'left' | 'right', at: r.point.x }));
   const ceilMarks: PlanMark[] = refl.filter((r) => r.surface === 'ceiling').map((r) => ({ x: r.point.x, y: r.point.y, label: '', kind: 'trap' }));
   return (
     <Panel title={S.tuning.treatTitle}>
       <h3 class="subhead">{S.tuning.reflections}</h3>
-      <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} zones={room.zones} wallMarks={wallMarks} marks={ceilMarks} showDims={false} />
+      <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} zones={room.zones} extensions={room.extensions} openings={room.openings} wallMarks={wallMarks} marks={ceilMarks} showDims={false} />
       <p class="muted small">{S.tuning.reflectionsHint} Кружки на стенах — боковые отражения, кольца внутри — точки на потолке.</p>
       <ul class="plain-list small">
         {refl.map((r) => (

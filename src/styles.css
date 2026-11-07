@@ -20,6 +20,7 @@
   --tangential: #7d8fd8;
   --oblique: #b9c2c4;
   --zone: rgba(45, 69, 194, 0.08);
+  --arch: #c0662a;
 
   --font: 'Golos Text', -apple-system, 'Segoe UI', Roboto, sans-serif;
   --r-panel: 18px;
@@ -49,6 +50,7 @@
     --tangential: #5d6db0;
     --oblique: #4b585f;
     --zone: rgba(141, 156, 255, 0.1);
+    --arch: #f0a46c;
     color-scheme: dark;
   }
 }
@@ -69,6 +71,7 @@
   --tangential: #5d6db0;
   --oblique: #4b585f;
   --zone: rgba(141, 156, 255, 0.1);
+  --arch: #f0a46c;
   color-scheme: dark;
 }
 
@@ -398,3 +401,24 @@ td.num { text-align: right; }
 .legend__item--probe::before { background: var(--good); }
 .legend__item--compare::before { background: var(--tangential); }
 .legend__item--measured::before { background: var(--warn); }
+
+/* ---------- смежные помещения, проёмы, разбор скана ---------- */
+.plan__ext-floor { fill: var(--surface); opacity: 0.7; }
+.plan__ext-wall { stroke: var(--ink); stroke-width: 3; }
+.plan__ext-open { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.plan__arch { fill: var(--surface); stroke: var(--arch); stroke-width: 1.5; }
+.plan__gap { fill: var(--surface); stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 2; }
+
+.layout-editor { position: relative; width: 100%; max-width: 100%; border-radius: 12px; background: var(--paper); overflow: hidden; }
+.layout-editor__scan { position: absolute; inset: 0; color: var(--muted); }
+.layout-editor__svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.layout-editor__room { fill: var(--zone); stroke: var(--ink); stroke-width: 2; }
+.layout-editor__front { stroke: var(--accent); stroke-width: 4; }
+.layout-editor__ext { fill: none; stroke: var(--arch); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.layout-editor__arch { stroke: var(--arch); stroke-width: 5; }
+.layout-editor__opening { stroke: var(--muted); stroke-width: 4; stroke-dasharray: 4 3; }
+.layout-editor__handle { cursor: grab; touch-action: none; }
+.layout-editor__handle circle:not(.plan__hit) { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.layout-editor__dims { fill: var(--ink); font-size: 13px; font-weight: 600; }
+.model-tag { display: inline-block; align-self: flex-start; margin-top: 2px; padding: 1px 8px; border-radius: var(--r-chip); background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; }
+.sysmodes-table td.is-corridor { color: var(--arch); }

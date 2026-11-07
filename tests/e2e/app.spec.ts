@@ -84,3 +84,24 @@ test('002 US8: импорт замера REW', async ({ page }) => {
   await page.getByRole('button', { name: 'Подстроить модель' }).click();
   await expect(page.getByText(/Затухание мод ×/)).toBeVisible({ timeout: 20_000 });
 });
+
+test('003: коридор за аркой — моды системы и волновая модель', async ({ page }) => {
+  await page.goto('/#room');
+  await page.getByRole('button', { name: 'Добавить коридор' }).click();
+  await expect(page.locator('.plan__ext').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Моды' }).click();
+  await expect(page.locator('.sysmodes-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Расстановка' }).click();
+  await page.getByRole('radio', { name: 'Вручную' }).click();
+  await expect(page.locator('.best-list li').first()).toBeVisible({ timeout: 40_000 });
+  await expect(page.locator('.model-tag').first()).toContainText('волновая');
+});
+
+test('003: скан с коридором — найдены арка и коридор', async ({ page }) => {
+  await page.goto('/#room');
+  await page.setInputFiles('#scan-file', 'tests/fixtures/out/sample-corridor.obj');
+  await expect(page.locator('.layout-editor')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/Коридор за .* стеной/)).toBeVisible();
+  await page.getByRole('button', { name: 'Применить размеры' }).click();
+  await expect(page.locator('.topbar__room')).toContainText(/5,00 × (3,99|4,00)/);
+});

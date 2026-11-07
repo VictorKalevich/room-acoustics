@@ -255,7 +255,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
       <div ref={resultRef}>
         {!result && !running && (
           <Panel>
-            <PlanView depth={room.depth} width={room.width} zones={room.zones} listenerZone={[c.listenerMinX, c.listenerMaxX]} />
+            <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} listenerZone={[c.listenerMinX, c.listenerMaxX]} />
             <p class="small">{S.placement.empty}</p>
           </Panel>
         )}
@@ -276,7 +276,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
               ))}
             </div>
             <ScoreLine p={current} baseline={result.baseline} isBaseline={sel === variants.length - 1} />
-            <PlanView depth={room.depth} width={room.width} placement={current} zones={room.zones} />
+            <PlanView depth={room.depth} width={room.width} placement={current} zones={room.zones} extensions={room.extensions} openings={room.openings} />
             <button type="button" class="btn" onClick={() => openManual(current)}>{S.manual.openManual}</button>
             <Positions p={current} />
             <h3 class="subhead">{S.placement.response}</h3>

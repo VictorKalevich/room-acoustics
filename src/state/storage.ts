@@ -6,7 +6,7 @@ import { SURFACES } from '../core/types';
 import { MATERIAL_BY_ID } from '../core/materials';
 
 export const FILE_FORMAT = 'room-acoustics-project';
-export const FILE_VERSION = 2;
+export const FILE_VERSION = 3;
 export const FILE_EXT = '.roomacoustics.json';
 
 export function serializeProject(p: Project): string {
@@ -35,6 +35,9 @@ export function normalizeProject(raw: any): Project {
   if (!Array.isArray(room.zones)) room.zones = [];
   if (!['sealed', 'typical', 'door', 'open'].includes(room.leakage)) room.leakage = 'typical';
   if (room.calibration && !(room.calibration.dampingScale > 0)) room.calibration = null;
+  if (!Array.isArray(room.openings)) room.openings = [];
+  if (!Array.isArray(room.extensions)) room.extensions = [];
+  if (!['auto', 'modal', 'wave'].includes(room.model)) room.model = 'auto';
   const roomErr = validateRoom(room);
   if (roomErr.length) throw new Error(`Неверные данные комнаты: ${roomErr.map((e) => e.message).join('; ')}`);
   const rawSources: SourceSpec[] = Array.isArray(raw.sources) && raw.sources.length ? raw.sources : defaultSources(2, 1);

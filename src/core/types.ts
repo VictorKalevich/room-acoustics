@@ -23,6 +23,36 @@ export interface Zone {
   canSit: boolean;
 }
 
+export type WallId = 'front' | 'back' | 'left' | 'right';
+
+/** Проём в стене наружу или в большой объём (поглощает звук полностью). */
+export interface Opening {
+  id: string;
+  wall: WallId;
+  /** Участок вдоль стены, м: для передней/задней — от левой стены, для левой/правой — от передней. */
+  a0: number;
+  a1: number;
+  height: number;
+}
+
+/** Смежное помещение (например, коридор), примыкающее к стене комнаты, с аркой между ними. */
+export interface Extension {
+  id: string;
+  name: string;
+  wall: WallId;
+  a0: number;
+  a1: number;
+  depth: number;
+  height: number;
+  arch: { a0: number; a1: number; height: number };
+  /** Концы вдоль стены (в сторону меньшей / большей координаты) и дальняя сторона открыты. */
+  openStart: boolean;
+  openEnd: boolean;
+  openFar: boolean;
+}
+
+export type AcousticModel = 'auto' | 'modal' | 'wave';
+
 export interface Calibration {
   /** Множитель затухания мод (подстройка по замеру). */
   dampingScale: number;
@@ -39,6 +69,9 @@ export interface Room {
   zones: Zone[];
   leakage: Leakage;
   calibration: Calibration | null;
+  openings: Opening[];
+  extensions: Extension[];
+  model: AcousticModel;
 }
 
 /** Коэффициенты поглощения по октавам 63, 125, 250, 500, 1000, 2000, 4000 Гц. */

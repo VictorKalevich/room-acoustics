@@ -14,7 +14,7 @@ describe('файл проекта', () => {
 
   it('чужой формат и новая версия отклоняются', () => {
     expect(() => parseProjectFile('{"format":"x","version":1}')).toThrow(/не файл проекта/);
-    expect(() => parseProjectFile('{"format":"room-acoustics-project","version":3}')).toThrow(/новой версией/);
+    expect(() => parseProjectFile('{"format":"room-acoustics-project","version":4}')).toThrow(/новой версией/);
     expect(() => parseProjectFile('not json')).toThrow();
   });
 
@@ -65,6 +65,20 @@ describe('модель проекта', () => {
     expect(r.width).toBe(p.room.depth);
     expect(r.materials.front).toBe('glass');
     expect(rotateRoom(rotateRoom(rotateRoom(rotateRoom(p.room))))).toEqual(p.room);
+  });
+
+  it('проёмы и коридоры поворачиваются вместе с комнатой (4 поворота = исходное)', () => {
+    const p = newProject();
+    p.room.openings = [{ id: 'o', wall: 'left', a0: 1, a1: 2, height: 2 }];
+    p.room.extensions = [{ id: 'e', name: 'Коридор', wall: 'right', a0: 0, a1: 5, depth: 1.2, height: 2.5, arch: { a0: 1, a1: 2.4, height: 2.1 }, openStart: true, openEnd: false, openFar: false }];
+    const r1 = rotateRoom(p.room);
+    expect(r1.openings[0]).toMatchObject({ wall: 'front', a0: 3, a1: 4 });
+    expect(r1.extensions[0]).toMatchObject({ wall: 'back', a0: 0, a1: 5, openStart: false, openEnd: true });
+    expect(r1.extensions[0].arch).toMatchObject({ a0: 2.6, a1: 4 });
+    const back = rotateRoom(rotateRoom(rotateRoom(r1)));
+    expect(back.openings).toEqual(p.room.openings);
+    expect(back.extensions[0].arch.a0).toBeCloseTo(1, 9);
+    expect(back.extensions[0].openStart).toBe(true);
   });
 
   it('зоны поворачиваются вместе с комнатой', () => {

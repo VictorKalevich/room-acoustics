@@ -7,6 +7,8 @@ import {
   MIN_LISTEN_DIST, evaluateSetup, filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed,
   speakerPenalties, sumPenalties, type EvalCtx, type Spectrum,
 } from './system';
+import { isWave } from './geometry';
+import { waveSpectra } from './acoustics';
 
 export interface PlacementInput {
   room: Room;
@@ -68,7 +70,8 @@ export function subCandidates(room: Room, c: Constraints, h: number, step = 0.25
 
 function listenerPositions(room: Room, c: Constraints): number[] {
   const len = c.listenerMaxX - c.listenerMinX;
-  const step = Math.max(0.05, Math.ceil((len / 30) * 20) / 20);
+  // волновая модель: каждое место слушателя — отдельный расчёт, поэтому шаг крупнее
+  const step = isWave(room) ? Math.max(0.25, Math.ceil((len / 12) * 20) / 20) : Math.max(0.05, Math.ceil((len / 30) * 20) / 20);
   return range(c.listenerMinX, c.listenerMaxX, step).filter((x) => {
     if (x <= 0 || x >= room.depth) return false;
     const { pts } = receiverSet(room, c, { x, y: room.width / 2, z: c.earHeight });
@@ -168,7 +171,10 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   const { room, sources, constraints: c } = input;
   const ctx = makeCtx(room, sources);
   const { pm } = ctx;
-  const freqs = logFreqs(ctx.fLo, ctx.fHi, 12);
+  const wave = isWave(room);
+  // волновая модель: поиск на более грубой сетке (≤ 180 Гц), итог — на полной
+  const searchFMax = 180;
+  const freqs = logFreqs(ctx.fLo, wave ? Math.min(ctx.fHi, searchFMax / 1.08) : ctx.fHi, 12);
   const nF = freqs.length;
   const { filt, target } = filterSet(sources, freqs);
 
@@ -207,8 +213,14 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   }
 
   const cfgPts = cfgs.map((cfg) => speakerPoints(cfg, room, spkH));
-  const cfgPsi = cfgPts.map((pts) => pts.map((p) => modeShapes(pm, p)));
-  const subPsi = subPts.map((p) => modeShapes(pm, p));
+  const cfgPsi = wave ? [] : cfgPts.map((pts) => pts.map((p) => modeShapes(pm, p)));
+  const subPsi = wave ? [] : subPts.map((p) => modeShapes(pm, p));
+  // волновая модель: все точки-кандидаты одним списком
+  const cfgOffset: number[] = [];
+  const allPts: Vec3[] = [];
+  cfgPts.forEach((pts) => { cfgOffset.push(allPts.length); allPts.push(...pts); });
+  const subOffset = allPts.length;
+  allPts.push(...subPts);
 
   const listeners = listenerPositions(room, c);
   if (!listeners.length) {
@@ -241,7 +253,15 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     const listener = { x: lx, y: room.width / 2, z: c.earHeight };
     const { pts: rcv, weights } = receiverSet(room, c, listener);
     const nR = rcv.length;
-    const kernels: Kernel[] = rcv.map((r) => receiverKernel(pm, r, freqs));
+    const kernels: Kernel[] = wave ? [] : rcv.map((r) => receiverKernel(pm, r, freqs));
+    const waveResp = wave
+      ? rcv.map((r, ri) => waveSpectra(room, searchFMax, r, allPts, freqs, onProgress && ((v) => onProgress((li + (ri + v) / nR) / listeners.length))))
+      : [];
+    /** Отклик точки-кандидата (индекс в allPts) в приёмнике r. */
+    const respAt = (r: number, idx: number, psi?: Float64Array): [Float64Array, Float64Array] => {
+      if (wave) { const sp = waveResp[r][idx]; return [sp.re, sp.im]; }
+      return applyKernel(kernels[r], psi!);
+    };
     const weighted = (rs: Resp[], tgt: number[], from = 0) => {
       const t = from ? tgt.slice(from) : tgt;
       let s = 0;
@@ -256,9 +276,9 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     const spkEvals: SpkEval[] = [];
     if (spkSpecs.length) {
       for (const { i } of okCfg) {
-        const resp = kernels.map((k) => {
+        const resp = rcv.map((_, r) => {
           const acc: Resp = { re: new Float64Array(nF), im: new Float64Array(nF) };
-          cfgPsi[i].forEach((psi, si) => addInto(acc, withFilter(applyKernel(k, psi), spkIds[si])));
+          cfgPts[i].forEach((_p, si) => addInto(acc, withFilter(respAt(r, cfgOffset[i] + si, cfgPsi[i]?.[si]), spkIds[si])));
           return acc;
         });
         const pen = sumPenalties(speakerPenalties(ctx, listener, cfgPts[i]).penalties);
@@ -285,7 +305,7 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     }
 
     const subResp: Resp[][][] = subSpecs.map((s) =>
-      subPts.map((_, pi) => kernels.map((k) => withFilter(applyKernel(k, subPsi[pi]), s.id))),
+      subPts.map((_, pi) => rcv.map((_r, r) => withFilter(respAt(r, subOffset + pi, subPsi[pi]), s.id))),
     );
 
     const top = spkSpecs.length ? spkEvals.slice(0, subSpecs.length > 1 ? 3 : 4) : [null];
@@ -379,7 +399,7 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   const baseline = toPlacement(ctx, sources, c, base.listener, base.positions);
 
   found.sort((a, b) => a.score - b.score);
-  const shortlist = found.slice(0, 8).map((f) => toPlacement(ctx, sources, c, f.listener, f.positions));
+  const shortlist = found.slice(0, wave ? 4 : 8).map((f) => toPlacement(ctx, sources, c, f.listener, f.positions));
   shortlist.push(baseline);
   shortlist.sort((a, b) => a.score - b.score);
 
@@ -396,6 +416,7 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   best.sort((a, b) => a.score - b.score);
 
   const notes = [...ctx.notes];
+  if (wave) notes.push('Расчёт по волновой модели (комната со смежными помещениями): поиск на сетке до 180 Гц, итоговые варианты — на полной.');
   if (baseline.score - best[0].score < 0.3) notes.push('Базовая расстановка уже близка к оптимальной для этой комнаты.');
   return {
     best,

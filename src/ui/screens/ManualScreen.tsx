@@ -3,7 +3,9 @@ import type { Project } from '../../state/project';
 import { makeId } from '../../state/project';
 import type { Setup, Vec3 } from '../../core/types';
 import type { Heatmap } from '../../core/field';
-import { evaluateSetup, type SetupEval } from '../../core/system';
+import { evaluateSetup } from '../../core/system';
+import { isWave } from '../../core/geometry';
+import { useSetupEval } from '../useEval';
 import { compute, type ComputeJob } from '../compute';
 import { PlanView, HeatLegend, type PlanItem, type PlanMark } from '../components/PlanView';
 import { ResponseChart } from '../components/Charts';
@@ -37,7 +39,8 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
   const effMode: Mode = mode === 'sub' && subs.length ? 'sub' : 'listener';
   const effSub = subs.some((s) => s.id === subId) ? subId : subs[0]?.id ?? '';
 
-  const evalCur = useMemo(() => evaluateSetup(room, sources, c, current), [room, sources, c, current]);
+  const { ev: evalCurMaybe, busy: evalBusy } = useSetupEval(room, sources, c, current);
+  const wave = isWave(room);
 
   // Пересчёт карты с задержкой (во время перетаскивания не дёргаем воркер)
   useEffect(() => {
@@ -71,16 +74,16 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
 
   const placeSearched = (pos: { x: number; y: number }) => move(effMode === 'sub' ? effSub : 'listener', pos);
 
-  const probeEval: SetupEval | null = useMemo(() => {
+  const probeSetup = useMemo(() => {
     if (!probe) return null;
-    const s = effMode === 'sub'
+    return effMode === 'sub'
       ? { ...current, positions: { ...current.positions, [effSub]: { x: probe.x, y: probe.y, z: current.positions[effSub]?.z ?? 0.3 } } }
       : { ...current, listener: { x: probe.x, y: probe.y, z: c.earHeight } };
-    return evaluateSetup(room, sources, c, s);
-  }, [probe, current, effMode, effSub, room, sources, c]);
+  }, [probe, current, effMode, effSub, c.earHeight]);
+  const { ev: probeEval } = useSetupEval(room, sources, c, probeSetup);
 
   const compareSetup = project.setups.find((s) => s.id === compareId) ?? null;
-  const compareEval = useMemo(() => (compareSetup ? evaluateSetup(room, sources, c, compareSetup) : null), [compareSetup, room, sources, c]);
+  const { ev: compareEval } = useSetupEval(room, sources, c, compareSetup);
 
   const items: PlanItem[] = [
     ...sources.filter((s) => current.positions[s.id]).map((s) => ({
@@ -94,6 +97,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
   ];
 
   const selItem = items.find((i) => i.id === selected) ?? null;
+  const evalCur = evalCurMaybe;
   const itemName = (id: string) => (id === 'listener' ? S.placement.listener : S.placement.sourceName(id));
 
   const saveVariant = () => {
@@ -121,8 +125,8 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
           depth={room.depth}
           width={room.width}
           items={items}
-          seats={evalCur.seats}
-          zones={room.zones}
+          seats={evalCur?.seats ?? []}
+          zones={room.zones} extensions={room.extensions} openings={room.openings}
           heatmap={heat}
           marks={marks}
           selectedId={selected}
@@ -147,13 +151,14 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
       <Panel title={S.manual.best}>
         <div class="score">
           <div class="score__main">
-            <span class="score__value">{fmt(evalCur.score, 1)}</span>
+            <span class="score__value">{evalCur ? fmt(evalCur.score, 1) : '…'}</span>
             <span class="score__unit">дБ</span>
           </div>
           <div class="score__text">
             <span class="score__label">{S.manual.current}</span>
             <span class="muted small">{S.placement.scoreHint}</span>
-            {evalCur.angleDeg != null && <span class="muted small">{S.placement.angle}: {fmt(evalCur.angleDeg, 0)}°</span>}
+            {evalCur?.angleDeg != null && <span class="muted small">{S.placement.angle}: {fmt(evalCur.angleDeg, 0)}°</span>}
+            <span class="model-tag">{wave ? S.model.waveTag : S.model.modalTag}</span>
           </div>
         </div>
         {heat && heat.best.length === 0 && <Note tone="warn">{S.manual.noBest}</Note>}
@@ -188,23 +193,29 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
           </div>
         )}
         <h3 class="subhead">{S.manual.responseHere}</h3>
-        <ResponseChart
-          fLo={evalCur.fLo}
-          fHi={evalCur.fHi}
-          lines={[
-            { f: evalCur.response.f, db: evalCur.response.target, cls: 'is-target', dash: true },
-            ...(compareEval ? [{ f: compareEval.response.f, db: compareEval.response.db, cls: 'is-compare' }] : []),
-            ...(probeEval ? [{ f: probeEval.response.f, db: probeEval.response.db, cls: 'is-probe' }] : []),
-            { f: evalCur.response.f, db: evalCur.response.db, cls: 'is-room' },
-          ]}
-        />
-        <div class="legend">
-          <span class="legend__item legend__item--room">{S.manual.legendCurrent}</span>
-          {probeEval && <span class="legend__item legend__item--probe">{S.manual.legendProbe}</span>}
-          {compareEval && <span class="legend__item legend__item--compare">{S.manual.legendCompare}</span>}
-          <span class="legend__item legend__item--target">{S.placement.legendTarget}</span>
-        </div>
-        {evalCur.penalties.length > 0 && <ul class="plain-list small">{evalCur.penalties.map((p) => <li>{p.name}</li>)}</ul>}
+        {evalCur ? (
+          <>
+            <ResponseChart
+              fLo={evalCur.fLo}
+              fHi={evalCur.fHi}
+              lines={[
+                { f: evalCur.response.f, db: evalCur.response.target, cls: 'is-target', dash: true },
+                ...(compareEval ? [{ f: compareEval.response.f, db: compareEval.response.db, cls: 'is-compare' }] : []),
+                ...(probeEval ? [{ f: probeEval.response.f, db: probeEval.response.db, cls: 'is-probe' }] : []),
+                { f: evalCur.response.f, db: evalCur.response.db, cls: 'is-room' },
+              ]}
+            />
+            <div class="legend">
+              <span class="legend__item legend__item--room">{S.manual.legendCurrent}</span>
+              {probeEval && <span class="legend__item legend__item--probe">{S.manual.legendProbe}</span>}
+              {compareEval && <span class="legend__item legend__item--compare">{S.manual.legendCompare}</span>}
+              <span class="legend__item legend__item--target">{S.placement.legendTarget}</span>
+            </div>
+            {evalCur.penalties.length > 0 && <ul class="plain-list small">{evalCur.penalties.map((p) => <li>{p.name}</li>)}</ul>}
+          </>
+        ) : (
+          <p class="progress-text small">{evalBusy && <span class="spinner" aria-hidden="true" />} {S.model.computing}</p>
+        )}
       </Panel>
 
       {selItem && (
@@ -250,7 +261,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
               <VariantRow
                 key={s.id}
                 setup={s}
-                score={evaluateSetup(room, sources, c, s, { ppo: 12 }).score}
+                score={wave ? null : evaluateSetup(room, sources, c, s, { ppo: 12 }).score}
                 comparing={compareId === s.id}
                 onLoad={() => onSetup({ ...JSON.parse(JSON.stringify(s)), id: current.id, name: current.name })}
                 onCompare={() => setCompareId(compareId === s.id ? null : s.id)}
@@ -259,7 +270,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
             ))}
           </ul>
         )}
-        {compareEval && compareSetup && (
+        {compareEval && compareSetup && evalCur && (
           <Note>
             {S.manual.compared(compareSetup.name)}: {fmt(compareEval.score, 1)} дБ против {fmt(evalCur.score, 1)} дБ у текущей.
           </Note>
@@ -279,12 +290,12 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
 
 const spkPair = (sources: Project['sources']) => sources.filter((s) => s.kind === 'speaker').length === 2;
 
-function VariantRow(p: { setup: Setup; score: number; comparing: boolean; onLoad: () => void; onCompare: () => void; onDelete: () => void; key?: string }) {
+function VariantRow(p: { setup: Setup; score: number | null; comparing: boolean; onLoad: () => void; onCompare: () => void; onDelete: () => void; key?: string }) {
   return (
     <li>
       <div>
         <strong>{p.setup.name}</strong>
-        <span class="muted small">{fmt(p.score, 1)} дБ</span>
+        {p.score != null && <span class="muted small">{fmt(p.score, 1)} дБ</span>}
       </div>
       <div class="btn-row btn-row--tight">
         <button type="button" class="btn btn--small" onClick={p.onLoad}>{S.manual.load}</button>

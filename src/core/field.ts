@@ -8,6 +8,23 @@ import {
   filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed, speakerPenalties, sumPenalties,
   type EvalCtx, type Spectrum,
 } from './system';
+import { isWave } from './geometry';
+import { waveFMax, waveSpectra } from './acoustics';
+
+/** Неровность суммы источников по их откликам в точке (фильтры уже включают регулировки). */
+function flatFromSpectra(parts: { h: Spectrum; f: Spectrum }[], target: number[], fixed?: Spectrum): number {
+  const n = target.length;
+  const re = fixed ? Float64Array.from(fixed.re) : new Float64Array(n);
+  const im = fixed ? Float64Array.from(fixed.im) : new Float64Array(n);
+  for (const { h, f } of parts)
+    for (let j = 0; j < n; j++) {
+      re[j] += h.re[j] * f.re[j] - h.im[j] * f.im[j];
+      im[j] += h.re[j] * f.im[j] + h.im[j] * f.re[j];
+    }
+  const d = new Float64Array(n);
+  for (let j = 0; j < n; j++) d[j] = 10 * Math.log10(Math.max(re[j] * re[j] + im[j] * im[j], 1e-24));
+  return flatnessScore(d, target);
+}
 
 export interface Heatmap {
   kind: 'listener' | 'sub';
@@ -81,7 +98,7 @@ function flatAt(ctx: EvalCtx, r: Vec3, freqs: number[], psis: { psi: Float64Arra
  * Карта мест слушателя: источники фиксированы. Неровность считается в каждом узле сетки один раз,
  * оценка места — взвешенная сумма по его точкам (места ряда или сдвиги головы), взятым из ближайших узлов.
  */
-export function listenerHeatmap(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, opts: { step?: number; ppo?: number } = {}): Heatmap {
+export function listenerHeatmap(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, opts: { step?: number; ppo?: number; onProgress?: (v: number) => void } = {}): Heatmap {
   const t0 = Date.now();
   const step = opts.step ?? 0.1;
   const ctx = makeCtx(room, sources);
@@ -97,8 +114,18 @@ export function listenerHeatmap(room: Room, sources: SourceSpec[], c: Constraint
   const fy = grid(0.1, room.width - 0.1, step);
   const fNy = fy.length;
   const flat = new Float32Array(fx.length * fNy);
-  for (let i = 0; i < fx.length; i++)
-    for (let j = 0; j < fNy; j++) flat[i * fNy + j] = flatAt(ctx, { x: fx[i], y: fy[j], z }, freqs, psis, target);
+  const wave = isWave(room);
+  const fMax = waveFMax(ctx.fHi);
+  if (wave) {
+    // по расчёту из каждого источника: отклики во всех узлах слоя высоты ушей
+    const pts: Vec3[] = [];
+    for (let i = 0; i < fx.length; i++) for (let j = 0; j < fNy; j++) pts.push({ x: fx[i], y: fy[j], z });
+    const per = active.map((s, k) => waveSpectra(room, fMax, setup.positions[s.id], pts, freqs, opts.onProgress && ((v) => opts.onProgress!((k + v) / active.length))));
+    for (let q = 0; q < pts.length; q++) flat[q] = flatFromSpectra(active.map((s, k) => ({ h: per[k][q], f: filt[s.id] })), target);
+  } else {
+    for (let i = 0; i < fx.length; i++)
+      for (let j = 0; j < fNy; j++) flat[i * fNy + j] = flatAt(ctx, { x: fx[i], y: fy[j], z }, freqs, psis, target);
+  }
   const lookup = (p: { x: number; y: number }) => {
     const i = Math.round((p.x - 0.1) / step);
     const j = Math.round((p.y - 0.1) / step);
@@ -131,7 +158,12 @@ export function listenerHeatmap(room: Room, sources: SourceSpec[], c: Constraint
   // Текущее место — точно, без привязки к сетке
   const cur = receiverSet(room, c, setup.listener);
   let current = 0;
-  cur.pts.forEach((p, r) => (current += cur.weights[r] * flatAt(ctx, p, freqs, psis, target)));
+  if (wave) {
+    const per = active.map((s) => waveSpectra(room, fMax, setup.positions[s.id], cur.pts, freqs));
+    cur.pts.forEach((_, r) => (current += cur.weights[r] * flatFromSpectra(active.map((s, k) => ({ h: per[k][r], f: filt[s.id] })), target)));
+  } else {
+    cur.pts.forEach((p, r) => (current += cur.weights[r] * flatAt(ctx, p, freqs, psis, target)));
+  }
   current += sumPenalties(speakerPenalties(ctx, setup.listener, spk).penalties);
 
   return {
@@ -153,7 +185,7 @@ function subZoneOk(room: Room, c: Constraints, p: { x: number; y: number }): boo
  * Карта мест сабвуфера (цифровой subwoofer crawl): слушатель и остальные источники фиксированы.
  * По взаимности H(сабвуфер→слушатель) = H(слушатель→сабвуфер), как при ползании с микрофоном.
  */
-export function subHeatmap(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, subId: string, opts: { step?: number; ppo?: number } = {}): Heatmap {
+export function subHeatmap(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, subId: string, opts: { step?: number; ppo?: number; onProgress?: (v: number) => void } = {}): Heatmap {
   const t0 = Date.now();
   const step = opts.step ?? 0.1;
   const ctx = makeCtx(room, sources);
@@ -163,59 +195,77 @@ export function subHeatmap(room: Room, sources: SourceSpec[], c: Constraints, se
   const sub = sources.find((s) => s.id === subId);
   if (!sub) throw new Error(`Нет сабвуфера ${subId}`);
   const { pts, weights } = receiverSet(room, c, setup.listener);
-  const kernels = pts.map((r) => receiverKernel(ctx.pm, r, freqs));
   const others = sources.filter((s) => s.id !== subId && setup.positions[s.id]);
-  // Сумма остальных источников в каждой точке оценки
-  const fixed: Spectrum[] = kernels.map((k) => {
-    const re = new Float64Array(n);
-    const im = new Float64Array(n);
-    for (const s of others) {
-      const [hr, hi] = applyKernel(k, modeShapes(ctx.pm, setup.positions[s.id]));
-      const f = filt[s.id];
-      for (let j = 0; j < n; j++) {
-        re[j] += hr[j] * f.re[j] - hi[j] * f.im[j];
-        im[j] += hr[j] * f.im[j] + hi[j] * f.re[j];
-      }
-    }
-    return { re, im };
-  });
   const spk = sources.filter((s) => s.kind === 'speaker' && setup.positions[s.id]).map((s) => setup.positions[s.id]);
   const pen = sumPenalties(speakerPenalties(ctx, setup.listener, spk).penalties);
   const fs = filt[subId];
-  const d = new Float64Array(n);
-  const scoreAt = (p: Vec3) => {
-    const psi = modeShapes(ctx.pm, p);
-    let s = pen;
-    kernels.forEach((k, r) => {
-      const [hr, hi] = applyKernel(k, psi);
-      for (let j = 0; j < n; j++) {
-        const re = fixed[r].re[j] + hr[j] * fs.re[j] - hi[j] * fs.im[j];
-        const im = fixed[r].im[j] + hr[j] * fs.im[j] + hi[j] * fs.re[j];
-        d[j] = 10 * Math.log10(Math.max(re * re + im * im, 1e-24));
-      }
-      s += weights[r] * flatnessScore(d, target);
-    });
-    return s;
-  };
-
   const g = Math.max(0.05, c.subWallGap);
   const xs = grid(g, room.depth - g, step);
   const ys = grid(g, room.width - g, step);
   const ny = ys.length;
   const scores = new Float32Array(xs.length * ny).fill(NaN);
   const allowed = new Uint8Array(xs.length * ny);
+  const cands: { idx: number; p: Vec3 }[] = [];
   for (let i = 0; i < xs.length; i++)
     for (let j = 0; j < ny; j++) {
       const p = { x: xs[i], y: ys[j], z: sub.height };
       if (!sourceAllowed(room, p, 0.1)) continue;
       if (Math.hypot(p.x - setup.listener.x, p.y - setup.listener.y) < 0.4) continue;
-      scores[i * ny + j] = scoreAt(p);
+      cands.push({ idx: i * ny + j, p });
       allowed[i * ny + j] = subZoneOk(room, c, p) ? 1 : 0;
     }
   const cur = setup.positions[subId];
+
+  // отклики «точка → приёмник r»: остальные источники, кандидаты и текущее место сабвуфера
+  const fixed: Spectrum[] = [];
+  const candResp: Spectrum[][] = pts.map(() => []);
+  const curResp: (Spectrum | null)[] = pts.map(() => null);
+  if (isWave(room)) {
+    const fMax = waveFMax(ctx.fHi);
+    const pointList = [...others.map((s) => setup.positions[s.id]), ...cands.map((q) => q.p), ...(cur ? [cur] : [])];
+    pts.forEach((r, ri) => {
+      const sp = waveSpectra(room, fMax, r, pointList, freqs, opts.onProgress && ((v) => opts.onProgress!((ri + v) / pts.length)));
+      const re = new Float64Array(n), im = new Float64Array(n);
+      others.forEach((s, k) => {
+        const h = sp[k], f = filt[s.id];
+        for (let j = 0; j < n; j++) { re[j] += h.re[j] * f.re[j] - h.im[j] * f.im[j]; im[j] += h.re[j] * f.im[j] + h.im[j] * f.re[j]; }
+      });
+      fixed.push({ re, im });
+      candResp[ri] = sp.slice(others.length, others.length + cands.length);
+      curResp[ri] = cur ? sp[sp.length - 1] : null;
+    });
+  } else {
+    pts.forEach((r, ri) => {
+      const k = receiverKernel(ctx.pm, r, freqs);
+      const re = new Float64Array(n), im = new Float64Array(n);
+      for (const s of others) {
+        const [hr, hi] = applyKernel(k, modeShapes(ctx.pm, setup.positions[s.id]));
+        const f = filt[s.id];
+        for (let j = 0; j < n; j++) { re[j] += hr[j] * f.re[j] - hi[j] * f.im[j]; im[j] += hr[j] * f.im[j] + hi[j] * f.re[j]; }
+      }
+      fixed.push({ re, im });
+      candResp[ri] = cands.map((q) => { const [a, b] = applyKernel(k, modeShapes(ctx.pm, q.p)); return { re: a, im: b }; });
+      if (cur) { const [a, b] = applyKernel(k, modeShapes(ctx.pm, cur)); curResp[ri] = { re: a, im: b }; }
+    });
+  }
+  const d = new Float64Array(n);
+  const scoreFrom = (resp: (ri: number) => Spectrum) => {
+    let s = pen;
+    for (let ri = 0; ri < pts.length; ri++) {
+      const h = resp(ri);
+      for (let j = 0; j < n; j++) {
+        const re = fixed[ri].re[j] + h.re[j] * fs.re[j] - h.im[j] * fs.im[j];
+        const im = fixed[ri].im[j] + h.re[j] * fs.im[j] + h.im[j] * fs.re[j];
+        d[j] = 10 * Math.log10(Math.max(re * re + im * im, 1e-24));
+      }
+      s += weights[ri] * flatnessScore(d, target);
+    }
+    return s;
+  };
+  cands.forEach((q, ci) => (scores[q.idx] = scoreFrom((ri) => candResp[ri][ci])));
   return {
     kind: 'sub', subId, x0: xs[0], y0: ys[0], step, nx: xs.length, ny, scores, allowed,
-    best: pickBest(xs, ys, scores, allowed, ny), current: cur ? scoreAt(cur) : NaN, ...minMax(scores),
+    best: pickBest(xs, ys, scores, allowed, ny), current: cur ? scoreFrom((ri) => curResp[ri]!) : NaN, ...minMax(scores),
     elapsedMs: Date.now() - t0,
   };
 }

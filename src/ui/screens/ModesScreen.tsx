@@ -1,4 +1,7 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
+import { isWave } from '../../core/geometry';
+import type { SystemMode } from '../../core/fdtd';
+import { compute } from '../compute';
 import type { Mode, ReverbResult, Room } from '../../core/types';
 import { bonelloCheck, modeIssues, proportionsNotes } from '../../core/modes';
 import { ModeChart } from '../components/Charts';
@@ -35,6 +38,8 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
         </div>
         <p class="muted small">{S.modes.count(modes.length, Math.round(fMax))}. {S.modes.chartCaption}</p>
       </Panel>
+
+      {(isWave(room) || (room.extensions ?? []).length > 0) && <SystemModesPanel room={room} fMax={Math.min(200, Math.max(120, reverb.schroeder))} />}
 
       <Panel title={S.modes.proportions}>
         {notes.length ? notes.map((n) => <Note tone="warn">{n}</Note>) : <Note tone="good">{S.modes.proportionsOk}</Note>}
@@ -95,5 +100,51 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
         </Details>
       </Panel>
     </div>
+  );
+}
+
+function SystemModesPanel({ room, fMax }: { room: Room; fMax: number }) {
+  const [modes, setModes] = useState<SystemMode[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setBusy(true);
+    setError(null);
+    const t = setTimeout(() => {
+      const j = compute<SystemMode[]>('modes', { room, fMax }, setProgress);
+      j.promise.then((m) => { setModes(m); setBusy(false); }).catch((e) => { setError(e.message); setBusy(false); });
+      cancel = j.cancel;
+    }, 400);
+    let cancel = () => clearTimeout(t);
+    return () => cancel();
+  }, [room, fMax]);
+  const shown = (modes ?? []).filter((m) => m.f <= fMax);
+  return (
+    <Panel title={S.sysmodes.title}>
+      <p class="small">{S.sysmodes.intro}</p>
+      {busy && (
+        <div class="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+          <span style={{ width: `${Math.round(progress * 100)}%` }} />
+        </div>
+      )}
+      {error && <Note tone="warn">{error}</Note>}
+      {modes && (
+        <div class="table-scroll">
+          <table class="modes-table sysmodes-table">
+            <thead><tr><th>{S.sysmodes.colF}</th><th>{S.sysmodes.colShare}</th><th /></tr></thead>
+            <tbody>
+              {shown.map((m) => (
+                <tr>
+                  <td class="num">{fmt(m.f, 1)}</td>
+                  <td class={`num${m.roomShare < 0.5 ? ' is-corridor' : ''}`}>{Math.round(m.roomShare * 100)} %</td>
+                  <td class={m.roomShare < 0.5 ? 'is-corridor' : ''}>{m.roomShare < 0.5 ? S.sysmodes.corridorMode : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
   );
 }

@@ -1,6 +1,7 @@
 import type { ReverbResult, Room, SurfaceId } from './types';
 import { SURFACES } from './types';
 import { FURNISHING, OCTAVES, alphaAt, getMaterial } from './materials';
+import { absorbingOpenings, openingArea } from './geometry';
 
 /** Площади поверхностей комнаты, м². */
 export function surfaceAreas(room: Room): Record<SurfaceId, number> {
@@ -25,6 +26,12 @@ export function surfaceAbsorptionAt(room: Room, f: number): Record<SurfaceId, nu
   const out = {} as Record<SurfaceId, number>;
   for (const k of SURFACES) {
     out[k] = alphaAt(getMaterial(room.materials[k]).alpha, f) * S[k] + (furn * S[k]) / total;
+  }
+  // Проёмы поглощают полностью: добавляем (1 − α стены) × площадь проёма
+  for (const o of absorbingOpenings(room)) {
+    const a = openingArea(room, o);
+    const alpha = alphaAt(getMaterial(room.materials[o.wall]).alpha, f);
+    out[o.wall] += a * (1 - alpha);
   }
   return out;
 }

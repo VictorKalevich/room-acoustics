@@ -1,5 +1,6 @@
 import { useRef } from 'preact/hooks';
-import type { Placement, Vec3, Zone } from '../../core/types';
+import type { Extension, Opening, Placement, Room, Vec3, Zone } from '../../core/types';
+import { extensionBox } from '../../core/geometry';
 import type { Heatmap } from '../../core/field';
 import { fmt } from '../format';
 import { S } from '../strings';
@@ -31,6 +32,8 @@ interface Props {
   items?: PlanItem[];
   seats?: Vec3[];
   zones?: Zone[];
+  extensions?: Extension[];
+  openings?: Opening[];
   listenerZone?: [number, number] | null;
   heatmap?: Heatmap | null;
   marks?: PlanMark[];
@@ -54,12 +57,19 @@ export function PlanView(p: Props) {
   const { depth, width, showDims = true } = p;
   const W = 320;
   const pad = 30;
-  const scale = Math.min((W - 2 * pad) / width, (W * 1.25 - 2 * pad) / depth);
+  // габариты с учётом смежных помещений
+  const shape = { depth, width, height: 3 } as Room;
+  const extBoxes = (p.extensions ?? []).map((e) => ({ e, b: extensionBox(shape, e) }));
+  const bx0 = Math.min(0, ...extBoxes.map((x) => x.b.x0));
+  const bx1 = Math.max(depth, ...extBoxes.map((x) => x.b.x1));
+  const by0 = Math.min(0, ...extBoxes.map((x) => x.b.y0));
+  const by1 = Math.max(width, ...extBoxes.map((x) => x.b.y1));
+  const scale = Math.min((W - 2 * pad) / (by1 - by0), (W * 1.25 - 2 * pad) / (bx1 - bx0));
   const rw = width * scale;
   const rh = depth * scale;
-  const H = rh + pad + 46;
-  const ox = (W - rw) / 2;
-  const oy = pad;
+  const H = (bx1 - bx0) * scale + pad + 46;
+  const ox = (W - (by1 - by0) * scale) / 2 - by0 * scale;
+  const oy = pad - bx0 * scale;
   const wall = 7;
   const X = (y: number) => ox + y * scale;
   const Y = (x: number) => oy + x * scale;
@@ -131,9 +141,25 @@ export function PlanView(p: Props) {
           <line x1="0" y1="0" x2="0" y2="6" class="plan__zonehatch" />
         </pattern>
       </defs>
+      {extBoxes.map(({ e, b }) => (
+        <g class="plan__ext">
+          <rect x={X(b.y0)} y={Y(b.x0)} width={(b.y1 - b.y0) * scale} height={(b.x1 - b.x0) * scale} class="plan__ext-floor" />
+          {extEdges(e, b).map((ed) => (
+            <line x1={X(ed[1])} y1={Y(ed[0])} x2={X(ed[3])} y2={Y(ed[2])} class={ed[4] ? 'plan__ext-open' : 'plan__ext-wall'} />
+          ))}
+        </g>
+      ))}
       <rect x={ox - wall} y={oy - wall} width={rw + 2 * wall} height={rh + 2 * wall} class="plan__wall" fill="url(#hatch)" />
       <rect x={ox} y={oy} width={rw} height={rh} class="plan__floor" />
       <rect x={ox - wall} y={oy - wall} width={rw + 2 * wall} height={wall} class="plan__front" />
+      {[...(p.extensions ?? []).map((e) => ({ wall: e.wall, a0: e.arch.a0, a1: e.arch.a1, cls: 'plan__arch' })), ...(p.openings ?? []).map((o) => ({ wall: o.wall, a0: o.a0, a1: o.a1, cls: 'plan__gap' }))].map((g) => {
+        const r =
+          g.wall === 'right' ? { x: ox + rw - 1, y: Y(g.a0), w: wall + 2, h: (g.a1 - g.a0) * scale } :
+          g.wall === 'left' ? { x: ox - wall - 1, y: Y(g.a0), w: wall + 2, h: (g.a1 - g.a0) * scale } :
+          g.wall === 'back' ? { x: X(g.a0), y: oy + rh - 1, w: (g.a1 - g.a0) * scale, h: wall + 2 } :
+          { x: X(g.a0), y: oy - wall - 1, w: (g.a1 - g.a0) * scale, h: wall + 2 };
+        return <rect class={g.cls} x={r.x} y={r.y} width={Math.max(1, r.w)} height={Math.max(1, r.h)} />;
+      })}
       <text x={ox + rw / 2} y={oy - wall - 6} class="plan__label" text-anchor="middle">{S.room.front}</text>
 
       {hm && (
@@ -258,6 +284,22 @@ export function heatTop(hm: Heatmap): number {
   const v = Array.from(hm.scores).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
   if (!v.length) return hm.max;
   return Math.max(v[Math.floor(v.length * 0.75)], hm.min + 1);
+}
+
+/** Стороны смежного помещения (кроме стороны у комнаты): [x0, y0, x1, y1, открыта]. */
+function extEdges(e: Extension, b: { x0: number; x1: number; y0: number; y1: number }): [number, number, number, number, boolean][] {
+  const alongX = e.wall === 'left' || e.wall === 'right';
+  const edges: [number, number, number, number, boolean][] = [];
+  if (alongX) {
+    edges.push([b.x0, b.y0, b.x0, b.y1, e.openStart], [b.x1, b.y0, b.x1, b.y1, e.openEnd]);
+    const farY = e.wall === 'right' ? b.y1 : b.y0;
+    edges.push([b.x0, farY, b.x1, farY, e.openFar]);
+  } else {
+    edges.push([b.x0, b.y0, b.x1, b.y0, e.openStart], [b.x0, b.y1, b.x1, b.y1, e.openEnd]);
+    const farX = e.wall === 'back' ? b.x1 : b.x0;
+    edges.push([farX, b.y0, farX, b.y1, e.openFar]);
+  }
+  return edges;
 }
 
 export function HeatLegend({ hm }: { hm: Heatmap }) {

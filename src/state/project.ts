@@ -1,5 +1,6 @@
 import type { Constraints, Room, SourceSpec, SurfaceId, PlacementResult, Setup, Vec3, Zone } from '../core/types';
 import { baselinePositions } from '../core/placement';
+import { rotateExtension, rotateOpening, validateExtension } from '../core/geometry';
 import type { DetectSummary } from '../scan/detect';
 
 export interface Project {
@@ -37,6 +38,9 @@ export function defaultRoom(): Room {
     zones: [],
     leakage: 'typical',
     calibration: null,
+    openings: [],
+    extensions: [],
+    model: 'auto',
   };
 }
 
@@ -144,7 +148,15 @@ export function rotateRoom(room: Room): Room {
     left: m.back,
     right: m.front,
   };
-  return { ...room, depth: room.width, width: room.depth, materials, zones: (room.zones ?? []).map((z) => rotateZone(room, z)) };
+  return {
+    ...room,
+    depth: room.width,
+    width: room.depth,
+    materials,
+    zones: (room.zones ?? []).map((z) => rotateZone(room, z)),
+    openings: (room.openings ?? []).map((o) => rotateOpening(room, o)),
+    extensions: (room.extensions ?? []).map((e) => rotateExtension(room, e)),
+  };
 }
 
 // ---- Валидация ----
@@ -165,6 +177,10 @@ export function validateRoom(room: Room): FieldError[] {
   dim('height', 'Высота', 20);
   if (!Number.isFinite(room.temperatureC) || room.temperatureC < -10 || room.temperatureC > 40) {
     errs.push({ field: 'temperatureC', message: 'Температура: от −10 до 40 °C' });
+  }
+  for (const e of room.extensions ?? []) {
+    const err = validateExtension(room, e);
+    if (err) errs.push({ field: `ext.${e.id}`, message: `${e.name || 'Коридор'}: ${err}` });
   }
   for (const z of room.zones ?? []) {
     if (!(z.x0 < z.x1 && z.y0 < z.y1 && z.x0 >= 0 && z.y0 >= 0 && z.x1 <= room.depth + 1e-6 && z.y1 <= room.width + 1e-6)) {

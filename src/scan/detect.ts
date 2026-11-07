@@ -384,20 +384,30 @@ export function detectRoom(raw: Float32Array, opts: { units?: Units } = {}): Det
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
 
 /**
- * Выбор пары противоположных стен среди пиков гистограммы: на каждой стороне берётся самый
- * весомый пик, но более внешний пик предпочитается, если его вес ≥ 60 % от самого весомого
- * (частично отсканированная стена). Ниши и выступы мебели меньше основной стены и отбрасываются.
+ * Выбор пары противоположных стен среди пиков гистограммы: на каждой стороне берётся самый внутренний пик,
+ * вес которого ≥ 60 % от самого весомого на этой стороне. Так стена комнаты с аркой предпочитается дальней
+ * стене коридора за ней, а ниши и мебель (заметно меньше стены) отбрасываются.
  */
-function pickWalls(p: { pos: number; weight: number }[]): [number, number] {
+function pickWalls(raw: { pos: number; weight: number }[]): [number, number] {
+  // соседние пики ближе 10 см — одна стена (шум скана)
+  const p: { pos: number; weight: number }[] = [];
+  for (const q of [...raw].sort((a, b) => a.pos - b.pos)) {
+    const last = p[p.length - 1];
+    if (last && q.pos - last.pos < 0.1) {
+      const w = last.weight + q.weight;
+      last.pos = (last.pos * last.weight + q.pos * q.weight) / w;
+      last.weight = w;
+    } else p.push({ ...q });
+  }
   const mid = (p[0].pos + p[p.length - 1].pos) / 2;
-  const side = (list: { pos: number; weight: number }[], outerFirst: boolean) => {
-    const sorted = list.slice().sort((a, b) => (outerFirst ? a.pos - b.pos : b.pos - a.pos));
+  const side = (list: { pos: number; weight: number }[], innerFirst: (a: { pos: number }, b: { pos: number }) => number) => {
+    const sorted = list.slice().sort(innerFirst);
     const maxW = Math.max(...sorted.map((x) => x.weight));
     return sorted.find((x) => x.weight >= 0.6 * maxW)!.pos;
   };
   const lowSide = p.filter((x) => x.pos <= mid);
   const highSide = p.filter((x) => x.pos > mid);
-  const lo = lowSide.length ? side(lowSide, true) : p[0].pos;
-  const hi = highSide.length ? side(highSide, false) : p[p.length - 1].pos;
+  const lo = lowSide.length ? side(lowSide, (a, b) => b.pos - a.pos) : p[0].pos;
+  const hi = highSide.length ? side(highSide, (a, b) => a.pos - b.pos) : p[p.length - 1].pos;
   return [lo, hi];
 }

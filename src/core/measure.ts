@@ -2,6 +2,7 @@
 import type { Constraints, Leakage, Measurement, Room, Setup, SourceSpec } from './types';
 import { logFreqs } from './frequency';
 import { evaluateSetup } from './system';
+import { isWave } from './geometry';
 
 export class MeasureError extends Error {
   constructor(message: string) {
@@ -95,8 +96,10 @@ export interface CalibrationResult {
 export function calibrate(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, m: Measurement): CalibrationResult {
   const rmsBefore = compareMeasurement(room, sources, c, setup, m).rms;
   let best = { dampingScale: room.calibration?.dampingScale ?? 1, leakage: room.leakage, rms: rmsBefore };
+  // в волновой модели утечки заданы проёмами и коридорами явно — подбирается только затухание
+  const leaks = isWave(room) ? [room.leakage] : LEAKAGES;
   for (const k of DAMPING_SCALES)
-    for (const leakage of LEAKAGES) {
+    for (const leakage of leaks) {
       const r = { ...room, leakage, calibration: { dampingScale: k } };
       const rms = compareMeasurement(r, sources, c, setup, m).rms;
       if (rms < best.rms - 1e-9) best = { dampingScale: k, leakage, rms };
