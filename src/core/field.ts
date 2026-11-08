@@ -3,9 +3,9 @@
 import type { Constraints, Room, Setup, SourceSpec, Vec3 } from './types';
 import { logFreqs } from './frequency';
 import { applyKernel, modeShapes, receiverKernel } from './response';
-import { makeScorer, type Scorer } from './objective';
+import { makeScorer, objectivePpo, type Scorer } from './objective';
 import {
-  filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed, speakerPenalties, sumPenalties,
+  filterSet, makeCtx, objectiveSys, receiverSet, seatAllowed, sourceAllowed, speakerPenalties, sumPenalties,
   type EvalCtx, type Spectrum,
 } from './system';
 import { isWave } from './geometry';
@@ -102,9 +102,9 @@ export function listenerHeatmap(room: Room, sources: SourceSpec[], c: Constraint
   const t0 = Date.now();
   const step = opts.step ?? 0.1;
   const ctx = makeCtx(room, sources);
-  const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? 12);
+  const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? objectivePpo(c.objective, 12));
   const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings);
-  const score = makeScorer(freqs, c.objective, room);
+  const score = makeScorer(freqs, c.objective, room, objectiveSys(room, c));
   const active = sources.filter((s) => setup.positions[s.id]);
   const psis = active.map((s) => ({ psi: modeShapes(ctx.pm, setup.positions[s.id]), f: filt[s.id] }));
   const spk = sources.filter((s) => s.kind === 'speaker' && setup.positions[s.id]).map((s) => setup.positions[s.id]);
@@ -190,10 +190,10 @@ export function subHeatmap(room: Room, sources: SourceSpec[], c: Constraints, se
   const t0 = Date.now();
   const step = opts.step ?? 0.1;
   const ctx = makeCtx(room, sources);
-  const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? 12);
+  const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? objectivePpo(c.objective, 12));
   const n = freqs.length;
   const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings);
-  const score = makeScorer(freqs, c.objective, room);
+  const score = makeScorer(freqs, c.objective, room, objectiveSys(room, c));
   const sub = sources.find((s) => s.id === subId);
   if (!sub) throw new Error(`Нет сабвуфера ${subId}`);
   const { pts, weights } = receiverSet(room, c, setup.listener);

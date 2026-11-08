@@ -22,8 +22,9 @@ function quantile(sorted: Float64Array, q: number): number {
 }
 
 /**
- * Убирает треугольники с нечисловыми координатами и те, чей центр лежит дальше одного «надёжного» габарита
- * (между 1-м и 99-м процентилем центров) от основной массы. Коридор за аркой, мебель, ниша остаются:
+ * Убирает треугольники с нечисловыми координатами и те, у которых хоть одна вершина лежит дальше одного
+ * «надёжного» габарита (между 1-м и 99-м процентилем центров) от основной массы: «шип» с одной улетевшей
+ * вершиной растягивает габарит, даже если его центр ещё внутри. Коридор за аркой, мебель, ниша остаются:
  * они в пределах размера самой комнаты от её границ.
  */
 export function cleanTriangles(t: Float32Array, ids?: Uint16Array): CleanResult {
@@ -76,10 +77,11 @@ export function cleanTriangles(t: Float32Array, ids?: Uint16Array): CleanResult 
     if (!valid[i]) continue;
     const o = i * 9;
     let inside = true;
-    for (let k = 0; k < 3; k++) {
-      const c = (t[o + k] + t[o + 3 + k] + t[o + 6 + k]) / 3;
-      if (c < lo[k] || c > hi[k]) { inside = false; break; }
-    }
+    for (let v = 0; v < 9 && inside; v += 3)
+      for (let k = 0; k < 3; k++) {
+        const c = t[o + v + k];
+        if (c < lo[k] || c > hi[k]) { inside = false; break; }
+      }
     if (inside) { keep[i] = 1; kept++; } else outliers++;
   }
   if (kept === n) return { triangles: t, ids, invalid: 0, outliers: 0 };

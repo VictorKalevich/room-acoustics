@@ -4,7 +4,7 @@ import { listenerHeatmap, subHeatmap } from '../core/field';
 import { optimizeSubs } from '../core/integration';
 import { calibrate, compareMeasurement } from '../core/measure';
 import { evaluateSetup } from '../core/system';
-import { systemModes } from '../core/fdtd';
+import { waveSystemModes } from '../core/acoustics';
 import { computeField } from '../core/field3d';
 import { optimizeSubFilters } from '../core/subfilters';
 
@@ -29,7 +29,7 @@ function run(job: Job) {
       case 'calibrate': result = calibrate(p.room, p.sources, p.constraints, p.setup, p.measurement); break;
       case 'compare': result = compareMeasurement(p.room, p.sources, p.constraints, p.setup, p.measurement); break;
       case 'evaluate': result = evaluateSetup(p.room, p.sources, p.constraints, p.setup, { ppo: p.ppo, onProgress: progress }); break;
-      case 'modes': result = systemModes(p.room, p.fMax, { onProgress: progress }).modes; break;
+      case 'modes': result = waveSystemModes(p.room, p.fMax, progress); break;
       case 'field': result = computeField(p, progress); break;
       case 'subFilters': result = optimizeSubFilters(p.room, p.sources, p.constraints, p.setup); break;
       default: throw new Error(`Неизвестная задача ${type}`);

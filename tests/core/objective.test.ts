@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeScorer, normalizeObjective, objectiveModes } from '../../src/core/objective';
+import { makeScorer, normalizeObjective, objectiveModes, shiftModesToSystem } from '../../src/core/objective';
 import { flatnessScore } from '../../src/core/metric';
 import { logFreqs } from '../../src/core/frequency';
 import { computeModes } from '../../src/core/modes';
@@ -72,6 +72,33 @@ describe('цели подбора', () => {
     expect(lowest).toHaveLength(6);
     const custom = objectiveModes(room, { id: 'modes', modePreset: 'custom', modes: [[1, 1, 0], [9, 9, 9]] }, 20, 200);
     expect(custom.map((m) => [m.n.join(''), m.w])).toEqual([['110', 0.5]]);
+  });
+
+  it('комната с проёмом: мода берётся у моды системы с похожей формой, а не у ближайшей по частоте', () => {
+    const f100 = computeModes(room, 200).find((m) => m.n.join('') === '100')!.f; // 34,3 Гц
+    const f010 = computeModes(room, 200).find((m) => m.n.join('') === '010')!.f; // 42,9 Гц
+    const sys = [
+      { f: 22, roomShare: 0.35, like: [] }, // мода коридора: не берётся
+      { f: f100 * 1.14, roomShare: 0.92, like: [{ n: [1, 0, 0], mac: 0.85 }] }, // глубина ушла вверх на 2,3 полутона
+      { f: f010 * 1.01, roomShare: 0.99, like: [{ n: [0, 1, 0], mac: 0.9 }] },
+      { f: 200, roomShare: 1, like: [] },
+    ];
+    const first = objectiveModes(room, { id: 'modes', modePreset: 'first' }, 20, 200, sys);
+    // по частоте 39,1 Гц ближе к ширине (42,9), но по форме это глубина
+    expect(first.find((m) => m.n.join('') === '100')!.f).toBeCloseTo(f100 * 1.14, 6);
+    expect(first.find((m) => m.n.join('') === '010')!.f).toBeCloseTo(f010 * 1.01, 6);
+    // похожей моды системы нет — частота по основной комнате
+    const f001 = computeModes(room, 200).find((m) => m.n.join('') === '001')!.f;
+    expect(first.find((m) => m.n.join('') === '001')!.f).toBeCloseTo(f001, 6);
+    // мода, ушедшая в коридор почти наполовину (коридор вдоль стены: 49 % в комнате), но похожая по форме, — берётся
+    expect(shiftModesToSystem([{ n: [0, 1, 0], f: 42.9 }], [{ f: 38.8, roomShare: 0.49, like: [{ n: [0, 1, 0], mac: 0.64 }] }])).toEqual([38.8]);
+    expect(shiftModesToSystem([{ n: [0, 1, 0], f: 42.9 }], [{ f: 40, roomShare: 0.49, like: [] }])).toEqual([42.9]);
+    // без сведений о форме — ближайшая в пределах 3 полутонов
+    expect(shiftModesToSystem([{ n: [1, 0, 0], f: 40 }], [{ f: 44, roomShare: 1 }, { f: 47, roomShare: 1 }])).toEqual([44]);
+    expect(shiftModesToSystem([{ n: [1, 0, 0], f: 40 }], [{ f: 49, roomShare: 1 }])).toEqual([40]);
+    // провал на настоящей частоте моды штрафуется, на коробочной (уже не моде) — меньше
+    const s = makeScorer(freqs, { id: 'modes', modePreset: 'first' }, room, sys);
+    expect(s(bump(f100 * 1.14, -12, 0.03), zero)).toBeGreaterThan(1.5 * s(bump(f100, -12, 0.03), zero));
   });
 
   it('нет выбранных мод в полосе — ищем меньше провалов внизу', () => {

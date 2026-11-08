@@ -323,13 +323,14 @@ test('009: цель подбора — меньше провалов внизу 
   await expect(page.locator('.score').first()).toContainText(/неровность \d+,\d дБ/);
   // моды: «Свои» начинаются с первых осевых, одну можно снять
   await page.getByRole('combobox', { name: 'Что искать' }).selectOption('modes');
-  await expect(page.getByText(/Учитываются: .*\(1 0 0\).*\(0 1 0\).*\(0 0 1\)/)).toBeVisible();
+  await expect(page.getByText(/Учитываются: .*\(по глубине\).*\(по ширине\).*\(по высоте\)/)).toBeVisible();
   await page.getByRole('radio', { name: 'Свои' }).click();
   const on = page.locator('.objective .chip.is-on');
   await expect(on).toHaveCount(3);
   await on.first().click();
   await expect(on).toHaveCount(2);
-  await expect(page.getByText(/Учитываются: .*\(0 1 0\).*\(0 0 1\)/)).toBeVisible();
+  await expect(page.getByText(/Учитываются: .*\(по ширине\).*\(по высоте\)/)).toBeVisible();
+  await expect(page.getByText(/Учитываются: .*по глубине/)).toHaveCount(0);
   // результат устарел после смены цели
   await expect(page.getByText(/устарел|изменились/i).first()).toBeVisible();
   // в ручном режиме та же цель

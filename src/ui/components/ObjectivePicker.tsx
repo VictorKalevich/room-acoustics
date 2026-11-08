@@ -1,9 +1,11 @@
 // Выбор цели подбора мест для баса: ровность, провалы, широкие провалы внизу, провалы на модах.
-import { useMemo } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { BassObjective, ModePreset, ObjectiveId, Room } from '../../core/types';
-import { computeModes } from '../../core/modes';
-import { DEFAULT_OBJECTIVE, objectiveModes } from '../../core/objective';
+import type { SystemMode } from '../../core/fdtd';
+import { computeModes, modeWhere } from '../../core/modes';
+import { DEFAULT_OBJECTIVE, SYS_MODES_FMAX, objectiveModes, shiftModesToSystem } from '../../core/objective';
 import { isWave } from '../../core/geometry';
+import { compute } from '../compute';
 import { Segmented, SelectField, Note } from './Fields';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -17,9 +19,21 @@ const nKey = (n: readonly number[]) => n.join(' ');
 export function ObjectivePicker({ room, value, onChange, band }: { room: Room; value: BassObjective | undefined; onChange: (o: BassObjective) => void; band: [number, number] }) {
   const o = value ?? DEFAULT_OBJECTIVE;
   const preset = o.modePreset ?? 'first';
-  const counted = useMemo(() => (o.id === 'modes' ? objectiveModes(room, o, band[0], band[1]) : []), [room, o, band]);
+  const wave = isWave(room);
+  // комната с коридором: моды системы из волнового расчёта (тот же кэш, что у подбора)
+  const [sys, setSys] = useState<SystemMode[] | null>(null);
+  const needSys = wave && o.id === 'modes';
+  useEffect(() => {
+    setSys(null);
+    if (!needSys) return;
+    const job = compute<SystemMode[]>('modes', { room, fMax: SYS_MODES_FMAX });
+    job.promise.then(setSys).catch(() => setSys(null));
+    return () => job.cancel();
+  }, [needSys, room]);
+  const counted = useMemo(() => (o.id === 'modes' ? objectiveModes(room, o, band[0], band[1], sys ?? undefined) : []), [room, o, band, sys]);
   // кандидаты для выбора вручную: первые 16 мод в полосе
   const choices = useMemo(() => computeModes(room, Math.max(band[1], 40), 10).filter((m) => m.f >= band[0] && m.f <= band[1]).slice(0, 16), [room, band]);
+  const choiceF = useMemo(() => shiftModesToSystem(choices, sys ?? undefined), [choices, sys]);
   const picked = new Set((o.modes ?? []).map(nKey));
   const toggle = (n: [number, number, number]) => {
     const k = nKey(n);
@@ -48,21 +62,21 @@ export function ObjectivePicker({ room, value, onChange, band }: { room: Room; v
           <p class="muted small">{S.objective.presetHints[preset]}</p>
           {preset === 'custom' && (
             <div class="chips" role="group" aria-label={S.objective.presetLabel}>
-              {choices.map((m) => (
+              {choices.map((m, i) => (
                 <button key={nKey(m.n)} type="button" class={`chip${picked.has(nKey(m.n)) ? ' is-on' : ''}`} aria-pressed={picked.has(nKey(m.n))} onClick={() => toggle(m.n)}>
-                  {fmt(m.f, 1)} Гц <small>{nKey(m.n)}</small>
+                  {fmt(choiceF[i], 1)} Гц <small>{modeWhere(m.n, true)}</small>
                 </button>
               ))}
             </div>
           )}
           {counted.length ? (
             <p class="small">
-              {S.objective.counted}: {counted.map((m) => `${fmt(m.f, 0)} Гц (${nKey(m.n)})`).join(', ')}
+              {S.objective.counted}: {counted.map((m) => `${fmt(m.f, 0)} Гц (${modeWhere(m.n, true)})`).join(', ')}
             </p>
           ) : (
             <Note tone="warn">{preset === 'custom' && !(o.modes ?? []).length ? S.objective.pickSome : S.objective.none}</Note>
           )}
-          {isWave(room) && <p class="muted small">{S.objective.approxWave}</p>}
+          {wave && <p class="muted small">{sys ? S.objective.waveShifted : S.objective.waveComputing}</p>}
         </>
       )}
     </div>

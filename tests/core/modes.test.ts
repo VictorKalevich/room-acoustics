@@ -61,3 +61,15 @@ describe('computeModes', () => {
     expect(typeof res.ok).toBe('boolean');
   });
 });
+
+import { modeWhere } from '../../src/core/modes';
+describe('подпись моды словами', () => {
+  it('осевые, тангенциальные, косые', () => {
+    expect(modeWhere([1, 0, 0])).toBe('по глубине');
+    expect(modeWhere([0, 2, 0])).toBe('2-я по ширине');
+    expect(modeWhere([0, 0, 1])).toBe('по высоте');
+    expect(modeWhere([1, 0, 2])).toBe('глубина + высота');
+    expect(modeWhere([1, 1, 1])).toBe('по всем трём размерам');
+    expect(modeWhere([2, 1, 1], true)).toBe('косая');
+  });
+});

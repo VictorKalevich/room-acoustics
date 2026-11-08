@@ -2,7 +2,7 @@
 import type { Mode, ReverbResult, Room, Setup, SourceSpec } from './types';
 import type { SetupEval } from './system';
 import { modeDamping } from './response';
-import { bonelloCheck, proportionsNotes } from './modes';
+import { bonelloCheck, proportionsNotes, modeWhere } from './modes';
 import { roomPatches } from './patches';
 
 export interface ModeDecay { f: number; n: [number, number, number]; kind: Mode['kind']; t60: number; limit: number }
@@ -40,12 +40,11 @@ export function decayLimit(f: number, volume: number): number {
 
 /** Время затухания каждой моды (T60 = 6,91/δ) ниже fMax. */
 export function modeDecays(room: Room, modes: Mode[], rev: ReverbResult, fMax: number): ModeDecay[] {
-  const scale = room.calibration?.dampingScale ?? 1;
   const patches = roomPatches(room);
   return modes
     .filter((m) => m.f > 0 && m.f <= fMax)
     .map((m) => {
-      const delta = modeDamping(m, room, rev, patches) * scale;
+      const delta = modeDamping(m, room, rev, patches);
       return { f: m.f, n: m.n, kind: m.kind, t60: 6.91 / delta, limit: decayLimit(m.f, rev.volume) };
     });
 }
@@ -137,7 +136,7 @@ export function buildOverview(
   for (const d of worst) {
     problems.push({
       id: `decay-${d.f.toFixed(1)}`, severity: d.t60 > d.limit + 0.4 ? 'high' : 'medium', f: d.f,
-      title: `Мода ${fmt1(d.f)} Гц (${d.n.join(' ')}) звучит ${fmt1(d.t60)} с`,
+      title: `Мода ${fmt1(d.f)} Гц (${modeWhere(d.n)}) звучит ${fmt1(d.t60)} с`,
       detail: `Рекомендуется не больше ${fmt1(d.limit)} с. Помогают басовые ловушки в углах и у стен этой моды.`,
       actions: ['tuning', 'field'],
     });

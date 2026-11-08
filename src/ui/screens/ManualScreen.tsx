@@ -16,7 +16,7 @@ import { fmt } from '../format';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
 import { ObjectivePicker } from '../components/ObjectivePicker';
 import { evalBand } from '../../core/system';
-import { isFlat } from '../../core/objective';
+import { isFlat, objectivePpo } from '../../core/objective';
 
 interface Props {
   project: Project;
@@ -290,7 +290,7 @@ export function ManualScreen({ project, onSetup, onSetups, onConstraints }: Prop
               <VariantRow
                 key={s.id}
                 setup={s}
-                score={wave ? null : evaluateSetup(room, sources, c, s, { ppo: 12 }).objScore}
+                score={wave ? null : evaluateSetup(room, sources, c, s, { ppo: objectivePpo(c.objective, 12) }).objScore}
                 comparing={compareId === s.id}
                 onLoad={() => onSetup({ ...JSON.parse(JSON.stringify(s)), id: current.id, name: current.name })}
                 onCompare={() => setCompareId(compareId === s.id ? null : s.id)}

@@ -70,6 +70,21 @@ describe('симуляция', () => {
     expect(withExt.some((m) => m.roomShare < 0.5)).toBe(true);
   });
 
+  it('форма мод системы: в коробке первые моды узнаются по форме (MAC > 0,9), проём в торце сдвигает глубину вверх', () => {
+    const box = systemModes(hard(), 120, { duration: 2 }).modes;
+    const key = (n: readonly number[]) => n.join('');
+    const top = (f: number) => box.find((m) => Math.abs(m.f - f) / f < 0.03)!.like![0];
+    expect(key(top(34.3).n)).toBe('100');
+    expect(top(34.3).mac).toBeGreaterThan(0.9);
+    expect(key(top(42.9).n)).toBe('010');
+    // дверь в коридор в задней стене: мода, похожая на «по глубине», уходит с 34 Гц вверх (связь с коридором)
+    const door = corridor({ wall: 'back', a0: 0.5, a1: 3.5, depth: 1.5, arch: { a0: 1.4, a1: 2.3, height: 2 } });
+    const sys = systemModes({ ...hard(), extensions: [door] }, 120, { duration: 2 }).modes;
+    const depth = sys.filter((m) => m.roomShare >= 0.5 && m.like?.some((l) => key(l.n) === '100' && l.mac >= 0.5));
+    expect(depth.length).toBeGreaterThan(0);
+    expect(depth[0].f).toBeGreaterThan(36);
+  });
+
   it('передаточная функция симметрична (взаимность) с точностью до сетки', () => {
     const g = buildGrid(hard(), 150);
     const a = { x: 0.6, y: 0.8, z: 0.4 };

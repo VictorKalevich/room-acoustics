@@ -27,6 +27,18 @@ describe('сравнение замеров «до и после»', () => {
     expect(Math.abs(c.statsAfter.dip.db - c.statsBefore.dip.db)).toBeLessThan(2);
   });
 
+  it('убранный пик не сдвигает остальную кривую (уровни — по медиане)', () => {
+    const c = compareTakes(take(80, [[42, 10, 0.1]]), take(80, []));
+    // вдали от пика обе кривые на нуле: «до» не опускается из-за пика
+    const far = c.f.map((x, i) => [x, i] as const).filter(([x]) => x > 100);
+    for (const [, i] of far) {
+      expect(Math.abs(c.before[i])).toBeLessThan(0.05);
+      expect(Math.abs(c.after[i])).toBeLessThan(0.05);
+    }
+    // высота пика «до» — от обычного уровня, почти все 10 дБ
+    expect(c.statsBefore.peak.db).toBeGreaterThan(9);
+  });
+
   it('разная громкость замеров не влияет на результат', () => {
     const a = take(70, [[50, 8, 0.1]]);
     const b = take(84, [[50, 8, 0.1]]);

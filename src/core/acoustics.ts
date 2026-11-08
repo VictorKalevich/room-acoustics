@@ -1,7 +1,8 @@
 // Провайдер откликов волновой модели с кэшем расчётов (используется в воркере).
 // По взаимности H(A→B) = H(B→A): один расчёт из точки даёт отклики «из всех точек слоя в неё».
 import type { Room, Vec3 } from './types';
-import { buildGrid, geometryKey, layerOf, nearestNode, pointSpectrum, simulate, simulateField, type SimResult, type WaveGrid } from './fdtd';
+import { SYS_MODES_FMAX } from './objective';
+import { buildGrid, geometryKey, layerOf, nearestNode, pointSpectrum, simulate, simulateField, systemModes, type SimResult, type SystemMode, type WaveGrid } from './fdtd';
 
 const GRID_LIMIT = 2;
 const SIM_LIMIT = 8;
@@ -88,7 +89,25 @@ export function waveField(room: Room, fMax: number, p: Vec3, freqs: number[], on
   return { grid: g, ...r };
 }
 
+const sysModes = new Map<string, SystemMode[]>();
+
+/**
+ * Собственные частоты комнаты вместе со смежными помещениями (один расчёт из угла, ≈ 1–2 с) — с кэшем.
+ * Нужны цели «без провалов на модах»: проём сдвигает моды основной комнаты на 1–3 полутона и добавляет свои.
+ */
+export function waveSystemModes(room: Room, fMax = SYS_MODES_FMAX, onProgress?: (v: number) => void): SystemMode[] {
+  const key = geometryKey(room, fMax);
+  let m = sysModes.get(key);
+  if (!m) {
+    m = systemModes(room, fMax, { onProgress }).modes;
+    if (sysModes.size >= 4) sysModes.clear();
+    sysModes.set(key, m);
+  }
+  return m;
+}
+
 export function clearWaveCache() {
+  sysModes.clear();
   fields.clear();
   grids.clear();
   sims.clear();

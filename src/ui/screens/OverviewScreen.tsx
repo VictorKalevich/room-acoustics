@@ -9,6 +9,7 @@ import { PlayButton } from '../components/MiniPlayer';
 import { Term } from '../components/Term';
 import { S } from '../strings';
 import { fmt } from '../format';
+import { modeWhere } from '../../core/modes';
 
 interface Props {
   project: Project;
@@ -121,7 +122,7 @@ function DecayChart({ decays, volume }: { decays: ModeDecay[]; volume: number })
       <path d={lim.join(' ')} class="decay-chart__limit" />
       {decays.map((d, ki) => (
         <circle key={ki} cx={X(d.f)} cy={Y(d.t60)} r={d.kind === 'axial' ? 4 : 3} class={`decay-chart__pt is-${d.kind}${d.t60 > d.limit ? ' is-over' : ''}`}>
-          <title>{`${fmt(d.f, 1)} Гц (${d.n.join(' ')}): ${fmt(d.t60, 2)} с`}</title>
+          <title>{`${fmt(d.f, 1)} Гц (${modeWhere(d.n)}): ${fmt(d.t60, 2)} с`}</title>
         </circle>
       ))}
       <text x={l} y={t + 2} class="chart__tick">с</text>

@@ -3,7 +3,7 @@ import { isWave } from '../../core/geometry';
 import type { SystemMode } from '../../core/fdtd';
 import { compute } from '../compute';
 import type { Mode, ReverbResult, Room } from '../../core/types';
-import { bonelloCheck, modeIssues, proportionsNotes } from '../../core/modes';
+import { bonelloCheck, modeIssues, proportionsNotes, modeWhere } from '../../core/modes';
 import { ModeChart } from '../components/Charts';
 import { Panel, Note, Details } from '../components/Fields';
 import { S } from '../strings';
@@ -75,7 +75,6 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
             <thead>
               <tr>
                 <th>{S.modes.colF}</th>
-                <th>{S.modes.colN}</th>
                 <th>{S.modes.colKind}</th>
                 <th><span class="visually-hidden">{S.tone.player}</span></th>
               </tr>
@@ -84,12 +83,12 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
               {shown.map((m, ki) => (
                 <tr key={ki} class={`is-${m.kind}`}>
                   <td class="num">{fmt(m.f, 1)}</td>
-                  <td class="num">{m.n.join(' ')}</td>
-                  <td>
+                  <td class="mode-kind">
                     {S.modes.kinds[m.kind]}
+                    {m.kind !== 'oblique' && <span class="muted"> · {modeWhere(m.n)}</span>}
                     {m.degenerate && <span class="tag">{S.modes.degenerate}</span>}
                   </td>
-                  <td class="play-cell"><PlayButton f={m.f} label={m.n.join(' ')} /></td>
+                  <td class="play-cell"><PlayButton f={m.f} label={modeWhere(m.n, true)} /></td>
                 </tr>
               ))}
             </tbody>
@@ -106,6 +105,13 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
       </Panel>
     </div>
   );
+}
+
+/** На какую моду основной комнаты похожа мода системы (по форме поля): «как по глубине», слившиеся — через «+». */
+function likeLabel(m: SystemMode): string {
+  const like = (m.like ?? []).filter((l, i) => l.mac >= (i === 0 ? 0.5 : 0.35));
+  if (!like.length) return '';
+  return S.sysmodes.like(like.slice(0, 2).map((l) => modeWhere(l.n, true)).join(' + '));
 }
 
 function SystemModesPanel({ room, fMax }: { room: Room; fMax: number }) {
@@ -143,7 +149,7 @@ function SystemModesPanel({ room, fMax }: { room: Room; fMax: number }) {
                 <tr key={ki}>
                   <td class="num">{fmt(m.f, 1)}</td>
                   <td class={`num${m.roomShare < 0.5 ? ' is-corridor' : ''}`}>{Math.round(m.roomShare * 100)} %</td>
-                  <td class={m.roomShare < 0.5 ? 'is-corridor' : ''}>{m.roomShare < 0.5 ? S.sysmodes.corridorMode : ''}</td>
+                  <td class={`mode-kind${m.roomShare < 0.5 ? ' is-corridor' : ''}`}>{[m.roomShare < 0.5 ? S.sysmodes.corridorMode : '', likeLabel(m)].filter(Boolean).join(' · ')}</td>
                   <td class="play-cell"><PlayButton f={m.f} /></td>
                 </tr>
               ))}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { prepareModes, transfer, modeDamping } from '../../src/core/response';
+import { prepareModes, transfer, modeDamping, modalAbsorptionAt } from '../../src/core/response';
+import type { Room } from '../../src/core/types';
 import { computeReverb, absorptionAreaAt } from '../../src/core/reverb';
 import { computeModes } from '../../src/core/modes';
 import { cabs, db20 } from '../../src/core/frequency';
@@ -40,14 +41,30 @@ describe('модальная передаточная функция', () => {
     expect(h0).toBeGreaterThan(hm);
   });
 
-  it('затухание косых мод совпадает с Сэбином δ = cA/(8V)', () => {
+  it('затухание косых мод: δ = cB/(8V), B = 8·Σβ·S + обстановка; при малых α — формула Сэбина', () => {
+    const c = speedOfSound(room.temperatureC);
+    // жёсткая пустая комната без окон и дверей: α ≤ 0,02 — β ≈ α/8, и мода затухает по Сэбину (с точностью ~3 %)
+    const bare: Room = { ...room, furnishing: 'empty', features: [], openings: [], materials: { floor: 'concrete-painted', ceiling: 'concrete-painted', front: 'concrete-painted', back: 'concrete-painted', left: 'concrete-painted', right: 'concrete-painted' } };
+    const rb = computeReverb(bare);
+    const ob = computeModes(bare, 300).find((m) => m.kind === 'oblique')!;
+    const sabine = (c * absorptionAreaAt(rb, ob.f)) / (8 * rb.volume);
+    expect(Math.abs(modeDamping(ob, bare, rb) / sabine - 1)).toBeLessThan(0.04);
+    // обычная комната: косая мода затухает по c·B/(8V) — B из β поверхностей и обстановки
     const rev = computeReverb(room);
     const oblique = computeModes(room, 300).find((m) => m.kind === 'oblique')!;
-    const delta = modeDamping(oblique, room, rev);
-    const c = speedOfSound(room.temperatureC);
-    // A(f) интерполируется по октавам так же, как в modeDamping
-    const expected = (c * absorptionAreaAt(rev, oblique.f)) / (8 * rev.volume);
-    expect(delta).toBeCloseTo(expected, 6);
+    const noPatches = { ...room, features: [], openings: [] };
+    const B = Object.values(modalAbsorptionAt(noPatches, oblique.f)).reduce((a, b) => a + b, 0);
+    expect(modeDamping(oblique, noPatches, rev)).toBeCloseTo((c * B) / (8 * rev.volume), 6);
+    // β по формуле Пари больше α/8: мода затухает быстрее, чем по Сэбину с табличным α, но не больше чем на треть
+    const ratio = modeDamping(oblique, room, rev) / ((c * absorptionAreaAt(rev, oblique.f)) / (8 * rev.volume));
+    expect(ratio).toBeGreaterThan(1);
+    expect(ratio).toBeLessThan(1.35);
+  });
+
+  it('подстройка по замеру умножает затухание (кроме проёмов)', () => {
+    const m = computeModes(room, 120)[3];
+    const k = 1.7;
+    expect(modeDamping(m, { ...room, openings: [], calibration: { dampingScale: k } })).toBeCloseTo(k * modeDamping(m, { ...room, openings: [] }), 9);
   });
 });
 

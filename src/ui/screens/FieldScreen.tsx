@@ -15,6 +15,7 @@ import { SPAN } from '../fieldColors';
 import { S } from '../strings';
 import { PlayButton } from '../components/MiniPlayer';
 import { fmt } from '../format';
+import { modeWhere } from '../../core/modes';
 
 type View = 'single' | 'average' | 'band';
 interface Pick { f: number; n?: [number, number, number] }
@@ -230,7 +231,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
             <div class="chips" role="group" aria-label={S.field.freqs}>
               {(allChips ? quick : quick.filter((p, i) => i < QUICK_SHOWN || isPicked(p))).map((p) => (
                 <button key={p.n ? p.n.join('-') : p.f} type="button" class={`chip${isPicked(p) ? ' is-on' : ''}`} aria-pressed={isPicked(p)} onClick={() => toggle(p)}>
-                  {fmt(p.f, 1)}{p.n && <small> {p.n.join('')}</small>}
+                  {fmt(p.f, 1)}{p.n && <small> {modeWhere(p.n, true)}</small>}
                 </button>
               ))}
               {quick.length > QUICK_SHOWN && (

@@ -139,6 +139,16 @@ describe('очистка треугольников', () => {
     }
   });
 
+  it('«шип» с одной улетевшей вершиной отброшен, даже если его центр ещё внутри', () => {
+    const t = new Float32Array(room.length + 9);
+    t.set(room);
+    // две вершины у стены, третья — в 25 м: центр ≈ 9,7 м, в пределах запаса, но вершина — нет
+    t.set([2, 2, 1, 2.1, 2, 1, 25, 2, 1.2], room.length);
+    const c = cleanTriangles(t);
+    expect(c.outliers).toBe(1);
+    expect(c.triangles.length).toBe(room.length);
+  });
+
   it('номера размеченных объектов остаются при своих треугольниках', () => {
     const t = new Float32Array(room.length + 18);
     t.set(room);

@@ -115,3 +115,21 @@ export function proportionsNotes(room: Room): string[] {
 }
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+
+const AX_BY = ['глубине', 'ширине', 'высоте'];
+const AX = ['глубина', 'ширина', 'высота'];
+
+/**
+ * Где мода «живёт» — словами вместо номеров (1 0 0 и т. п.): «по глубине», «2-я по ширине»
+ * (две полуволны), «глубина + высота» (тангенциальная), «по всем трём размерам» (косая).
+ * short — для кнопок: у косой просто «косая».
+ */
+export function modeWhere(n: readonly number[], short = false): string {
+  const nz = [0, 1, 2].filter((k) => n[k] > 0);
+  if (nz.length === 1) {
+    const k = nz[0];
+    return n[k] === 1 ? `по ${AX_BY[k]}` : `${n[k]}-я по ${AX_BY[k]}`;
+  }
+  if (nz.length === 2) return `${AX[nz[0]]} + ${AX[nz[1]]}`;
+  return short ? 'косая' : 'по всем трём размерам';
+}

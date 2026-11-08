@@ -1,6 +1,7 @@
 import type { Mode } from '../../core/types';
 import { fmt } from '../format';
 import { S } from '../strings';
+import { modeWhere } from '../../core/modes';
 
 const TICKS = [20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 400, 500];
 
@@ -87,7 +88,7 @@ export function ModeChart({ modes, fMax, schroeder }: { modes: Mode[]; fMax: num
           y1={base}
           y2={base - hOf[m.kind]}
         >
-          <title>{`${fmt(m.f, 1)} Гц, ${S.modes.kinds[m.kind]} (${m.n.join(', ')})`}</title>
+          <title>{`${fmt(m.f, 1)} Гц, ${S.modes.kinds[m.kind]}${m.kind === 'oblique' ? '' : `, ${modeWhere(m.n)}`}`}</title>
         </line>
       ))}
       {/* совпадающие сильные моды (осевые) отмечены точкой */}

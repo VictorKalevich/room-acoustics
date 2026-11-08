@@ -73,6 +73,14 @@ const COMPARE_CLIP = 10;
 /** Точки вокруг места, по которым усредняется модель для замера из нескольких точек (как в подсказке: 30–50 см). */
 const CLOUD = [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]];
 
+/** Медиана (без NaN). */
+const medianOf = (v: number[]) => {
+  const s = v.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!s.length) return 0;
+  const k = s.length >> 1;
+  return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2;
+};
+
 /** Сглаживание в долях октавы с усреднением мощности (сетка — логарифмическая). */
 function smoothPow(freqs: number[], db: number[], frac: number): number[] {
   const k = Math.pow(2, frac / 2);
@@ -115,7 +123,8 @@ export function modelForMeasurement(room: Room, sources: SourceSpec[], setup: Se
 
 /**
  * Сравнение замера с моделью: модель берётся в той же форме, что замер (одна точка или среднее по точкам),
- * обе кривые одинаково сглажены (1/12 октавы) и выровнены по среднему уровню; расхождение — СКО,
+ * обе кривые одинаково сглажены (1/12 октавы) и выровнены по медиане разницы — узкий глубокий провал
+ * не сдвигает всю кривую (по среднему провал −20 дБ на 10 % полосы смещал бы её на 2 дБ); расхождение — СКО,
  * отклонения ограничены ±10 дБ.
  */
 export function compareMeasurement(room: Room, sources: SourceSpec[], _c: Constraints, setup: SetupLike, m: Measurement): Comparison {
@@ -126,10 +135,10 @@ export function compareMeasurement(room: Room, sources: SourceSpec[], _c: Constr
   const f = idx.map((i) => mod.f[i]);
   const model = smoothPow(f, idx.map((i) => mod.db[i]), COMPARE_SMOOTH);
   const measured = smoothPow(f, idx.map((i) => meas[i] as number), COMPARE_SMOOTH);
-  const mm = model.reduce((a, b) => a + b, 0) / model.length;
-  const ms = measured.reduce((a, b) => a + b, 0) / measured.length;
+  const mm = medianOf(model);
+  const shift = medianOf(measured.map((v, i) => v - model[i]));
   const mN = model.map((v) => v - mm);
-  const sN = measured.map((v) => v - ms);
+  const sN = measured.map((v) => v - shift - mm);
   const rms = Math.sqrt(mN.reduce((a, v, i) => a + Math.min(COMPARE_CLIP, Math.abs(v - sN[i])) ** 2, 0) / mN.length);
   return { f, model: mN, measured: sN, rms, averaged: mod.averaged };
 }
@@ -226,10 +235,12 @@ function smooth12(f: number[], db: number[]): number[] {
   });
 }
 
+
 /**
  * Сравнение двух замеров одной точки «до» и «после» (переставили колонки, поставили ловушки, включили EQ).
- * Уровни выравниваются по среднему в полосе: громкость и усиление микрофона между замерами могли отличаться.
- * Цель — плоская или заданная (например, «домашняя» кривая модели).
+ * Уровни выравниваются по медиане в полосе: громкость и усиление микрофона между замерами могли отличаться,
+ * а медиану не сдвигают сами пики и провалы, которые исправляли (по среднему убранный пик +10 дБ «опускал»
+ * бы всю остальную кривую «до» примерно на 1 дБ). Цель — плоская или заданная (например, «домашняя» кривая модели).
  */
 export function compareTakes(before: Measurement, after: Measurement, o: { fLo?: number; fHi?: number; target?: (f: number) => number } = {}): TakesComparison {
   const fLo = Math.max(o.fLo ?? 20, before.f[0], after.f[0]);
@@ -237,14 +248,14 @@ export function compareTakes(before: Measurement, after: Measurement, o: { fLo?:
   if (!(fHi > fLo * 1.5)) throw new MeasureError('У замеров слишком мало общих частот для сравнения.');
   const f = logFreqs(fLo, fHi, 48);
   const tgt = f.map((x) => o.target?.(x) ?? 0);
-  const tMean = tgt.reduce((a, b) => a + b, 0) / tgt.length;
+  const tRef = medianOf(tgt);
   const prep = (m: Measurement) => {
     const raw = measurementAt(m, f).map((v) => v ?? NaN);
     const s = smooth12(f, raw);
-    const mean = s.reduce((a, b) => a + b, 0) / s.length;
-    return s.map((v) => v - mean);
+    const ref = medianOf(s);
+    return s.map((v) => v - ref);
   };
   const b = prep(before), a = prep(after);
-  const dev = (c: number[]) => c.map((v, i) => Math.max(-25, Math.min(25, v - (tgt[i] - tMean))));
+  const dev = (c: number[]) => c.map((v, i) => Math.max(-25, Math.min(25, v - (tgt[i] - tRef))));
   return { f, before: b, after: a, statsBefore: takeStats(f, dev(b)), statsAfter: takeStats(f, dev(a)), fLo, fHi };
 }

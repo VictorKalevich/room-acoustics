@@ -1,32 +1,68 @@
-import type { Complex, Leakage, Mode, ReverbResult, Room, Vec3 } from './types';
+import type { Complex, Leakage, Mode, ReverbResult, Room, SurfaceId, Vec3 } from './types';
+import { SURFACES } from './types';
 
 /** Частота «утечки» воздуха для нулевой моды, Гц (research R15). */
 export const LEAK_HZ: Record<Leakage, number> = { sealed: 0, typical: 8, door: 25, open: 45 };
 import { speedOfSound } from './physics';
 import { roomVolume } from './geometry';
-import { baseSurfaceAbsorptionAt, computeReverb } from './reverb';
-import { patchDeltaAlpha, patchModeIntegral, roomPatches, type Patch } from './patches';
+import { computeReverb, surfaceAreas } from './reverb';
+import { patchModeIntegral, patchWallAlpha, roomPatches, type Patch } from './patches';
+import { FURNISHING, alphaAt, getMaterial } from './materials';
+import { apertureBeta, betaFromAlpha } from './paris';
+
+/**
+ * «Площади поглощения» поверхностей для затухания мод, м²: 8·β·S отделки — β по табличному α (обращение
+ * формулы Пари, как у границ волновой модели) — плюс обстановка линейно (её поглощение подобрано по замерам T60
+ * жилых комнат через формулу Сэбина), долями по площадям. Без подстройки по замеру, окон, дверей и обработки.
+ */
+export function modalAbsorptionAt(room: Room, f: number): Record<SurfaceId, number> {
+  const S = surfaceAreas(room);
+  const total = SURFACES.reduce((s, k) => s + S[k], 0);
+  const furn = alphaAt(FURNISHING[room.furnishing], f) * S.floor;
+  const out = {} as Record<SurfaceId, number>;
+  for (const k of SURFACES) out[k] = 8 * betaFromAlpha(alphaAt(getMaterial(room.materials[k]).alpha, f)) * S[k] + (furn * S[k]) / total;
+  return out;
+}
 
 /**
  * Затухание моды δ (1/с) — теория возмущений для слабо поглощающих стен (Kuttruff, Room Acoustics, § 3.4):
- * δ_n = (c/2V)·Πε·∮ Re(β)·ψ_n² dS, а для локально реагирующей поверхности α ≈ 8·Re(β) (статистическое поглощение).
- * Для равномерно поглощающих стен это δ = (c/16V)·(εx·Ax + εy·Ay + εz·Az), A_i — поглощение пары стен,
- * перпендикулярных оси i; ε_i = 2 при n_i > 0, иначе 1; косые моды затухают по Сэбину: cA/(8V).
- * Окна, двери, проёмы и обработка добавляют (c/16V)·Πε·Δα·∫ψ² dS по своей площади — их вклад зависит
- * от того, пучность моды там или узел.
+ * δ_n = (c/2V)·Πε·∮ Re(β)·ψ_n² dS. Для равномерно поглощающих стен δ = (c/16V)·(εx·Bx + εy·By + εz·Bz),
+ * B_i = 8·Σβ·S пары стен, перпендикулярных оси i; ε_i = 2 при n_i > 0, иначе 1; у косых мод — c·B/(8V).
+ *
+ * β — по табличному (диффузному) α через формулу Пари, как в волновой модели: при малых α это α/8 (формула
+ * Сэбина), при α = 0,2 — на 23 % больше, при 0,3 — на 35 %. Так и должно быть: отдельная мода падает на стены
+ * под своими углами, а в диффузное α входят и скользящие волны, которые поглощаются слабее (до версии 3 модели
+ * здесь было α/8 при любом α, и волновая модель затухала на 15–30 % быстрее прямоугольной).
+ * Обстановка — линейно, окна, двери и обработка — на своих участках через ∫ψ² dS (вклад зависит от того,
+ * пучность моды там или узел), проёмы — проводимость проёма (0,15–0,6 на басу, см. apertureBeta).
+ * Подстройка по замеру умножает всё, кроме проёмов.
  */
 export function modeDamping(mode: Pick<Mode, 'n' | 'f'>, room: Room, rev?: ReverbResult, patches: Patch[] = roomPatches(room)): number {
   const V = rev?.volume ?? roomVolume(room);
   const c = speedOfSound(room.temperatureC);
   const f = Math.max(mode.f, 20);
-  const a = baseSurfaceAbsorptionAt(room, f);
+  const scale = room.calibration?.dampingScale ?? 1;
+  const a = modalAbsorptionAt(room, f);
   const e = (n: number) => (n > 0 ? 2 : 1);
   const ex = e(mode.n[0]), ey = e(mode.n[1]), ez = e(mode.n[2]);
-  let sum = ex * (a.front + a.back) + ey * (a.left + a.right) + ez * (a.floor + a.ceiling);
+  let sum = scale * (ex * (a.front + a.back) + ey * (a.left + a.right) + ez * (a.floor + a.ceiling));
   if (patches.length) {
     const kx = (mode.n[0] * Math.PI) / room.depth, ky = (mode.n[1] * Math.PI) / room.width, kz = (mode.n[2] * Math.PI) / room.height;
     const prod = ex * ey * ez;
-    for (const p of patches) sum += prod * patchDeltaAlpha(room, p, f) * patchModeIntegral(p, kx, ky, kz);
+    const S = surfaceAreas(room);
+    const furnPerArea = (alphaAt(FURNISHING[room.furnishing], f) * S.floor) / SURFACES.reduce((s, k) => s + S[k], 0);
+    for (const p of patches) {
+      const aw = patchWallAlpha(room, p, f);
+      const bw = betaFromAlpha(aw);
+      let d: number;
+      // проём: вместо стены с её долей обстановки — проводимость проёма (масса воздуха в нём, см. apertureBeta)
+      if (!p.alpha) d = 8 * apertureBeta(p.area, f, c) - scale * (8 * bw + furnPerArea);
+      else {
+        const ap = alphaAt(p.alpha, f);
+        d = scale * 8 * (betaFromAlpha(p.overlay ? aw + Math.max(0, ap - aw) : ap) - bw);
+      }
+      sum += prod * d * patchModeIntegral(p, kx, ky, kz);
+    }
   }
   return Math.max(1e-3, (c / (16 * V)) * sum);
 }
@@ -72,14 +108,13 @@ export function prepareModes(room: Room, fMax: number, rev?: ReverbResult): Prep
     freq: new Float64Array(n),
   };
   const patches = roomPatches(room);
-  const scale = room.calibration?.dampingScale ?? 1;
   list.forEach((m, i) => {
     pm.kx[i] = (m.n[0] * Math.PI) / L[0];
     pm.ky[i] = (m.n[1] * Math.PI) / L[1];
     pm.kz[i] = (m.n[2] * Math.PI) / L[2];
     const w = 2 * Math.PI * m.f;
     pm.omega2[i] = w * w;
-    let delta = modeDamping(m, room, r, patches) * scale;
+    let delta = modeDamping(m, room, r, patches);
     if (i === 0) delta = Math.max(delta, Math.PI * LEAK_HZ[room.leakage ?? 'typical']);
     pm.delta[i] = delta;
     pm.invLambda[i] = (m.n[0] > 0 ? 2 : 1) * (m.n[1] > 0 ? 2 : 1) * (m.n[2] > 0 ? 2 : 1);

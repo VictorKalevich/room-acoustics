@@ -1,5 +1,6 @@
 // Подсказки по акустической обработке (research R14).
 import type { Mode, Room, Vec3 } from './types';
+import { modeWhere } from './modes';
 
 export type ReflectSurface = 'left' | 'right' | 'ceiling';
 
@@ -79,13 +80,13 @@ export function bassAdvice(response: { f: number[]; db: number[]; target: number
       const axes = m.n.map((v, k) => (v > 0 ? k : -1)).filter((k) => k >= 0);
       if (m.kind === 'axial') {
         where = WHERE_AXIAL[axes[0]];
-        cause = `Осевая мода ${m.n.join(' ')} (${f1(m.f)} Гц) по ${AXIS[axes[0]]}.`;
+        cause = `Осевая мода ${f1(m.f)} Гц${m.n[axes[0]] > 1 ? ` (${m.n[axes[0]]}-я)` : ''} по ${AXIS[axes[0]]}.`;
       } else if (m.kind === 'tangential') {
         where = axes.includes(2) ? 'в стыках стен с потолком и в углах' : 'в вертикальных углах комнаты';
-        cause = `Тангенциальная мода ${m.n.join(' ')} (${f1(m.f)} Гц).`;
+        cause = `Тангенциальная мода ${f1(m.f)} Гц (${modeWhere(m.n)}).`;
       } else {
         where = 'в трёхгранных углах (стены с полом или потолком)';
-        cause = `Косая мода ${m.n.join(' ')} (${f1(m.f)} Гц).`;
+        cause = `Косая мода ${f1(m.f)} Гц.`;
       }
     }
     out.push({

@@ -274,7 +274,7 @@ textarea { font-size: 16px; }
 .scan-preview canvas { display: block; width: 100% !important; height: 100% !important; }
 
 /* ---------- таблицы ---------- */
-.table-scroll { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+.table-scroll { overflow-x: auto; margin: 0 -4px; padding: 0 4px; max-width: calc(100% + 8px); }
 table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
 th, td { padding: 7px 6px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
 thead th { font-weight: 500; color: var(--muted); font-size: 13px; }
@@ -286,6 +286,8 @@ td.num { text-align: right; }
 .rt-table td, .rt-table thead th:not([scope]) { text-align: right; }
 .modes-table td.num:first-child { font-weight: 600; }
 .modes-table tr.is-axial td:first-child { color: var(--accent); }
+/* тип и направление моды переносятся: на телефоне таблица не шире экрана */
+.modes-table td.mode-kind { white-space: normal; }
 .pos-table caption { text-align: left; padding-bottom: 4px; }
 .pos-table th[scope='row'] { font-weight: 500; }
 .pos-table thead th { text-align: right; white-space: normal; line-height: 1.2; }
@@ -545,8 +547,9 @@ td.num { text-align: right; }
 /* Мини-плеер */
 .miniplayer { position: fixed; left: 8px; right: 8px; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 8px); z-index: 20; max-width: 624px; margin: 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2); }
 .miniplayer__row { display: flex; align-items: center; gap: 6px; }
-.miniplayer__f { flex: 1; text-align: center; }
-.miniplayer__f small { color: var(--muted); }
+.miniplayer__f { flex: 1; min-width: 0; text-align: center; line-height: 1.2; }
+/* подпись моды («2-я по ширине») — второй строкой, чтобы не сдвигать кнопки */
+.miniplayer__f small { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .miniplayer__vol { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .miniplayer__vol input { flex: 1; accent-color: var(--accent); }
 .play-btn { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; padding: 0; vertical-align: middle; }

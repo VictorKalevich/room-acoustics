@@ -11,7 +11,7 @@ import { applyKernel, modeShapes, prepareModes, receiverKernel, type PreparedMod
 import { flatnessScore } from './metric';
 import { isFlat, makeScorer } from './objective';
 import { isWave } from './geometry';
-import { hasSim, waveFMax, waveSpectra } from './acoustics';
+import { hasSim, waveFMax, waveSpectra, waveSystemModes } from './acoustics';
 
 export const MIN_LISTEN_DIST = 1.0; // м, минимум между колонками и слушателем
 export const SEAT_OFFSET = 0.3; // м, сдвиг головы влево/вправо при одном месте
@@ -280,6 +280,14 @@ export interface SetupEval {
   model: 'modal' | 'wave';
 }
 
+/**
+ * Моды системы «комната + смежные помещения» для цели «без провалов на модах» в волновой модели:
+ * проём сдвигает моды основной комнаты, и провал ищется на настоящих частотах. В остальных случаях не нужны.
+ */
+export function objectiveSys(room: Room, c: Constraints) {
+  return isWave(room) && c.objective?.id === 'modes' ? waveSystemModes(room) : undefined;
+}
+
 /** Оценка произвольного варианта расстановки с регулировками сабвуферов. */
 export function evaluateSetup(
   room: Room,
@@ -297,7 +305,7 @@ export function evaluateSetup(
   const ids = sources.map((s) => s.id).filter((id) => setup.positions[id]);
   const dbs = pts.map((_, r) => sumDb(raw, filt, r, n, ids));
   const perReceiver = dbs.map((d) => flatnessScore(d, target));
-  const scorer = isFlat(c.objective) ? null : makeScorer(freqs, c.objective, room);
+  const scorer = isFlat(c.objective) ? null : makeScorer(freqs, c.objective, room, objectiveSys(room, c));
   const perObj = scorer ? dbs.map((d) => scorer(d, target)) : perReceiver;
   const spk = sources.filter((s) => s.kind === 'speaker' && setup.positions[s.id]).map((s) => setup.positions[s.id]);
   const { penalties, angle } = speakerPenalties(ctx, setup.listener, spk);

@@ -13,6 +13,7 @@ import { Panel } from '../components/Fields';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { BUILD } from '../updates';
+import { modeWhere } from '../../core/modes';
 
 interface Props { project: Project; modes: Mode[]; reverb: ReverbResult }
 
@@ -117,7 +118,7 @@ export function ReportScreen({ project, modes, reverb }: Props) {
       <Panel title={S.report.modes}>
         <table class="report-table">
           <thead><tr><th>{S.report.freq}</th><th>{S.modes.colN}</th><th>T60</th><th>{S.overview.limit}</th></tr></thead>
-          <tbody>{axial.map((d, ki) => <tr key={ki} class={d.t60 > d.limit ? 'is-over' : ''}><td>{fmt(d.f, 1)} Гц</td><td>{d.n.join(' ')}</td><td>{fmt(d.t60, 2)} с</td><td>{fmt(d.limit, 2)} с</td></tr>)}</tbody>
+          <tbody>{axial.map((d, ki) => <tr key={ki} class={d.t60 > d.limit ? 'is-over' : ''}><td>{fmt(d.f, 1)} Гц</td><td>{modeWhere(d.n)}</td><td>{fmt(d.t60, 2)} с</td><td>{fmt(d.limit, 2)} с</td></tr>)}</tbody>
         </table>
       </Panel>
 

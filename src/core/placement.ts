@@ -3,9 +3,9 @@ import { PlacementError } from './types';
 import { logFreqs, db20 } from './frequency';
 import { receiverKernel, applyKernel, modeShapes, type Kernel } from './response';
 import { flatnessScore, ROBUST_LISTENER_SHIFT, ROBUST_SOURCE_SHIFT } from './metric';
-import { makeScorer } from './objective';
+import { makeScorer, objectivePpo } from './objective';
 import {
-  MIN_LISTEN_DIST, clampToRoom, evaluateSetup, filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed,
+  MIN_LISTEN_DIST, clampToRoom, evaluateSetup, filterSet, makeCtx, objectiveSys, receiverSet, seatAllowed, sourceAllowed,
   speakerPenalties, sumPenalties, type EvalCtx, type Spectrum,
 } from './system';
 import { isWave } from './geometry';
@@ -168,7 +168,16 @@ interface Found {
  * Перебор расстановок на дискретной сетке (research R8). Детерминирован.
  * onProgress получает долю выполненной работы 0…1.
  */
-export function optimizePlacement(input: PlacementInput, onProgress?: (p: number) => void): PlacementResult {
+/** Сколько лучших мест колонок перебирать вместе с местами сабвуферов. */
+const SPK_POOL = 8;
+
+/** Параметры поиска для проверок: сколько вариантов колонок брать в перебор с сабвуферами и шаг сетки частот. */
+export interface SearchTuning {
+  spkPool?: number;
+  ppo?: number;
+}
+
+export function optimizePlacement(input: PlacementInput, onProgress?: (p: number) => void, tuning: SearchTuning = {}): PlacementResult {
   const t0 = Date.now();
   validate(input);
   const { room, sources, constraints: c } = input;
@@ -177,11 +186,11 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   const wave = isWave(room);
   // волновая модель: поиск на более грубой сетке (≤ 180 Гц), итог — на полной
   const searchFMax = 180;
-  const freqs = logFreqs(ctx.fLo, wave ? Math.min(ctx.fHi, searchFMax / 1.08) : ctx.fHi, 12);
+  const freqs = logFreqs(ctx.fLo, wave ? Math.min(ctx.fHi, searchFMax / 1.08) : ctx.fHi, tuning.ppo ?? objectivePpo(c.objective, 12));
   const nF = freqs.length;
   const { filt, target } = filterSet(sources, freqs);
   // оценка по цели подбора (ровный бас, меньше провалов внизу, моды…)
-  const scoreFn = makeScorer(freqs, c.objective, room);
+  const scoreFn = makeScorer(freqs, c.objective, room, objectiveSys(room, c));
 
   const spkSpecs = sources.filter((s) => s.kind === 'speaker');
   const subSpecs = sources.filter((s) => s.kind === 'sub');
@@ -315,7 +324,9 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
       subPts.map((_, pi) => rcv.map((_r, r) => withFilter(respAt(r, subOffset + pi, subPsi[pi]), s.id))),
     );
 
-    const top = spkSpecs.length ? spkEvals.slice(0, subSpecs.length > 1 ? 3 : 4) : [null];
+    // пул колонок для перебора с сабвуферами: 8 лучших по ровности в своей полосе. Проверка полным перебором
+    // (3 комнаты, 1–2 сабвуфера, все цели; оценка на сетке 1/96 октавы): при 3–4 терялось до 0,95 дБ, при 8 — ≤ 0,18 дБ
+    const top = spkSpecs.length ? spkEvals.slice(0, tuning.spkPool ?? SPK_POOL) : [null];
     let bestScore = Infinity;
     let bestSe: SpkEval | null = null;
     let bestSubs: number[] = [];
@@ -487,17 +498,21 @@ function dbaVariant(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, base: P
 }
 
 /**
- * Устойчивость: на сколько дБ в среднем ухудшается оценка, если место слушателя сдвинуть на ±25 см,
- * а колонки и сабвуферы — на ±10 см (по осям). Половина веса — слушатель, половина — источники.
+ * Устойчивость: на сколько дБ в среднем ухудшается оценка по цели подбора, если место слушателя сдвинуть
+ * на ±25 см, а колонки и сабвуферы — на ±10 см (по осям). Половина веса — слушатель, половина — источники.
  * На басу 10 см — малая доля длины волны, поэтому слушатель смещается сильнее: так видно, у какого варианта
  * хорошая оценка держится только в одной точке. В волновой модели — только слушатель.
+ * Оценка — та же, по которой выбирались варианты: при цели «без провалов» вариант может быть устойчив по
+ * ровности, но в 25 см от него — провал (проверка на 4 комнатах × 5 целей: совпадение классов лишь у половины).
+ * Пороги «хорошо/средне» те же для всех целей: ухудшения по провалам того же порядка (медиана 0,2–0,4 дБ).
  */
 export function robustness(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, p: Placement): number {
   const positions: Record<string, Vec3> = {};
   for (const s of p.sources) if (s.pos) positions[s.id] = s.pos;
   const settings = p.subSettings ?? {};
+  const ppo = objectivePpo(c.objective, 12);
   const ev = (listener: Vec3, pos: Record<string, Vec3>) =>
-    evaluateSetup(ctx.room, sources, c, { listener, positions: pos, subSettings: settings, crossoverHz: null }, { ctx, ppo: 12 }).score;
+    evaluateSetup(ctx.room, sources, c, { listener, positions: pos, subSettings: settings, crossoverHz: null }, { ctx, ppo }).objScore;
   const base = ev(p.listener, positions);
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   let lSum = 0;

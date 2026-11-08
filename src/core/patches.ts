@@ -88,9 +88,14 @@ export function roomPatches(room: Room, opts: { withArches?: boolean } = {}): Pa
 /** α стены (материала поверхности) на частоте f. */
 const wallAlpha = (room: Room, s: SurfaceId, f: number) => alphaAt(getMaterial(room.materials[s]).alpha, f);
 
+/** α поверхности под участком на частоте f; для угловой ловушки — среднее двух стен. */
+export function patchWallAlpha(room: Room, p: Patch, f: number): number {
+  return p.diag ? (wallAlpha(room, p.diag.walls[0], f) + wallAlpha(room, p.diag.walls[1], f)) / 2 : wallAlpha(room, p.surface, f);
+}
+
 /** Прибавка к α на участке относительно поверхности под ним. Для угловой ловушки — среднее двух стен. */
 export function patchDeltaAlpha(room: Room, p: Patch, f: number): number {
-  const aw = p.diag ? (wallAlpha(room, p.diag.walls[0], f) + wallAlpha(room, p.diag.walls[1], f)) / 2 : wallAlpha(room, p.surface, f);
+  const aw = patchWallAlpha(room, p, f);
   const ap = p.alpha ? alphaAt(p.alpha, f) : 1;
   return p.overlay ? Math.max(0, ap - aw) : ap - aw;
 }

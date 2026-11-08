@@ -53,7 +53,8 @@ describe('затухание мод по частоте', () => {
     materials: { front: 'acoustic-panel', back: 'acoustic-panel', left: 'concrete-painted', right: 'concrete-painted', floor: 'concrete-painted', ceiling: 'concrete-painted' },
   };
   function t60(model: BoundaryModel, fs: number[]): number[] {
-    const g = buildGrid(room, 180, 300_000, { boundary: model });
+    // сетка до 200 Гц: верхняя мода (162 Гц) должна быть заметно ниже предела сетки, иначе её затухание искажено
+    const g = buildGrid(room, 200, 300_000, { boundary: model });
     // источник и приёмник — на средних плоскостях: нечётные моды по ширине и высоте не возбуждаются
     const rcv = nearestNode(g, { x: room.depth - 0.2, y: room.width / 2, z: room.height / 2 });
     const sim = simulate(g, { x: 0.2, y: room.width / 2, z: room.height / 2 }, { extra: [rcv], duration: 2.6 });
@@ -87,12 +88,13 @@ describe('затухание мод по частоте', () => {
     const fd = t60('fd', [lo.f, hi.f]);
     const fi = t60('fi', [lo.f, hi.f]);
     const trend = (t: number[]) => t[0] / t[1];
-    // модальная модель: на 32 Гц мода звучит в ~4,5 раза дольше, чем на 160 Гц
-    expect(trend(modal)).toBeGreaterThan(3.5);
-    expect(Math.abs(Math.log(trend(fd) / trend(modal)))).toBeLessThan(Math.log(1.35));
+    // модальная модель: на 32 Гц мода звучит в ~6,5 раза дольше, чем на 160 Гц
+    expect(trend(modal)).toBeGreaterThan(4.5);
+    expect(Math.abs(Math.log(trend(fd) / trend(modal)))).toBeLessThan(Math.log(1.25));
     // с постоянной β затухание почти одинаковое на всех частотах
     expect(trend(fi)).toBeLessThan(1.3);
-    // и абсолютные значения: FD в пределах 30 % от модальной модели на обеих частотах
-    fd.forEach((t, i) => expect(Math.abs(Math.log(t / modal[i]))).toBeLessThan(Math.log(1.45)));
+    // и абсолютные значения: обе модели считают затухание через β по формуле Пари (модель затухания 3) —
+    // FD в пределах 20 % от модальной на обеих частотах (до этого волновая затухала на 15–30 % быстрее)
+    fd.forEach((t, i) => expect(Math.abs(Math.log(t / modal[i]))).toBeLessThan(Math.log(1.2)));
   });
 });
