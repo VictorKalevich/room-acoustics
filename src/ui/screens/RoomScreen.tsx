@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
 import type { Project } from '../../state/project';
@@ -9,7 +9,7 @@ import { SURFACES } from '../../core/types';
 import { MATERIALS, FURNISHING_LABEL } from '../../core/materials';
 import { speedOfSound } from '../../core/physics';
 import type { DetectResult, Units } from '../../scan/detect';
-import type { LayoutResult } from '../../scan/layout';
+import type { LayoutResult, ScanLabels } from '../../scan/layout';
 import { LayoutEditor, type Rect } from '../components/LayoutEditor';
 import { NumberField, Panel, SelectField, Note, Details, Segmented } from '../components/Fields';
 import { PlanView } from '../components/PlanView';
@@ -31,6 +31,7 @@ type ScanState =
 interface Loaded {
   preview: Object3D;
   triangles: Float32Array;
+  labels?: ScanLabels;
   format: string;
   count: number;
   decimated: boolean;
@@ -143,6 +144,9 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
   const [layout, setLayout] = useState<LayoutResult | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
   const [useLayout, setUseLayout] = useState(true);
+  const [useOpen, setUseOpen] = useState<boolean[]>([]);
+  // закрытые двери по умолчанию не проёмы; найденные дыры и размеченные проёмы — проёмы
+  useEffect(() => { setUseOpen(layout ? layout.openings.map((o) => o.kind !== 'door') : []); }, [layout]);
   const input = useRef<HTMLInputElement>(null);
 
   const runWorker = <T,>(msg: Record<string, unknown>, tri: Float32Array) =>
@@ -157,7 +161,7 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
       w.postMessage({ ...msg, triangles: copy }, [copy.buffer]);
     });
   const detect = async (l: Loaded, u: Units | 'auto') => {
-    const r = await runWorker<{ result: DetectResult; layout: LayoutResult }>({ units: u === 'auto' ? undefined : u }, l.triangles);
+    const r = await runWorker<{ result: DetectResult; layout: LayoutResult }>({ units: u === 'auto' ? undefined : u, labels: l.labels }, l.triangles);
     setLayout(r.layout);
     setRect({ x0: 0, x1: r.result.depth, y0: 0, y1: r.result.width });
     return r.result;
@@ -169,7 +173,7 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
     t[12] -= rc.x0;
     t[13] -= rc.y0;
     try {
-      const r = await runWorker<{ layout: LayoutResult }>({ type: 'layout', transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: det.height } }, loaded.triangles);
+      const r = await runWorker<{ layout: LayoutResult }>({ type: 'layout', labels: loaded.labels, transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: det.height } }, loaded.triangles);
       setLayout({ ...layout, openings: r.layout.openings, extension: r.layout.extension });
     } catch { /* оставляем прежние */ }
   };
@@ -186,7 +190,7 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
       ]);
       setPreview(() => preview.default);
       const s = await loadScan(file);
-      const l: Loaded = { preview: s.preview, triangles: s.triangles, format: s.format, count: s.triangleCount, decimated: s.decimated, fileName: file.name };
+      const l: Loaded = { preview: s.preview, triangles: s.triangles, labels: s.labels, format: s.format, count: s.triangleCount, decimated: s.decimated, fileName: file.name };
       setLoaded(l);
       setState({ phase: 'detecting', fileName: file.name });
       setDet(await detect(l, 'auto'));
@@ -214,15 +218,19 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
     const rc = rect ?? { x0: 0, x1: det.depth, y0: 0, y1: det.width };
     const depth = Math.round((rc.x1 - rc.x0) * 1000) / 1000;
     const width = Math.round((rc.y1 - rc.y0) * 1000) / 1000;
-    const lay = useLayout && layout ? layout : null;
+    // найденное в скане заменяет прежнее; если ничего не найдено — ручные проёмы и коридор сохраняются
+    const found = layout ? layout.openings.filter((_, i) => useOpen[i]) : [];
+    const ext = useLayout && layout?.extension ? layout.extension : null;
     const room: Room = {
       ...project.room,
       depth,
       width,
       height: det.height,
       source: 'scan',
-      openings: lay ? lay.openings.map((o) => ({ ...o, id: makeId() })) : project.room.openings,
-      extensions: lay?.extension ? [{ ...lay.extension, id: makeId(), name: S.openings.corridor }] : lay ? [] : project.room.extensions,
+      openings: layout && layout.openings.length > 0
+        ? found.map(({ kind: _k, ...o }) => ({ ...o, id: makeId() }))
+        : project.room.openings,
+      extensions: ext ? [{ ...ext, id: makeId(), name: S.openings.corridor }] : project.room.extensions,
     };
     const { transform: _t, ...rest } = det;
     void _t;
@@ -282,34 +290,51 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
             <>
               <LayoutEditor
                 layout={layout}
+                used={useOpen}
                 rect={rect}
                 height={det.height}
                 onRect={(r) => { setRect(r); setApplied(false); }}
                 onRectDone={relayout}
               />
               <p class="muted small">{S.layout.hint}</p>
-              {(layout.openings.length > 0 || layout.extension) && (
-                <ul class="plain-list small">
-                  {layout.extension && (
-                    <li>
-                      {S.layout.corridorFound(
-                        S.openings.wallsShort[layout.extension.wall],
-                        fmt(layout.extension.depth, 2),
-                        fmt(layout.extension.a1 - layout.extension.a0, 2),
-                        fmt(layout.extension.arch.a1 - layout.extension.arch.a0, 2),
-                      )}
-                    </li>
-                  )}
-                  {layout.openings.map((o) => (
-                    <li>{S.layout.openingFound(S.openings.wallsShort[o.wall], fmt(o.a1 - o.a0, 2), fmt(o.height, 2))}</li>
-                  ))}
-                </ul>
+              {layout.extension && (
+                <>
+                  <p class="small">
+                    {S.layout.corridorFound(
+                      S.openings.wallsShort[layout.extension.wall],
+                      fmt(layout.extension.depth, 2),
+                      fmt(layout.extension.a1 - layout.extension.a0, 2),
+                      fmt(layout.extension.arch.a1 - layout.extension.arch.a0, 2),
+                    )}
+                  </p>
+                  <label class="check">
+                    <input type="checkbox" checked={useLayout} onChange={(e) => setUseLayout((e.target as HTMLInputElement).checked)} />
+                    <span>{S.layout.useFound}</span>
+                  </label>
+                </>
               )}
-              {(layout.openings.length > 0 || layout.extension) && (
-                <label class="check">
-                  <input type="checkbox" checked={useLayout} onChange={(e) => setUseLayout((e.target as HTMLInputElement).checked)} />
-                  <span>{S.layout.useFound}</span>
-                </label>
+              {layout.openings.length > 0 && (
+                <div class="found-openings">
+                  <h4 class="subhead">{S.layout.foundTitle}</h4>
+                  {layout.openings.map((o, i) => {
+                    const wall = S.openings.wallsShort[o.wall];
+                    const w = fmt(o.a1 - o.a0, 2), h = fmt(o.height, 2);
+                    return (
+                      <div class="found-opening">
+                        <span class="small">{o.kind === 'door' ? S.layout.doorFound(wall, w, h) : S.layout.openingFound(wall, w, h)}</span>
+                        <label class="check">
+                          <input
+                            type="checkbox"
+                            checked={!!useOpen[i]}
+                            onChange={(e) => { const v = (e.target as HTMLInputElement).checked; setUseOpen((u) => u.map((x, j) => (j === i ? v : x))); setApplied(false); }}
+                          />
+                          <span>{o.kind === 'door' ? S.layout.useDoor : S.layout.useOpening}</span>
+                        </label>
+                      </div>
+                    );
+                  })}
+                  {layout.openings.some((o) => o.kind === 'door') && <p class="muted small">{S.layout.doorNote}</p>}
+                </div>
               )}
             </>
           )}

@@ -9,6 +9,8 @@ export interface Rect { x0: number; x1: number; y0: number; y1: number }
 
 interface Props {
   layout: LayoutResult;
+  /** Какие проёмы учитываются (закрытые двери рисуются тонкой линией). */
+  used?: boolean[];
   rect: Rect;
   height: number;
   onRect: (r: Rect) => void;
@@ -18,7 +20,7 @@ interface Props {
 const W = 320;
 const PAD = 22;
 
-export function LayoutEditor({ layout, rect, height, onRect, onRectDone }: Props) {
+export function LayoutEditor({ layout, used, rect, height, onRect, onRectDone }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<keyof Rect | null>(null);
@@ -106,9 +108,10 @@ export function LayoutEditor({ layout, rect, height, onRect, onRectDone }: Props
         )}
         <rect class="layout-editor__room" x={X(rect.y0)} y={Y(rect.x0)} width={(rect.y1 - rect.y0) * scale} height={(rect.x1 - rect.x0) * scale} />
         <line class="layout-editor__front" x1={X(rect.y0)} y1={Y(rect.x0)} x2={X(rect.y1)} y2={Y(rect.x0)} />
-        {layout.openings.map((o) => {
+        {layout.openings.map((o, i) => {
           const [x1, y1, x2, y2] = wallSeg(o.wall, o.a0, o.a1);
-          return <line class="layout-editor__opening" x1={x1} y1={y1} x2={x2} y2={y2} />;
+          const on = used ? used[i] : true;
+          return <line class={on ? 'layout-editor__opening' : 'layout-editor__door'} x1={x1} y1={y1} x2={x2} y2={y2} />;
         })}
         {layout.extension && (() => {
           const e = layout.extension!;

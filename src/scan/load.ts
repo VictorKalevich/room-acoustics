@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { ScanLabels, ScanObjectKind } from './layout';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 
@@ -19,6 +20,8 @@ export class ScanError extends Error {
 
 export interface LoadedScan {
   triangles: Float32Array;
+  /** Разметка RoomPlan/Polycam (двери, окна, проёмы), если она есть в файле. */
+  labels?: ScanLabels;
   preview: THREE.Object3D;
   format: ScanFormat;
   triangleCount: number;
@@ -91,8 +94,19 @@ async function parse(buf: ArrayBuffer, format: ScanFormat): Promise<THREE.Object
   }
 }
 
+const LABEL_RE = /^(door|window|opening)[\s_-]*\d*$/i;
+
+/** Тип размеченного объекта по имени узла или его ближайшего предка (Door_0, Window_1, Opening_2). */
+function labelOf(o: THREE.Object3D): { kind: ScanObjectKind; node: THREE.Object3D } | null {
+  for (let p: THREE.Object3D | null = o; p; p = p.parent) {
+    const m = LABEL_RE.exec(p.name.trim());
+    if (m) return { kind: m[1].toLowerCase() as ScanObjectKind, node: p };
+  }
+  return null;
+}
+
 /** Собирает треугольники всех сеток сцены в мировых координатах. */
-export function extractTriangles(root: THREE.Object3D, maxTriangles = MAX_TRIANGLES): { triangles: Float32Array; total: number; decimated: boolean } {
+export function extractTriangles(root: THREE.Object3D, maxTriangles = MAX_TRIANGLES): { triangles: Float32Array; total: number; decimated: boolean; labels?: ScanLabels } {
   root.updateMatrixWorld(true);
   const meshes: THREE.Mesh[] = [];
   let total = 0;
@@ -107,6 +121,9 @@ export function extractTriangles(root: THREE.Object3D, maxTriangles = MAX_TRIANG
   });
   const step = Math.max(1, Math.ceil(total / maxTriangles));
   const out = new Float32Array(Math.ceil(total / step) * 9);
+  const ids = new Uint16Array(Math.ceil(total / step));
+  const objects: ScanObjectKind[] = [];
+  const objIndex = new Map<THREE.Object3D, number>();
   const v = new THREE.Vector3();
   let k = 0;
   let t = 0;
@@ -115,8 +132,15 @@ export function extractTriangles(root: THREE.Object3D, maxTriangles = MAX_TRIANG
     const pos = g.getAttribute('position');
     const idx = g.index;
     const nTri = idx ? idx.count / 3 : pos.count / 3;
+    const lb = labelOf(m);
+    let id = 0;
+    if (lb && objects.length < 65000) {
+      id = objIndex.get(lb.node) ?? 0;
+      if (!id) { objects.push(lb.kind); id = objects.length; objIndex.set(lb.node, id); }
+    }
     for (let f = 0; f < nTri; f++, t++) {
       if (t % step !== 0) continue;
+      ids[k / 9] = id;
       for (let c = 0; c < 3; c++) {
         const vi = idx ? idx.getX(f * 3 + c) : f * 3 + c;
         v.fromBufferAttribute(pos, vi).applyMatrix4(m.matrixWorld);
@@ -124,7 +148,8 @@ export function extractTriangles(root: THREE.Object3D, maxTriangles = MAX_TRIANG
       }
     }
   }
-  return { triangles: out.subarray(0, k), total, decimated: step > 1 };
+  const labels = objects.length ? { ids: ids.slice(0, k / 9), objects } : undefined;
+  return { triangles: out.subarray(0, k), total, decimated: step > 1, labels };
 }
 
 export async function loadScan(file: File): Promise<LoadedScan> {
@@ -138,9 +163,9 @@ export async function loadScan(file: File): Promise<LoadedScan> {
     if (e instanceof ScanError) throw e;
     throw new ScanError(`Не удалось прочитать файл (${format.toUpperCase()}). Поддерживаются: ${SUPPORTED}.`);
   }
-  const { triangles, total, decimated } = extractTriangles(preview);
+  const { triangles, total, decimated, labels } = extractTriangles(preview);
   if (total < 20) {
     throw new ScanError('В файле нет поверхностей (или это облако точек). Экспортируйте скан как сетку (mesh).');
   }
-  return { triangles, preview, format, triangleCount: total, decimated };
+  return { triangles, labels, preview, format, triangleCount: total, decimated };
 }

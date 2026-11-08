@@ -227,7 +227,7 @@ export function detectRoom(raw: Float32Array, opts: { units?: Units } = {}): Det
   }
   const hp = peaks(hh, 2, 0.08);
   if (!hp.length) throw new DetectError('Не удалось найти пол: в скане нет горизонтальных поверхностей.');
-  const floorRaw = hp[0].pos;
+  let floorRaw = hp[0].pos;
   const floorW = windowWeight(hh, floorRaw, 3 * hBinRaw);
   let ceilRaw = hp[hp.length - 1].pos;
   const ceilW = windowWeight(hh, ceilRaw, 3 * hBinRaw);
@@ -246,6 +246,14 @@ export function detectRoom(raw: Float32Array, opts: { units?: Units } = {}): Det
   }
   const sc = UNIT_SCALE[units];
 
+  // Пол и потолок как плиты (RoomPlan/Polycam): две близкие горизонтали — берём внутреннюю грань
+  {
+    const p0 = hp[0];
+    for (const p of hp) if (p !== p0 && (p.pos - p0.pos) * sc < 0.25 && p.weight >= 0.5 * p0.weight) floorRaw = Math.max(floorRaw, p.pos);
+    const pc = hp[hp.length - 1];
+    if (pc !== p0)
+      for (const p of hp) if (p !== pc && (pc.pos - p.pos) * sc < 0.25 && p.pos > floorRaw && p.weight >= 0.5 * pc.weight) ceilRaw = Math.min(ceilRaw, p.pos);
+  }
   let hasCeiling = hp.length > 1 && (ceilRaw - floorRaw) * sc > 1.5 && ceilW > 0.2 * floorW;
   if (!hasCeiling) {
     // верхняя вершина стен (по вершинам, а не центроидам)
