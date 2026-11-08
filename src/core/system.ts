@@ -9,6 +9,7 @@ import { db20, logFreqs } from './frequency';
 import { sourceFilter } from './filters';
 import { applyKernel, modeShapes, prepareModes, receiverKernel, type PreparedModes } from './response';
 import { flatnessScore } from './metric';
+import { isFlat, makeScorer } from './objective';
 import { isWave } from './geometry';
 import { hasSim, waveFMax, waveSpectra } from './acoustics';
 
@@ -29,18 +30,25 @@ export interface EvalCtx {
   notes: string[];
 }
 
-export function makeCtx(room: Room, sources: SourceSpec[]): EvalCtx {
-  const rev = computeReverb(room);
-  const notes: string[] = [];
+/** Полоса оценки баса: от нижней границы системы (не ниже 20 Гц) до частоты Шрёдера (120–300 Гц). */
+export function evalBand(room: Room, sources: SourceSpec[], rev: ReverbResult = computeReverb(room)): { fLo: number; fHi: number; narrow: boolean } {
   const fHi = Math.min(300, Math.max(120, rev.schroeder));
   const minLow = Math.min(...sources.map((s) => s.fLow));
   let fLo = Math.max(20, minLow);
-  if (fLo > fHi / 1.5) {
+  const narrow = fLo > fHi / 1.5;
+  if (narrow) fLo = Math.max(20, fHi / 2);
+  return { fLo, fHi, narrow };
+}
+
+export function makeCtx(room: Room, sources: SourceSpec[]): EvalCtx {
+  const rev = computeReverb(room);
+  const notes: string[] = [];
+  const { fLo, fHi, narrow } = evalBand(room, sources, rev);
+  if (narrow) {
     notes.push(
       'Все источники воспроизводят только частоты выше модальной области — оценка модальной ' +
         'неровности ограничена; расстановка выбирается в основном по геометрическим правилам.',
     );
-    fLo = Math.max(20, fHi / 2);
   }
   const fModes = Math.max(fHi * 2, fHi + 60);
   return { room, sources, rev, c: speedOfSound(room.temperatureC), fLo, fHi, pm: prepareModes(room, fModes, rev), notes };
@@ -257,6 +265,8 @@ export function sumDb(raw: Record<string, Spectrum[]>, filt: Record<string, Spec
 
 export interface SetupEval {
   score: number;
+  /** Оценка по цели подбора (со штрафами); при «ровном басе» равна score. */
+  objScore: number;
   perReceiver: number[];
   weights: number[];
   receivers: Vec3[];
@@ -287,6 +297,8 @@ export function evaluateSetup(
   const ids = sources.map((s) => s.id).filter((id) => setup.positions[id]);
   const dbs = pts.map((_, r) => sumDb(raw, filt, r, n, ids));
   const perReceiver = dbs.map((d) => flatnessScore(d, target));
+  const scorer = isFlat(c.objective) ? null : makeScorer(freqs, c.objective, room);
+  const perObj = scorer ? dbs.map((d) => scorer(d, target)) : perReceiver;
   const spk = sources.filter((s) => s.kind === 'speaker' && setup.positions[s.id]).map((s) => setup.positions[s.id]);
   const { penalties, angle } = speakerPenalties(ctx, setup.listener, spk);
   const multi = (c.seats?.count ?? 1) > 1;
@@ -296,8 +308,10 @@ export function evaluateSetup(
   let off = 0;
   for (let j = 0; j < n; j++) off += shown[j] - target[j];
   off /= n;
+  const pen = sumPenalties(penalties);
   return {
-    score: perReceiver.reduce((a, s, i) => a + s * weights[i], 0) + sumPenalties(penalties),
+    score: perReceiver.reduce((a, s, i) => a + s * weights[i], 0) + pen,
+    objScore: perObj.reduce((a, s, i) => a + s * weights[i], 0) + pen,
     perReceiver,
     weights,
     receivers: pts,

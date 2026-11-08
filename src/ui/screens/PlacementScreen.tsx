@@ -1,11 +1,16 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { defaultSetup, defaultSources, validateSources } from '../../state/project';
-import type { Constraints, PlacementResult, SourceSpec, SubZone, Placement, Setup, PhaseMode } from '../../core/types';
+import type { BassObjective, Constraints, PlacementResult, SourceSpec, SubZone, Placement, Setup, PhaseMode } from '../../core/types';
 import { NumberField, Panel, Segmented, Note, Details, SelectField } from '../components/Fields';
 import { compute, type ComputeJob } from '../compute';
 import { ManualScreen } from './ManualScreen';
-import { PlanView } from '../components/PlanView';
+import { PlanView, HeatLegend } from '../components/PlanView';
+import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
+import { ObjectivePicker } from '../components/ObjectivePicker';
+import type { Heatmap } from '../../core/field';
+import { evalBand } from '../../core/system';
+import { isFlat } from '../../core/objective';
 import { ResponseChart } from '../components/Charts';
 import { S } from '../strings';
 import { Term } from '../components/Term';
@@ -36,6 +41,8 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
   const resultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => job.current?.cancel(), []);
+  const layers = usePlanLayers();
+  const band = useMemo(() => { const b = evalBand(room, sources); return [b.fLo, b.fHi] as [number, number]; }, [room, sources]);
 
   const spk = sources.filter((s) => s.kind === 'speaker');
   const subs = sources.filter((s) => s.kind === 'sub');
@@ -100,6 +107,39 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
   const variants: Placement[] = result ? [...result.best, result.baseline] : [];
   const sel = Math.min(project.selectedIndex, Math.max(0, variants.length - 1));
   const current = variants[sel] ?? null;
+
+  // карта звука для выбранного варианта (как в ручном режиме): место слушателя или сабвуфера
+  const [mapKind, setMapKind] = useState<'listener' | 'sub'>('listener');
+  const [mapSub, setMapSub] = useState(subs[0]?.id ?? '');
+  const effKind = mapKind === 'sub' && subs.length ? 'sub' : 'listener';
+  const effSub = subs.some((s) => s.id === mapSub) ? mapSub : subs[0]?.id ?? '';
+  const [heat, setHeat] = useState<Heatmap | null>(null);
+  const [heatBusy, setHeatBusy] = useState(false);
+  const heatJob = useRef<ComputeJob<Heatmap> | null>(null);
+  const heatCache = useRef<{ owner: unknown; map: Map<string, Heatmap> }>({ owner: null, map: new Map() });
+  useEffect(() => {
+    if (!layers.map || !current) { heatJob.current?.cancel(); setHeatBusy(false); return; }
+    // кэш карт на результат подбора и ограничения: переключение туда-обратно — мгновенно
+    const owner = [result, room, sources, c];
+    const cache = heatCache.current;
+    if (cache.owner === null || (cache.owner as unknown[]).some((v, i) => v !== owner[i])) { cache.owner = owner; cache.map.clear(); }
+    const key = `${sel}|${effKind}|${effSub}`;
+    const hit = cache.map.get(key);
+    if (hit) { heatJob.current?.cancel(); setHeat(hit); setHeatBusy(false); return; }
+    setHeat(null);
+    setHeatBusy(true);
+    const t = setTimeout(() => {
+      heatJob.current?.cancel();
+      const setup = { ...placementLayout(current), subSettings: current.subSettings ?? {}, crossoverHz: null };
+      const j = compute<Heatmap>(effKind === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup, subId: effSub });
+      heatJob.current = j;
+      j.promise
+        .then((h) => { cache.map.set(key, h); if (heatJob.current === j) { setHeat(h); setHeatBusy(false); } })
+        .catch(() => { if (heatJob.current === j) setHeatBusy(false); });
+    }, 120);
+    return () => clearTimeout(t);
+  }, [layers.map, current, sel, effKind, effSub, result, room, sources, c]);
+  useEffect(() => () => heatJob.current?.cancel(), []);
 
   const settingsPanels = (
     <>
@@ -237,6 +277,12 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
 
     </>
   );
+  const objectivePanel = (
+    <Panel title={S.objective.title}>
+      <p class="muted small">{S.objective.intro}</p>
+      <ObjectivePicker room={room} value={c.objective} onChange={(o: BassObjective) => setC({ objective: o })} band={band} />
+    </Panel>
+  );
 
   if (mode === 'manual') {
     return (
@@ -249,7 +295,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
           onChange={onMode}
         />
       </div>
-        <ManualScreen project={project} onSetup={onSetup} onSetups={onSetups} />
+        <ManualScreen project={project} onSetup={onSetup} onSetups={onSetups} onConstraints={onConstraints} />
         <Details summary={`${S.placement.system} и ${S.placement.limits.toLowerCase()}`}>
           <div class="screen">{settingsPanels}</div>
         </Details>
@@ -268,6 +314,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
         />
       </div>
       {settingsPanels}
+      {objectivePanel}
       {/* главное действие видно, пока заполняются настройки выше */}
       <div class="run-bar is-sticky">
         <button type="button" class="btn btn--primary btn--wide" onClick={run} disabled={running || srcErrors.length > 0}>
@@ -304,7 +351,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
                 </button>
               ))}
             </div>
-            <ScoreLine p={current} baseline={result.baseline} isBaseline={sel === variants.length - 1} />
+            <ScoreLine p={current} baseline={result.baseline} isBaseline={sel === variants.length - 1} objective={c.objective} />
             {current.robust != null && (
               <p class="small">
                 <span class={`robust-tag ${current.robust <= ROBUST_GOOD ? 'is-good' : current.robust <= ROBUST_MID ? 'is-mid' : 'is-bad'}`}>
@@ -314,7 +361,23 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
               </p>
             )}
             {current.scheme === 'dba' && <Note>{S.robust.dbaNote}</Note>}
-            <PlanView depth={room.depth} width={room.width} placement={current} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} />
+            <PlanLayers {...layers} />
+            {layers.map && subs.length > 0 && (
+              <Segmented label={S.layers.mapFor} value={effKind} options={[{ value: 'listener' as const, label: S.manual.findListener }, { value: 'sub' as const, label: S.manual.findSub }]} onChange={setMapKind} />
+            )}
+            {layers.map && effKind === 'sub' && subs.length > 1 && (
+              <Segmented label={S.manual.whichSub} value={effSub} options={subs.map((s) => ({ value: s.id, label: `С${s.id.slice(3)}` }))} onChange={setMapSub} />
+            )}
+            <PlanView
+              depth={room.depth} width={room.width} placement={current}
+              zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope}
+              heatmap={layers.map ? heat : null}
+              axes={layers.axes}
+              keyNotes={effKind === 'sub' ? { heat: S.manual.keyHeatSub } : undefined}
+              label="План комнаты: выбранный вариант и карта звука"
+            />
+            {layers.map && heat && <HeatLegend hm={heat} />}
+            {layers.map && heatBusy && <p class="progress-text small" role="status" aria-live="polite"><span class="spinner" aria-hidden="true" /> {S.layers.computing}</p>}
             {isCurrent(current) ? (
               <>
                 <Note tone="good">{S.placement.inUse}</Note>
@@ -375,21 +438,25 @@ function RangeRow(p: { label: string; lo: number; hi: number; onLo: (v: number) 
   );
 }
 
-function ScoreLine({ p, baseline, isBaseline }: { p: Placement; baseline: Placement; isBaseline: boolean }) {
-  const d = baseline.score - p.score;
+function ScoreLine({ p, baseline, isBaseline, objective }: { p: Placement; baseline: Placement; isBaseline: boolean; objective?: BassObjective }) {
+  const flat = isFlat(objective);
+  // при другой цели подбора главное число — оценка по ней (по ней и упорядочены варианты)
+  const val = (q: Placement) => (flat ? q.score : q.objScore ?? q.score);
+  const d = val(baseline) - val(p);
   return (
     <div class="score">
       <div class="score__main">
-        <span class="score__value">{fmt(p.score, 1)}</span>
+        <span class="score__value">{fmt(val(p), 1)}</span>
         <span class="score__unit">дБ</span>
       </div>
       <div class="score__text">
-        <span class="score__label">{S.placement.score}</span>
+        <span class="score__label">{flat ? S.placement.score : S.objective.short[objective!.id]}</span>
         {!isBaseline && (
           <span class={`score__delta ${d > 0.05 ? 'is-good' : d < -0.05 ? 'is-bad' : ''}`}>
-            {d > 0.05 ? S.placement.better(fmt(d, 1)) : d < -0.05 ? S.placement.worse(fmt(-d, 1)) : S.placement.same}
+            {d > 0.05 ? (flat ? S.placement.better(fmt(d, 1)) : S.objective.betterBy(fmt(d, 1))) : d < -0.05 ? (flat ? S.placement.worse(fmt(-d, 1)) : S.objective.worseBy(fmt(-d, 1))) : S.placement.same}
           </span>
         )}
+        {!flat && <span class="muted small">{S.objective.lessBetter}; {S.objective.flatAlso(fmt(p.score, 1))}</span>}
         <span class="muted small">
           {fmt(p.scoreCenter, 1)} дБ {S.placement.center}, {fmt(p.scoreSeats, 1)} дБ {S.placement.seats}
           {p.angleDeg != null ? `; ${S.placement.angle.toLowerCase()} ${fmt(p.angleDeg, 0)}°` : ''}

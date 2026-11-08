@@ -44,6 +44,8 @@ export interface PlanProps {
   slope?: { wall: WallId; low: number; run: number } | null;
   listenerZone?: [number, number] | null;
   heatmap?: Heatmap | null;
+  /** Оси комнаты: пунктир на ¼, ½ и ¾ длины и ширины. */
+  axes?: boolean;
   /** Срез звукового поля на выбранных частотах (экран 3D). */
   field?: { slice: FieldSlice; threshold: number } | null;
   marks?: PlanMark[];
@@ -61,6 +63,7 @@ export interface PlanProps {
 }
 
 const SNAP = 0.05;
+const AXIS_LABEL: Record<number, string> = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
 const snap = (v: number) => Math.round(v / SNAP) * SNAP;
 
 /**
@@ -257,6 +260,23 @@ export function PlanView(p: PlanProps) {
         </g>
       )}
 
+      {p.axes && (
+        <g class="plan__axes" aria-hidden="true">
+          {[0.25, 0.5, 0.75].map((f) => (
+            <g key={`w${f}`}>
+              <line x1={X(f * width)} y1={oy} x2={X(f * width)} y2={oy + rh} class={`plan__axis${f === 0.5 ? ' is-mid' : ''}`} />
+              <text x={X(f * width)} y={oy + rh - 4} text-anchor="middle" class="plan__axis-label">{AXIS_LABEL[f]}</text>
+            </g>
+          ))}
+          {[0.25, 0.5, 0.75].map((f) => (
+            <g key={`d${f}`}>
+              <line x1={ox} y1={Y(f * depth)} x2={ox + rw} y2={Y(f * depth)} class={`plan__axis${f === 0.5 ? ' is-mid' : ''}`} />
+              <text x={ox + 4} y={Y(f * depth) - 3} class="plan__axis-label">{AXIS_LABEL[f]}</text>
+            </g>
+          ))}
+        </g>
+      )}
+
       {(p.zones ?? []).map((z) => (
         <g key={z.id} class={`plan__zone-rect is-${z.kind}`}>
           <rect x={X(z.y0)} y={Y(z.x0)} width={(z.y1 - z.y0) * scale} height={(z.x1 - z.x0) * scale} fill="url(#zonehatch)" />
@@ -406,6 +426,7 @@ export function keysFor(p: PlanProps, items: PlanItem[] = p.items ?? [], seats: 
   if (listener && spk.length) keys.push('triangle');
   if (seats.length > 1) keys.push('seats');
   if (hm) keys.push('heat');
+  if (p.axes) keys.push('axes');
   if (p.field) keys.push('field');
   if ((p.marks ?? []).some((m) => m.kind === 'best')) keys.push('best');
   if ((p.marks ?? []).some((m) => m.kind === 'probe')) keys.push('probe');
@@ -424,7 +445,7 @@ export function keysFor(p: PlanProps, items: PlanItem[] = p.items ?? [], seats: 
 
 export type KeyId =
   | 'front' | 'spk' | 'sub' | 'listener' | 'triangle' | 'seats' | 'heat' | 'best' | 'probe'
-  | 'reflection' | 'trap' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor' | 'field' | 'treat' | 'slope';
+  | 'reflection' | 'trap' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor' | 'field' | 'treat' | 'slope' | 'axes';
 
 /** Маленький значок обозначения — теми же стилями, что и на плане. */
 function KeyIcon({ id }: { id: KeyId }) {
@@ -439,6 +460,7 @@ function KeyIcon({ id }: { id: KeyId }) {
       case 'slope': return <g class="plan__slope"><rect x="3" y="3" width="22" height="14" fill="url(#keyhatch)" /></g>;
       case 'treat': return <g><polygon class="plan__treat is-corner" points="2,2 14,2 2,14" /><rect class="plan__treat is-panel" x="16" y="6" width="10" height="5" /></g>;
       case 'field': return <g><rect x="2" y="4" width="8" height="12" fill="rgba(26,71,230,0.8)" /><rect x="10" y="4" width="8" height="12" fill="none" stroke="currentColor" stroke-width="0.6" stroke-dasharray="2 2" /><rect x="18" y="4" width="8" height="12" fill="rgba(214,31,20,0.8)" /></g>;
+      case 'axes': return <g><line x1="14" y1="1" x2="14" y2="19" class="plan__axis is-mid" /><line x1="2" y1="10" x2="26" y2="10" class="plan__axis is-mid" /><line x1="7" y1="1" x2="7" y2="19" class="plan__axis" /><line x1="21" y1="1" x2="21" y2="19" class="plan__axis" /></g>;
       case 'heat': return <g><rect x="2" y="4" width="8" height="12" fill="hsl(160 62% 48%)" /><rect x="10" y="4" width="8" height="12" fill="hsl(88 62% 48%)" /><rect x="18" y="4" width="8" height="12" fill="hsl(15 62% 48%)" /></g>;
       case 'best': return <g class="plan__mark is-best"><circle cx="14" cy="10" r="9" /><text x="14" y="14" text-anchor="middle">1</text></g>;
       case 'probe': return <g class="plan__mark is-probe"><circle cx="14" cy="10" r="6" /></g>;

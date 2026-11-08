@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { makeId } from '../../state/project';
-import type { Setup, Vec3 } from '../../core/types';
+import type { BassObjective, Constraints, Setup, Vec3 } from '../../core/types';
 import { robustnessMap, type Heatmap } from '../../core/field';
 import { ROBUST_LISTENER_SHIFT, ROBUST_SOURCE_SHIFT } from '../../core/metric';
 import { evaluateSetup } from '../../core/system';
@@ -13,17 +13,27 @@ import { ResponseChart } from '../components/Charts';
 import { NumberField, Panel, Segmented, Note, Details } from '../components/Fields';
 import { S } from '../strings';
 import { fmt } from '../format';
+import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
+import { ObjectivePicker } from '../components/ObjectivePicker';
+import { evalBand } from '../../core/system';
+import { isFlat } from '../../core/objective';
 
 interface Props {
   project: Project;
   onSetup: (s: Setup) => void;
   onSetups: (list: Setup[]) => void;
+  onConstraints?: (c: Constraints) => void;
 }
 
 type Mode = 'listener' | 'sub';
 
-export function ManualScreen({ project, onSetup, onSetups }: Props) {
+export function ManualScreen({ project, onSetup, onSetups, onConstraints }: Props) {
   const { room, sources, constraints: c, current } = project;
+  const layers = usePlanLayers();
+  const band = useMemo(() => { const b = evalBand(room, sources); return [b.fLo, b.fHi] as [number, number]; }, [room, sources]);
+  const flatGoal = isFlat(c.objective);
+  const goalName = S.objective.names[c.objective?.id ?? 'flat'];
+  const setObjective = (o: BassObjective) => onConstraints?.({ ...c, objective: o });
   const subs = sources.filter((s) => s.kind === 'sub');
   const [mode, setMode] = useState<Mode>('listener');
   const [subId, setSubId] = useState<string>(subs[0]?.id ?? '');
@@ -126,13 +136,15 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
         {effMode === 'sub' && subs.length > 1 && (
           <Segmented label={S.manual.whichSub} value={effSub} options={subs.map((s) => ({ value: s.id, label: `С${s.id.slice(3)}` }))} onChange={setSubId} />
         )}
+        <PlanLayers {...layers} />
         <PlanView
           depth={room.depth}
           width={room.width}
           items={items}
           seats={evalCur?.seats ?? []}
           zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope}
-          heatmap={layer === 'robust' ? robustHeat : heat}
+          heatmap={layers.map ? (layer === 'robust' ? robustHeat : heat) : null}
+          axes={layers.axes}
           marks={marks}
           selectedId={selected}
           onSelect={setSelected}
@@ -141,9 +153,15 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
           keyNotes={effMode === 'sub' ? { best: S.manual.keyBestSub, probe: S.manual.keyProbeSub, heat: S.manual.keyHeatSub } : undefined}
           label="План комнаты с картой оценок"
         />
-        {heat && <HeatLegend hm={layer === 'robust' ? robustHeat! : heat} />}
-        <Segmented label={S.robust.layer} value={layer} options={[{ value: 'flat' as const, label: S.robust.layers.flat }, { value: 'robust' as const, label: S.robust.layers.robust }]} onChange={setLayer} />
-        {layer === 'robust' && <p class="muted small">{S.robust.layerHint}</p>}
+        {layers.map && heat && <HeatLegend hm={layer === 'robust' ? robustHeat! : heat} />}
+        {layers.map && <Segmented label={S.robust.layer} value={layer} options={[{ value: 'flat' as const, label: S.robust.layers.flat }, { value: 'robust' as const, label: S.robust.layers.robust }]} onChange={setLayer} />}
+        {layers.map && layer === 'robust' && <p class="muted small">{S.robust.layerHint}</p>}
+        {onConstraints && (
+          <Details summary={`${S.objective.title}: ${goalName}`}>
+            <p class="muted small">{S.objective.intro}</p>
+            <ObjectivePicker room={room} value={c.objective} onChange={setObjective} band={band} />
+          </Details>
+        )}
         <p class="progress-text small" role="status" aria-live="polite">
           {busy ? <><span class="spinner" aria-hidden="true" /> {S.manual.computing}</> : <span class="muted">{S.manual.hint}</span>}
         </p>
@@ -159,12 +177,12 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
       <Panel title={S.manual.best}>
         <div class="score">
           <div class="score__main">
-            <span class="score__value">{evalCur ? fmt(evalCur.score, 1) : '…'}</span>
+            <span class="score__value">{evalCur ? fmt(evalCur.objScore, 1) : '…'}</span>
             <span class="score__unit">дБ</span>
           </div>
           <div class="score__text">
-            <span class="score__label">{S.manual.current}</span>
-            <span class="muted small">{S.placement.scoreHint}</span>
+            <span class="score__label">{S.manual.current}{flatGoal ? '' : ` — ${S.objective.short[c.objective!.id].toLowerCase()}`}</span>
+            <span class="muted small">{flatGoal ? S.placement.scoreHint : `${S.objective.lessBetter}; ${evalCur ? S.objective.flatAlso(fmt(evalCur.score, 1)) : ''}`}</span>
             {evalCur?.angleDeg != null && <span class="muted small">{S.placement.angle}: {fmt(evalCur.angleDeg, 0)}°</span>}
             <span class="model-tag">{wave ? S.model.waveTag : S.model.modalTag}</span>
           </div>
@@ -180,7 +198,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
                   <strong>{fmt(b.score, 1)} дБ</strong>
                   <span class="muted small">
                     {fmt(b.pos.x, 2)} м от передней, {fmt(b.pos.y, 2)} м от левой
-                    {d > 0.05 ? `, на ${fmt(d, 1)} дБ ровнее` : ''}
+                    {d > 0.05 ? (flatGoal ? `, на ${fmt(d, 1)} дБ ровнее` : S.objective.betterHere(fmt(d, 1))) : ''}
                   </span>
                 </span>
                 <button type="button" class="btn btn--small" onClick={() => placeSearched(b.pos)}>
@@ -193,7 +211,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
         {probe && probeEval && (
           <div class="probe">
             <span>
-              <strong>{S.manual.probe}:</strong> {fmt(probe.x, 2)} × {fmt(probe.y, 2)} м — {fmt(probeEval.score, 1)} дБ
+              <strong>{S.manual.probe}:</strong> {fmt(probe.x, 2)} × {fmt(probe.y, 2)} м — {fmt(probeEval.objScore, 1)} дБ
             </span>
             <span class="btn-row">
               <button type="button" class="btn btn--small" onClick={() => { placeSearched(probe); setProbe(null); }}>
@@ -272,7 +290,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
               <VariantRow
                 key={s.id}
                 setup={s}
-                score={wave ? null : evaluateSetup(room, sources, c, s, { ppo: 12 }).score}
+                score={wave ? null : evaluateSetup(room, sources, c, s, { ppo: 12 }).objScore}
                 comparing={compareId === s.id}
                 onLoad={() => onSetup({ ...JSON.parse(JSON.stringify(s)), id: current.id, name: current.name })}
                 onCompare={() => setCompareId(compareId === s.id ? null : s.id)}
@@ -283,7 +301,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
         )}
         {compareEval && compareSetup && evalCur && (
           <Note>
-            {S.manual.compared(compareSetup.name)}: {fmt(compareEval.score, 1)} дБ против {fmt(evalCur.score, 1)} дБ у текущей.
+            {S.manual.compared(compareSetup.name)}: {fmt(compareEval.objScore, 1)} дБ против {fmt(evalCur.objScore, 1)} дБ у текущей.
           </Note>
         )}
       </Panel>

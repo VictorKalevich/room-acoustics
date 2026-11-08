@@ -213,6 +213,25 @@ export interface CrossoverSpec {
 
 export type SubZone = 'corners' | 'walls' | 'anywhere';
 
+/**
+ * Цель подбора мест для баса:
+ *  flat — ровный бас (отклонение от цели вверх и вниз одинаково, как раньше);
+ *  dips — меньше провалов (пики срежет эквалайзер, провалы — нет);
+ *  lowDips — меньше провалов внизу (чем ниже частота, тем важнее);
+ *  wideLow — без широких провалов у нижней границы (сглаживание 1/3 октавы, две нижние октавы);
+ *  modes — без провалов на выбранных модах.
+ */
+export type ObjectiveId = 'flat' | 'dips' | 'lowDips' | 'wideLow' | 'modes';
+/** Какие моды важнее: первые осевые, осевые до 150 Гц, шесть самых низких, выбранные вручную. */
+export type ModePreset = 'first' | 'axial' | 'lowest' | 'custom';
+
+export interface BassObjective {
+  id: ObjectiveId;
+  modePreset?: ModePreset;
+  /** Номера мод для выбора вручную. */
+  modes?: [number, number, number][];
+}
+
 export interface Constraints {
   speakerMinFront: number;
   speakerMinSide: number;
@@ -225,6 +244,8 @@ export interface Constraints {
   crossover: CrossoverSpec;
   /** Добавить к вариантам схему DBA (нужно ≥ 2 сабвуферов). */
   dba?: boolean;
+  /** Цель подбора мест (авто и ручной режимы, карты). Нет — ровный бас. */
+  objective?: BassObjective;
 }
 
 export interface Measurement {
@@ -262,6 +283,8 @@ export interface Placement {
   seats: Vec3[];
   sources: { id: string; pos: Vec3 }[];
   score: number;
+  /** Оценка по выбранной цели подбора (со штрафами); при цели «ровный бас» равна score. */
+  objScore?: number;
   scoreCenter: number;
   scoreSeats: number;
   penalties: Penalty[];

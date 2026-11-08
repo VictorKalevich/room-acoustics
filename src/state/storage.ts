@@ -5,6 +5,7 @@ import type { Measurement, Setup, SourceSpec } from '../core/types';
 import { DAMPING_MODEL, SURFACES } from '../core/types';
 import { MATERIAL_BY_ID } from '../core/materials';
 import { HISTORY_MAX } from './variant';
+import { normalizeObjective } from '../core/objective';
 
 export const FILE_FORMAT = 'room-acoustics-project';
 export const FILE_VERSION = 5; // 4: обработка, скос потолка, окна и двери, фильтры сабвуферов; 5: история замеров
@@ -67,6 +68,7 @@ export function normalizeProject(raw: any): Project {
     ...raw.constraints,
     seats: { ...dc.seats, ...raw.constraints?.seats },
     crossover: { ...dc.crossover, ...raw.constraints?.crossover },
+    objective: normalizeObjective(raw.constraints?.objective),
   };
   const fixSetup = (s: any, name: string): Setup =>
     syncSetup(

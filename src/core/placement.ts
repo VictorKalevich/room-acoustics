@@ -3,6 +3,7 @@ import { PlacementError } from './types';
 import { logFreqs, db20 } from './frequency';
 import { receiverKernel, applyKernel, modeShapes, type Kernel } from './response';
 import { flatnessScore, ROBUST_LISTENER_SHIFT, ROBUST_SOURCE_SHIFT } from './metric';
+import { makeScorer } from './objective';
 import {
   MIN_LISTEN_DIST, clampToRoom, evaluateSetup, filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed,
   speakerPenalties, sumPenalties, type EvalCtx, type Spectrum,
@@ -134,6 +135,7 @@ function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listen
     seats: e.seats,
     sources: sources.map((s) => ({ id: s.id, pos: positions[s.id] })),
     score: e.score,
+    objScore: e.objScore,
     scoreCenter: e.perReceiver[0],
     scoreSeats: single ? (others[0] + others[1]) / 2 : e.perReceiver.reduce((a, b) => a + b, 0) / e.perReceiver.length,
     penalties: e.penalties,
@@ -178,6 +180,8 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   const freqs = logFreqs(ctx.fLo, wave ? Math.min(ctx.fHi, searchFMax / 1.08) : ctx.fHi, 12);
   const nF = freqs.length;
   const { filt, target } = filterSet(sources, freqs);
+  // оценка по цели подбора (ровный бас, меньше провалов внизу, моды…)
+  const scoreFn = makeScorer(freqs, c.objective, room);
 
   const spkSpecs = sources.filter((s) => s.kind === 'speaker');
   const subSpecs = sources.filter((s) => s.kind === 'sub');
@@ -263,10 +267,12 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
       if (wave) { const sp = waveResp[r][idx]; return [sp.re, sp.im]; }
       return applyKernel(kernels[r], psi!);
     };
+    // колонки в своей полосе (предотбор при сабвуферах) — по ровности; без сабвуферов — по цели подбора
     const weighted = (rs: Resp[], tgt: number[], from = 0) => {
       const t = from ? tgt.slice(from) : tgt;
+      const fn = from ? flatnessScore : scoreFn;
       let s = 0;
-      for (let r = 0; r < nR; r++) s += weights[r] * flatnessScore(toDb(rs[r], from), t);
+      for (let r = 0; r < nR; r++) s += weights[r] * fn(toDb(rs[r], from), t);
       return s;
     };
     const okCfg = cfgs.map((cfg, i) => ({ cfg, i })).filter(({ cfg }) => lx - cfg.x >= MIN_LISTEN_DIST - EPS);
@@ -327,7 +333,7 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
           for (let j = 0; j < nF; j++) { accRe[j] += sr.re[j]; accIm[j] += sr.im[j]; }
         }
         for (let j = 0; j < nF; j++) dev[j] = 10 * Math.log10(Math.max(accRe[j] * accRe[j] + accIm[j] * accIm[j], 1e-24));
-        total += weights[r] * flatnessScore(dev, target);
+        total += weights[r] * scoreFn(dev, target);
       }
       return total;
     };
@@ -402,7 +408,8 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   found.sort((a, b) => a.score - b.score);
   const shortlist = found.slice(0, wave ? 4 : 8).map((f) => toPlacement(ctx, sources, c, f.listener, f.positions));
   shortlist.push(baseline);
-  shortlist.sort((a, b) => a.score - b.score);
+  const rank = (p: Placement) => p.objScore ?? p.score;
+  shortlist.sort((a, b) => rank(a) - rank(b));
 
   const best: Placement[] = [];
   for (const p of shortlist) {
@@ -414,7 +421,7 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     if (best.length >= 3) break;
     if (!best.includes(p)) best.push(p);
   }
-  best.sort((a, b) => a.score - b.score);
+  best.sort((a, b) => rank(a) - rank(b));
 
   // схема DBA: сабвуферы у передней и задней стен, задние — с задержкой и в противофазе
   const notes = [...ctx.notes];
@@ -427,7 +434,7 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   // в волновой модели каждый сдвиг слушателя — новый волновой расчёт (≈ 1 с): там устойчивость смотрят слоем карты в ручном режиме
   if (!wave) for (const p of new Set([...best, baseline])) p.robust = robustness(ctx, sources, c, p);
   if (wave) notes.push('Расчёт по волновой модели (комната со смежными помещениями): поиск на сетке до 180 Гц, итоговые варианты — на полной.');
-  if (baseline.score - best[0].score < 0.3) notes.push('Базовая расстановка уже близка к оптимальной для этой комнаты.');
+  if (rank(baseline) - rank(best[0]) < 0.3) notes.push('Базовая расстановка уже близка к оптимальной для этой комнаты.');
   return {
     best,
     baseline,

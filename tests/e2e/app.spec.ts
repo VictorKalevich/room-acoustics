@@ -285,3 +285,54 @@ test('До и после: второй замер сравнивается с п
   await page.getByRole('button', { name: 'Забыть прошлые замеры' }).click();
   await expect(page.getByTestId('measure-compare')).toHaveCount(0);
 });
+
+test('009: карта звука в автоподборе обновляется при смене варианта, слои карты и осей включаются над планом', async ({ page }) => {
+  await page.goto('/#placement');
+  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await expect(page.locator('.score__value').first()).toBeVisible({ timeout: 30_000 });
+  const heat = page.locator('.panel--hero .plan__heat rect');
+  await expect.poll(() => heat.count(), { timeout: 20_000 }).toBeGreaterThan(100);
+  const fillsOf = () => heat.evaluateAll((els) => els.slice(0, 400).map((e) => e.getAttribute('fill')).join());
+  const v1 = await fillsOf();
+  await page.getByRole('tab', { name: 'Вариант 2' }).click();
+  await expect.poll(fillsOf, { timeout: 20_000 }).not.toBe(v1);
+  // карта места сабвуфера для этого варианта
+  await page.getByRole('radio', { name: 'Место сабвуфера' }).click();
+  await expect.poll(() => heat.count(), { timeout: 20_000 }).toBeGreaterThan(100);
+  // выключить карту, включить оси: 3 линии по длине и 3 по ширине
+  await page.getByRole('button', { name: 'Карта звука' }).click();
+  await expect(page.getByRole('button', { name: 'Карта звука' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(heat).toHaveCount(0);
+  await page.getByRole('button', { name: 'Оси комнаты' }).click();
+  await expect(page.locator('.panel--hero svg.plan .plan__axis')).toHaveCount(6);
+  await expect(page.locator('.panel--hero svg.plan .plan__axis.is-mid')).toHaveCount(2);
+  // выбор запоминается: в ручном режиме оси включены, карта выключена
+  await page.getByRole('radio', { name: 'Вручную' }).click();
+  // (вертикальная линия нулевой ширины для Playwright «невидима» — проверяем количество)
+  await expect(page.locator('svg.plan .plan__axis')).toHaveCount(6);
+  await expect(page.locator('svg.plan .plan__heat rect')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Карта звука' }).click();
+  await expect.poll(() => page.locator('svg.plan .plan__heat rect').count(), { timeout: 20_000 }).toBeGreaterThan(100);
+});
+
+test('009: цель подбора — меньше провалов внизу и провалы на своих модах', async ({ page }) => {
+  await page.goto('/#placement');
+  await page.getByRole('combobox', { name: 'Что искать' }).selectOption('lowDips');
+  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await expect(page.locator('.score__label').first()).toHaveText('Провалы внизу', { timeout: 30_000 });
+  await expect(page.locator('.score').first()).toContainText(/неровность \d+,\d дБ/);
+  // моды: «Свои» начинаются с первых осевых, одну можно снять
+  await page.getByRole('combobox', { name: 'Что искать' }).selectOption('modes');
+  await expect(page.getByText(/Учитываются: .*\(1 0 0\).*\(0 1 0\).*\(0 0 1\)/)).toBeVisible();
+  await page.getByRole('radio', { name: 'Свои' }).click();
+  const on = page.locator('.objective .chip.is-on');
+  await expect(on).toHaveCount(3);
+  await on.first().click();
+  await expect(on).toHaveCount(2);
+  await expect(page.getByText(/Учитываются: .*\(0 1 0\).*\(0 0 1\)/)).toBeVisible();
+  // результат устарел после смены цели
+  await expect(page.getByText(/устарел|изменились/i).first()).toBeVisible();
+  // в ручном режиме та же цель
+  await page.getByRole('radio', { name: 'Вручную' }).click();
+  await expect(page.getByText('Цель подбора: Без провалов на модах')).toBeVisible();
+});

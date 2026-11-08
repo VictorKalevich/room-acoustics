@@ -3,7 +3,7 @@
 import type { Constraints, Room, Setup, SourceSpec, Vec3 } from './types';
 import { logFreqs } from './frequency';
 import { applyKernel, modeShapes, receiverKernel } from './response';
-import { flatnessScore } from './metric';
+import { makeScorer, type Scorer } from './objective';
 import {
   filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed, speakerPenalties, sumPenalties,
   type EvalCtx, type Spectrum,
@@ -11,8 +11,8 @@ import {
 import { isWave } from './geometry';
 import { waveFMax, waveSpectra } from './acoustics';
 
-/** Неровность суммы источников по их откликам в точке (фильтры уже включают регулировки). */
-function flatFromSpectra(parts: { h: Spectrum; f: Spectrum }[], target: number[], fixed?: Spectrum): number {
+/** Оценка суммы источников по их откликам в точке (фильтры уже включают регулировки). */
+function flatFromSpectra(parts: { h: Spectrum; f: Spectrum }[], target: number[], score: Scorer, fixed?: Spectrum): number {
   const n = target.length;
   const re = fixed ? Float64Array.from(fixed.re) : new Float64Array(n);
   const im = fixed ? Float64Array.from(fixed.im) : new Float64Array(n);
@@ -23,7 +23,7 @@ function flatFromSpectra(parts: { h: Spectrum; f: Spectrum }[], target: number[]
     }
   const d = new Float64Array(n);
   for (let j = 0; j < n; j++) d[j] = 10 * Math.log10(Math.max(re[j] * re[j] + im[j] * im[j], 1e-24));
-  return flatnessScore(d, target);
+  return score(d, target);
 }
 
 export interface Heatmap {
@@ -76,8 +76,8 @@ function minMax(a: Float32Array) {
   return { min: mn, max: mx };
 }
 
-/** Сумма источников в точке r (фильтры уже включают регулировки) → неровность. */
-function flatAt(ctx: EvalCtx, r: Vec3, freqs: number[], psis: { psi: Float64Array; f: Spectrum }[], target: number[], fixed?: Spectrum): number {
+/** Сумма источников в точке r (фильтры уже включают регулировки) → оценка по цели подбора. */
+function flatAt(ctx: EvalCtx, r: Vec3, freqs: number[], psis: { psi: Float64Array; f: Spectrum }[], target: number[], score: Scorer, fixed?: Spectrum): number {
   const k = receiverKernel(ctx.pm, r, freqs);
   const n = freqs.length;
   const re = fixed ? Float64Array.from(fixed.re) : new Float64Array(n);
@@ -91,7 +91,7 @@ function flatAt(ctx: EvalCtx, r: Vec3, freqs: number[], psis: { psi: Float64Arra
   }
   const d = new Float64Array(n);
   for (let j = 0; j < n; j++) d[j] = 10 * Math.log10(Math.max(re[j] * re[j] + im[j] * im[j], 1e-24));
-  return flatnessScore(d, target);
+  return score(d, target);
 }
 
 /**
@@ -104,6 +104,7 @@ export function listenerHeatmap(room: Room, sources: SourceSpec[], c: Constraint
   const ctx = makeCtx(room, sources);
   const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? 12);
   const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings);
+  const score = makeScorer(freqs, c.objective, room);
   const active = sources.filter((s) => setup.positions[s.id]);
   const psis = active.map((s) => ({ psi: modeShapes(ctx.pm, setup.positions[s.id]), f: filt[s.id] }));
   const spk = sources.filter((s) => s.kind === 'speaker' && setup.positions[s.id]).map((s) => setup.positions[s.id]);
@@ -121,10 +122,10 @@ export function listenerHeatmap(room: Room, sources: SourceSpec[], c: Constraint
     const pts: Vec3[] = [];
     for (let i = 0; i < fx.length; i++) for (let j = 0; j < fNy; j++) pts.push({ x: fx[i], y: fy[j], z });
     const per = active.map((s, k) => waveSpectra(room, fMax, setup.positions[s.id], pts, freqs, opts.onProgress && ((v) => opts.onProgress!((k + v) / active.length))));
-    for (let q = 0; q < pts.length; q++) flat[q] = flatFromSpectra(active.map((s, k) => ({ h: per[k][q], f: filt[s.id] })), target);
+    for (let q = 0; q < pts.length; q++) flat[q] = flatFromSpectra(active.map((s, k) => ({ h: per[k][q], f: filt[s.id] })), target, score);
   } else {
     for (let i = 0; i < fx.length; i++)
-      for (let j = 0; j < fNy; j++) flat[i * fNy + j] = flatAt(ctx, { x: fx[i], y: fy[j], z }, freqs, psis, target);
+      for (let j = 0; j < fNy; j++) flat[i * fNy + j] = flatAt(ctx, { x: fx[i], y: fy[j], z }, freqs, psis, target, score);
   }
   const lookup = (p: { x: number; y: number }) => {
     const i = Math.round((p.x - 0.1) / step);
@@ -160,9 +161,9 @@ export function listenerHeatmap(room: Room, sources: SourceSpec[], c: Constraint
   let current = 0;
   if (wave) {
     const per = active.map((s) => waveSpectra(room, fMax, setup.positions[s.id], cur.pts, freqs));
-    cur.pts.forEach((_, r) => (current += cur.weights[r] * flatFromSpectra(active.map((s, k) => ({ h: per[k][r], f: filt[s.id] })), target)));
+    cur.pts.forEach((_, r) => (current += cur.weights[r] * flatFromSpectra(active.map((s, k) => ({ h: per[k][r], f: filt[s.id] })), target, score)));
   } else {
-    cur.pts.forEach((p, r) => (current += cur.weights[r] * flatAt(ctx, p, freqs, psis, target)));
+    cur.pts.forEach((p, r) => (current += cur.weights[r] * flatAt(ctx, p, freqs, psis, target, score)));
   }
   current += sumPenalties(speakerPenalties(ctx, setup.listener, spk).penalties);
 
@@ -192,6 +193,7 @@ export function subHeatmap(room: Room, sources: SourceSpec[], c: Constraints, se
   const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? 12);
   const n = freqs.length;
   const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings);
+  const score = makeScorer(freqs, c.objective, room);
   const sub = sources.find((s) => s.id === subId);
   if (!sub) throw new Error(`Нет сабвуфера ${subId}`);
   const { pts, weights } = receiverSet(room, c, setup.listener);
@@ -258,7 +260,7 @@ export function subHeatmap(room: Room, sources: SourceSpec[], c: Constraints, se
         const im = fixed[ri].im[j] + h.re[j] * fs.im[j] + h.im[j] * fs.re[j];
         d[j] = 10 * Math.log10(Math.max(re * re + im * im, 1e-24));
       }
-      s += weights[ri] * flatnessScore(d, target);
+      s += weights[ri] * score(d, target);
     }
     return s;
   };
