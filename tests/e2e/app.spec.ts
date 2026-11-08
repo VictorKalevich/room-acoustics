@@ -188,3 +188,42 @@ test('аудит: синхронизация — открыть файл дру�
   await page.getByRole('button', { name: 'Открыть', exact: true }).click();
   await expect(page.locator('.topbar__room')).toContainText('Дача, 6,00 × 4,50 × 2,70');
 });
+
+test('UX: первый запуск — карточка «С чего начать» ведёт к размерам и исчезает, когда комната задана', async ({ page }) => {
+  await page.goto('/#room');
+  await expect(page.locator('.start-card')).toBeVisible();
+  await page.locator('.start-card').getByRole('button', { name: 'Ввести размеры' }).click();
+  await expect(page.getByLabel('Глубина', { exact: true })).toBeFocused();
+  await page.getByLabel('Глубина', { exact: true }).fill('6');
+  await expect(page.locator('.start-card')).toHaveCount(0);
+});
+
+test('UX: найденный вариант становится текущей расстановкой, другой — по кнопке', async ({ page }) => {
+  await page.goto('/#placement');
+  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await expect(page.getByText('Это текущая расстановка')).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('tab', { name: 'Вариант 2' }).click();
+  await page.getByRole('button', { name: 'Использовать этот вариант' }).click();
+  await expect(page.getByText('Это текущая расстановка')).toBeVisible();
+  await page.getByRole('button', { name: 'Дальше: «Настройка»' }).click();
+  await expect(page.locator('.topbar__title')).toHaveText('Настройка');
+});
+
+test('UX: предложенный план обработки не меняет расчёты, пока не включён; включённый — виден на всех экранах', async ({ page }) => {
+  await page.goto('/#tuning');
+  await page.getByRole('button', { name: 'Предложить план' }).click();
+  await expect(page.locator('.treat-compare')).toBeVisible();
+  await expect(page.locator('.whatif-strip')).toHaveCount(0);
+  await page.getByText('Учесть обработку в расчёте (что если)').click();
+  await page.getByRole('button', { name: 'Моды' }).click();
+  await expect(page.locator('.whatif-strip')).toBeVisible();
+  await page.locator('.whatif-strip').getByRole('button', { name: 'Без обработки' }).click();
+  await expect(page.locator('.whatif-strip')).toHaveCount(0);
+});
+
+test('UX: поля выбора не мельче 16 px (иначе Safari увеличивает страницу при касании)', async ({ page }) => {
+  await page.goto('/#room');
+  const sizes = await page.locator('select').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+  expect(sizes.length).toBeGreaterThan(3);
+  for (const s of sizes) expect(s).toBeGreaterThanOrEqual(16);
+});

@@ -47,6 +47,8 @@ function median(a: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+const f1 = (v: number) => v.toFixed(1).replace('.', ',');
+
 const AXIS = ['глубине (между передней и задней стенами)', 'ширине (между боковыми стенами)', 'высоте (между полом и потолком)'];
 const WHERE_AXIAL = [
   'у передней и задней стен, лучше в углах этих стен',
@@ -77,13 +79,13 @@ export function bassAdvice(response: { f: number[]; db: number[]; target: number
       const axes = m.n.map((v, k) => (v > 0 ? k : -1)).filter((k) => k >= 0);
       if (m.kind === 'axial') {
         where = WHERE_AXIAL[axes[0]];
-        cause = `Осевая мода ${m.n.join(',')} (${m.f.toFixed(1)} Гц) по ${AXIS[axes[0]]}.`;
+        cause = `Осевая мода ${m.n.join(' ')} (${f1(m.f)} Гц) по ${AXIS[axes[0]]}.`;
       } else if (m.kind === 'tangential') {
         where = axes.includes(2) ? 'в стыках стен с потолком и в углах' : 'в вертикальных углах комнаты';
-        cause = `Тангенциальная мода ${m.n.join(',')} (${m.f.toFixed(1)} Гц).`;
+        cause = `Тангенциальная мода ${m.n.join(' ')} (${f1(m.f)} Гц).`;
       } else {
         where = 'в трёхгранных углах (стены с полом или потолком)';
-        cause = `Косая мода ${m.n.join(',')} (${m.f.toFixed(1)} Гц).`;
+        cause = `Косая мода ${m.n.join(' ')} (${f1(m.f)} Гц).`;
       }
     }
     out.push({

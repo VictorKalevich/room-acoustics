@@ -158,7 +158,7 @@ export function App() {
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16 M4 12h16 M4 17h16" /></svg>
           </button>
           <div class="topbar__text">
-            <h1 class="topbar__title">{TITLES[tab]}</h1>
+            <h1 class={`topbar__title${TITLES[tab].length > 14 ? ' is-long' : ''}`}>{TITLES[tab]}</h1>
             <span class="topbar__room">
               {project.name}, {fmt(r.depth, 2)} × {fmt(r.width, 2)} × {fmt(r.height, 2)} м
             </span>
@@ -187,8 +187,17 @@ export function App() {
 
       <main class="content">
         {wizard && <WizardStrip project={project} onGo={(t) => go(t)} onChange={refreshWizard} />}
+        {r.treatmentsOn && (r.treatments ?? []).some((t) => t.enabled !== false) && (
+          <div class="whatif-strip" role="status">
+            <span>{S.treat.whatIf}</span>
+            <span class="whatif-strip__btns">
+              {tab !== 'tuning' && <button type="button" class="btn btn--small btn--ghost" onClick={() => go('tuning')}>{S.treat.whatIfOpen}</button>}
+              <button type="button" class="btn btn--small" onClick={() => onRoom({ ...r, treatmentsOn: false })}>{S.treat.whatIfOff}</button>
+            </span>
+          </div>
+        )}
         <div hidden={tab !== 'room'}>
-          <RoomScreen project={project} reverb={reverb} onRoom={onRoom} />
+          <RoomScreen project={project} reverb={reverb} onRoom={onRoom} onGo={(t) => go(t)} />
         </div>
         {tab === 'modes' && (
           <>
@@ -213,6 +222,7 @@ export function App() {
             onMode={setMode}
             onSetup={onSetup}
             onSetups={onSetups}
+            onGo={(t) => go(t)}
           />
         </div>
         {tab === 'tuning' && <TuningScreen project={project} modes={modes} onSetup={onSetup} onRoom={(room) => onRoom(room)} />}

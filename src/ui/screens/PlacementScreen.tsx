@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
-import { defaultSources, validateSources } from '../../state/project';
+import { defaultSetup, defaultSources, validateSources } from '../../state/project';
 import type { Constraints, PlacementResult, SourceSpec, SubZone, Placement, Setup, PhaseMode } from '../../core/types';
 import { NumberField, Panel, Segmented, Note, Details, SelectField } from '../components/Fields';
 import { compute, type ComputeJob } from '../compute';
@@ -21,10 +21,12 @@ interface Props {
   mode: 'auto' | 'manual';
   onMode: (m: 'auto' | 'manual') => void;
   onSetup: (s: Setup) => void;
+  /** Переход на другой раздел (после выбора варианта — «Настройка»). */
+  onGo?: (t: 'tuning') => void;
   onSetups: (list: Setup[]) => void;
 }
 
-export function PlacementScreen({ project, onSources, onConstraints, onResult, onSelect, mode, onMode, onSetup, onSetups }: Props) {
+export function PlacementScreen({ project, onSources, onConstraints, onResult, onSelect, mode, onMode, onSetup, onSetups, onGo }: Props) {
   const { room, sources, constraints: c, result } = project;
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -75,18 +77,26 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
       .then((r) => {
         setRunning(false);
         onResult(r, 0);
+        // своей расстановки ещё нет (стоит исходная) — лучший вариант сразу становится текущим:
+        // по нему считаются «Настройка», «Обзор», 3D и замер
+        if (sameLayout(project.current, defaultSetup(room, sources, c)) && r.best[0]) applyVariant(r.best[0]);
         requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       })
       .catch((e) => { setRunning(false); setError(e.message || S.errors.generic); });
   };
 
-  const openManual = (p: Placement) => {
+  /** Вариант становится текущей расстановкой (её используют настройка, обзор, 3D и замер). */
+  const applyVariant = (p: Placement) => {
     const positions = Object.fromEntries(p.sources.filter((s) => s.pos).map((s) => [s.id, s.pos]));
     onSetup({ ...project.current, listener: p.listener, positions, subSettings: p.subSettings ?? {}, crossoverHz: null });
+  };
+  const openManual = (p: Placement) => {
+    applyVariant(p);
     onMode('manual');
     scrollTo({ top: 0 });
   };
 
+  const isCurrent = (p: Placement) => sameLayout(project.current, { listener: p.listener, positions: Object.fromEntries(p.sources.filter((x) => x.pos).map((x) => [x.id, x.pos])) });
   const variants: Placement[] = result ? [...result.best, result.baseline] : [];
   const sel = Math.min(project.selectedIndex, Math.max(0, variants.length - 1));
   const current = variants[sel] ?? null;
@@ -258,7 +268,8 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
         />
       </div>
       {settingsPanels}
-      <div class="run-bar">
+      {/* главное действие видно, пока заполняются настройки выше */}
+      <div class="run-bar is-sticky">
         <button type="button" class="btn btn--primary btn--wide" onClick={run} disabled={running || srcErrors.length > 0}>
           {running ? S.placement.running : result ? S.placement.rerun : S.placement.run}
         </button>
@@ -304,6 +315,17 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             )}
             {current.scheme === 'dba' && <Note>{S.robust.dbaNote}</Note>}
             <PlanView depth={room.depth} width={room.width} placement={current} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} />
+            {isCurrent(current) ? (
+              <>
+                <Note tone="good">{S.placement.inUse}</Note>
+                {onGo && <button type="button" class="btn btn--primary" onClick={() => onGo('tuning')}>{S.placement.toTuning}</button>}
+              </>
+            ) : (
+              <>
+                <button type="button" class="btn btn--primary" onClick={() => applyVariant(current)}>{S.placement.use}</button>
+                <p class="muted small">{S.placement.notInUse}</p>
+              </>
+            )}
             <button type="button" class="btn" onClick={() => openManual(current)}>{S.manual.openManual}</button>
             <Positions p={current} />
             <h3 class="subhead">{S.placement.response}</h3>
@@ -407,4 +429,16 @@ function Positions({ p }: { p: Placement }) {
       </table>
     </div>
   );
+}
+
+/** Одинаковы ли расстановки (места слушателя и источников, с точностью до 1 мм). */
+function sameLayout(a: Pick<Setup, 'listener' | 'positions'>, b: Pick<Setup, 'listener' | 'positions'>): boolean {
+  const near = (p: { x: number; y: number }, q: { x: number; y: number }) => Math.abs(p.x - q.x) < 1e-3 && Math.abs(p.y - q.y) < 1e-3;
+  if (!near(a.listener, b.listener)) return false;
+  const ids = new Set([...Object.keys(a.positions), ...Object.keys(b.positions)]);
+  for (const id of ids) {
+    const p = a.positions[id], q = b.positions[id];
+    if (!p || !q || !near(p, q)) return false;
+  }
+  return true;
 }

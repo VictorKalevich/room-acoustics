@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
 import type { Project } from '../../state/project';
-import { defaultConstraints, makeId, rotateRoom, rotateSetup } from '../../state/project';
+import { defaultConstraints, defaultRoom, makeId, rotateRoom, rotateSetup } from '../../state/project';
 import type { Room, SurfaceId, ReverbResult, Furnishing, Zone, ZoneKind, Leakage, Opening, Extension, WallId, AcousticModel, WallFeature } from '../../core/types';
 import { validateExtension, validateSlope, wallLength } from '../../core/geometry';
 import { SURFACES } from '../../core/types';
@@ -21,6 +21,8 @@ interface Props {
   project: Project;
   reverb: ReverbResult;
   onRoom: (room: Room, extra?: Partial<Project>) => void;
+  /** Переход к следующему шагу после применения скана. */
+  onGo?: (t: 'placement') => void;
 }
 
 type ScanState =
@@ -39,12 +41,29 @@ interface Loaded {
   fileName: string;
 }
 
-export function RoomScreen({ project, reverb, onRoom }: Props) {
+export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
   const room = project.room;
   const set = (patch: Partial<Room>) => onRoom({ ...room, ...patch });
 
+  // комната ещё не задана: ни скана, ни своих размеров — подсказываем, с чего начать
+  const d0 = defaultRoom();
+  const fresh = room.source !== 'scan' && !project.scanInfo && room.depth === d0.depth && room.width === d0.width && room.height === d0.height;
   return (
     <div class="screen">
+      {fresh && (
+        <Panel class="start-card" title={S.start.title}>
+          <p class="small">{S.start.text}</p>
+          <div class="btn-row">
+            <button type="button" class="btn btn--primary" onClick={() => document.getElementById('scan-file')?.click()}>
+              <FileIcon /> {S.start.scan}
+            </button>
+            <button type="button" class="btn" onClick={() => { const el = document.getElementById(`f-${S.room.depth.replace(/\s+/g, '-')}`) as HTMLInputElement | null; el?.scrollIntoView({ behavior: 'smooth', block: 'center' }); el?.focus(); }}>
+              {S.start.manual}
+            </button>
+          </div>
+          <p class="muted small">{S.start.note}</p>
+        </Panel>
+      )}
       <Panel class="panel--hero">
         <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} />
         <div class="dims">
@@ -73,14 +92,14 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
         </Details>
       </Panel>
 
-      <ScanPanel project={project} onRoom={onRoom} />
+      <ScanPanel project={project} onRoom={onRoom} onGo={onGo} />
 
       <OpeningsPanel room={room} onRoom={(r) => onRoom(r)} />
 
       <ZonesPanel room={room} onRoom={(r) => onRoom(r)} />
 
       <Panel title={S.room.materials}>
-        <div class="grid-2">
+        <div class="grid-2 grid-2--wide-items">
           {SURFACES.map((s: SurfaceId) => (
             <SelectField
               label={S.room.surfaces[s]}
@@ -138,7 +157,7 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
 
 const SIT = new Set(['sofa', 'couch', 'chair', 'armchair', 'bed']);
 
-function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoom'] }) {
+function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom: Props['onRoom']; onGo?: Props['onGo'] }) {
   const [state, setState] = useState<ScanState>({ phase: 'idle' });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [det, setDet] = useState<DetectResult | null>(null);
@@ -196,8 +215,15 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
   const onFile = async (file: File) => {
     setApplied(false);
     setDet(null);
+    // прежний скан не показываем рядом с новым файлом (и рядом с ошибкой о нём)
+    setLoaded(null);
+    setLayout(null);
+    setRect(null);
+    setInitial(null);
     setUnits('auto');
     setState({ phase: 'loading', fileName: file.name });
+    // файл могли выбрать с карточки «С чего начать» вверху — показываем, где идёт разбор
+    requestAnimationFrame(() => document.getElementById('scan-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     try {
       const [{ loadScan }, preview] = await Promise.all([
         import('../../scan/load'),
@@ -269,7 +295,7 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
 
   const busy = state.phase === 'loading' || state.phase === 'detecting';
   return (
-    <Panel title={S.room.scan}>
+    <Panel title={S.room.scan} id="scan-panel">
       <p class="small">{S.room.scanIntro}</p>
       <input
         ref={input}
@@ -423,6 +449,15 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
           <button type="button" class="btn btn--primary" onClick={apply} disabled={applied}>
             {applied ? S.room.applied : S.room.apply}
           </button>
+          {applied && (
+            <>
+              <Note tone="good">{S.room.appliedNext}</Note>
+              <div class="btn-row">
+                {onGo && <button type="button" class="btn btn--primary" onClick={() => onGo('placement')}>{S.room.toPlacement}</button>}
+                <button type="button" class="btn" onClick={() => scrollTo({ top: 0, behavior: 'smooth' })}>{S.room.seePlan}</button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </Panel>
@@ -572,9 +607,9 @@ function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void
         </div>
       ))}
       <div class="btn-row">
-        <button type="button" class="btn" onClick={addCorridor}>{S.openings.addCorridor}</button>
-        <button type="button" class="btn" onClick={addOpening}>{S.openings.addOpening}</button>
-        <button type="button" class="btn" onClick={addNiche}>{S.shape.addNiche}</button>
+        <button type="button" class="btn" aria-label="Добавить коридор" onClick={addCorridor}>{S.openings.addCorridor}</button>
+        <button type="button" class="btn" aria-label="Добавить проём" onClick={addOpening}>{S.openings.addOpening}</button>
+        <button type="button" class="btn" aria-label="Добавить нишу" onClick={addNiche}>{S.shape.addNiche}</button>
       </div>
       <p class="muted small">{S.shape.nicheHint}</p>
 
@@ -620,8 +655,8 @@ function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void
         </div>
       ))}
       <div class="btn-row">
-        <button type="button" class="btn" onClick={() => addFeature('window')}>{S.openings.addWindow}</button>
-        <button type="button" class="btn" onClick={() => addFeature('door')}>{S.openings.addDoor}</button>
+        <button type="button" class="btn" aria-label="Добавить окно" onClick={() => addFeature('window')}>{S.openings.addWindow}</button>
+        <button type="button" class="btn" aria-label="Добавить дверь" onClick={() => addFeature('door')}>{S.openings.addDoor}</button>
       </div>
       <SelectField
         label={S.model.title}

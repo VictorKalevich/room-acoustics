@@ -40,6 +40,9 @@ interface Props {
 
 const THRESHOLDS = [3, 6, 9, 12];
 
+/** Сколько частот-кнопок видно сразу (остальные — по «Ещё»): первые моды — самые важные. */
+const QUICK_SHOWN = 12;
+
 export function FieldScreen({ project, modes, onSetup }: Props) {
   const { room, sources, constraints: c, current } = project;
   const wave = isWave(room);
@@ -49,6 +52,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   const [picks, setPicks] = useState<Pick[]>(saved.picks);
   const [view, setView] = useState<View>(saved.view);
   const [active, setActive] = useState(saved.active);
+  const [allChips, setAllChips] = useState(false);
   const [band, setBand] = useState<[number, number]>(saved.band);
   const [threshold, setThreshold] = useState(saved.threshold);
   const [slice, setSlice] = useState<[number, number]>(saved.slice ?? [Math.max(0, c.earHeight - 0.1), Math.min(room.height, c.earHeight + 0.1)]);
@@ -193,6 +197,15 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     <div class="screen">
       <Panel class="panel--hero">
         <p class="small">{S.field.intro}</p>
+        <div class="field3d-wrap">
+          {View3D ? <View3D room={room} field={field} energy={energy} threshold={threshold} items={items3d} slice={slice} /> : <div class="field3d field3d--loading" />}
+          {busy && (
+            <div class="field3d__busy" role="status">
+              <span class="spinner" aria-hidden="true" /> {S.field.computing} {progress > 0.01 ? `${Math.round(progress * 100)} %` : ''}
+            </div>
+          )}
+        </div>
+        <p class="muted small">{S.field.rotateHint}</p>
         <Segmented
           label={S.field.kindLabel}
           value={kind}
@@ -205,11 +218,16 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
           <div class="field">
             <span class="field__label">{S.field.freqs}</span>
             <div class="chips" role="group" aria-label={S.field.freqs}>
-              {quick.map((p) => (
+              {(allChips ? quick : quick.filter((p, i) => i < QUICK_SHOWN || isPicked(p))).map((p) => (
                 <button type="button" class={`chip${isPicked(p) ? ' is-on' : ''}`} aria-pressed={isPicked(p)} onClick={() => toggle(p)}>
                   {fmt(p.f, 1)}{p.n && <small> {p.n.join('')}</small>}
                 </button>
               ))}
+              {quick.length > QUICK_SHOWN && (
+                <button type="button" class="chip chip--more" aria-expanded={allChips} onClick={() => setAllChips(!allChips)}>
+                  {allChips ? S.field.fewer : S.field.more(quick.length - QUICK_SHOWN)}
+                </button>
+              )}
               {picks.filter((p) => !quick.some((q) => Math.abs(q.f - p.f) < 0.05)).map((p) => (
                 <button type="button" class="chip is-on is-custom" aria-pressed="true" onClick={() => toggle(p)}>{fmt(p.f, 1)} ×</button>
               ))}
@@ -222,15 +240,6 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
           </div>
         )}
 
-        <div class="field3d-wrap">
-          {View3D ? <View3D room={room} field={field} energy={energy} threshold={threshold} items={items3d} slice={slice} /> : <div class="field3d field3d--loading" />}
-          {busy && (
-            <div class="field3d__busy" role="status">
-              <span class="spinner" aria-hidden="true" /> {S.field.computing} {progress > 0.01 ? `${Math.round(progress * 100)} %` : ''}
-            </div>
-          )}
-        </div>
-        <p class="muted small">{S.field.rotateHint}</p>
 
         <Segmented
           label={S.field.viewLabel}

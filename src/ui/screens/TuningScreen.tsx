@@ -195,6 +195,7 @@ function EqPanel({ project }: { project: Project }) {
   const [source, setSource] = useState<'model' | 'measured'>('model');
   const [res, setRes] = useState<{ eq: EqResult; f: number[]; before: number[]; target: number[] } | null>(null);
   const [fs, setFs] = useState<48000 | 96000>(96000);
+  const [target, setTarget] = useState<'apo' | 'rew' | 'minidsp'>('apo');
 
   const [eqBusy, setEqBusy] = useState(false);
   const run = () => {
@@ -256,10 +257,12 @@ function EqPanel({ project }: { project: Project }) {
           </div>
           <Note>{S.tuning.eqWhere}</Note>
           <h3 class="subhead">{S.tuning.eqExport}</h3>
-          <ExportBlock id="eq-apo" title="Equalizer APO" text={exportEqualizerAPO(res.eq.filters)} file="eq-equalizer-apo.txt" />
-          <ExportBlock id="eq-rew" title="REW" text={exportREW(res.eq.filters)} file="eq-rew.txt" />
-          <Segmented label="miniDSP, частота дискретизации" value={fs} options={[{ value: 48000, label: '48 кГц' }, { value: 96000, label: '96 кГц' }]} onChange={setFs} />
-          <ExportBlock id="eq-minidsp" title={`miniDSP biquad, ${fs / 1000} кГц`} text={exportMiniDSP(res.eq.filters, fs)} file={`eq-minidsp-${fs / 1000}k.txt`} />
+          {/* один формат за раз: выбирают тот, что нужен для своего плеера или DSP */}
+          <Segmented label={S.tuning.exportTo} value={target} options={[{ value: 'apo' as const, label: 'Equalizer APO' }, { value: 'rew' as const, label: 'REW' }, { value: 'minidsp' as const, label: 'miniDSP' }]} onChange={setTarget} />
+          {target === 'apo' && <ExportBlock id="eq-apo" title="Equalizer APO" text={exportEqualizerAPO(res.eq.filters)} file="eq-equalizer-apo.txt" />}
+          {target === 'rew' && <ExportBlock id="eq-rew" title="REW" text={exportREW(res.eq.filters)} file="eq-rew.txt" />}
+          <Segmented label={S.tuning.sampleRate} value={fs} options={[{ value: 48000, label: '48 кГц' }, { value: 96000, label: '96 кГц' }]} onChange={setFs} />
+          {target === 'minidsp' && <ExportBlock id="eq-minidsp" title={`miniDSP biquad, ${fs / 1000} кГц`} text={exportMiniDSP(res.eq.filters, fs)} file={`eq-minidsp-${fs / 1000}k.txt`} />}
           <h4 class="subhead">{S.fir.title}</h4>
           <p class="muted small">{S.fir.intro} <Term id="fir">FIR</Term>.</p>
           <div class="btn-row">
@@ -468,6 +471,17 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
         ? { id: makeId(), kind, wall: 'left', at: room.depth / 3, z: 1.2, thickness: 0.1, gap: 0.05, width: 0.6, height: 1.2, enabled: true }
         : { id: makeId(), kind, x: room.depth / 3, y: room.width / 2, thickness: 0.1, gap: 0.1, width: 1.2, height: 1.2, enabled: true };
     set([...list, t]);
+    setOpenId(t.id);
+  };
+  // новый элемент открыт для правки, остальные — свёрнуты в строку с описанием
+  const [openId, setOpenId] = useState<string | null>(null);
+  const cm = (v: number) => `${Math.round(v * 100)} см`;
+  const describe = (t: Treatment): string => {
+    const size = `${fmt(t.width, 2)} × ${fmt(t.height, 2)} м`;
+    const gap = t.gap ? `, зазор ${cm(t.gap)}` : '';
+    if (t.kind === 'corner') return `${S.treat.corners[t.corner ?? 'front-left']} угол · ${cm(t.thickness)} · ${size}`;
+    if (t.kind === 'panel') return `${S.openings.walls[t.wall ?? 'left']}, ${fmt(t.at ?? 0, 2)} м · ${cm(t.thickness)}${gap} · ${size}`;
+    return `${S.treat.kinds.cloud}: центр ${fmt(t.x ?? 0, 2)} × ${fmt(t.y ?? 0, 2)} м · ${cm(t.thickness)}${gap} · ${size}`;
   };
   // «что если»: сравнение без обработки и с ней
   const bare = useMemo(() => ({ ...room, treatmentsOn: false }), [room]);
@@ -485,7 +499,7 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
       <h3 class="subhead">{S.treat.title}</h3>
       <p class="small">{S.treat.intro}</p>
       {list.length === 0 && (
-        <button type="button" class="btn btn--primary" onClick={() => onRoom({ ...room, treatments: suggestTreatments(room, reflections, makeId), treatmentsOn: true })}>{S.treat.suggest}</button>
+        <button type="button" class="btn btn--primary" onClick={() => onRoom({ ...room, treatments: suggestTreatments(room, reflections, makeId) })}>{S.treat.suggest}</button>
       )}
       {list.length > 0 && (
         <>
@@ -510,6 +524,10 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
                 </label>
                 <button type="button" class="btn btn--small btn--ghost" onClick={() => set(list.filter((x) => x.id !== t.id))}>{S.openings.remove}</button>
               </div>
+              <p class="muted small">{describe(t)}</p>
+              <details class="details" open={openId === t.id} onToggle={(e) => { const o = (e.currentTarget as HTMLDetailsElement).open; if (o) setOpenId(t.id); else if (openId === t.id) setOpenId(null); }}>
+                <summary>{S.treat.edit}</summary>
+                <div class="details__body">
               {t.kind === 'corner' && (
                 <SelectField label={S.treat.corner} value={t.corner ?? 'front-left'} options={(['front-left', 'front-right', 'back-left', 'back-right'] as const).map((k) => ({ value: k, label: S.treat.corners[k] }))} onChange={(v) => patch(t.id, { corner: v as Treatment['corner'] })} />
               )}
@@ -533,6 +551,8 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
               {t.kind !== 'corner' && (
                 <NumberField compact id={`${t.id}-g`} label={S.treat.gap} value={t.gap ?? 0} unit="м" min={0} max={0.5} onChange={(v) => patch(t.id, { gap: v })} />
               )}
+                </div>
+              </details>
             </div>
           ))}
           <div class="btn-row">
