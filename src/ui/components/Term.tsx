@@ -19,6 +19,12 @@ export function Term({ id, children }: { id: string; children: ComponentChildren
 export function TermSheet() {
   const [id, setId] = useState<string | null>(open);
   useEffect(() => { subs.add(setId); return () => { subs.delete(setId); }; }, []);
+  useEffect(() => {
+    if (!id) return;
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') showTerm(null); };
+    addEventListener('keydown', k);
+    return () => removeEventListener('keydown', k);
+  }, [id]);
   const t = id ? TERM[id] : null;
   if (!t) return null;
   return (

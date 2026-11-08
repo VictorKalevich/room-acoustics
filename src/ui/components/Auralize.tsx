@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { PeqFilter } from '../../core/eq';
 import { peqResponse } from '../../core/eq';
 import { firFromCurve } from '../../core/dsp';
-import { audioContext } from '../audio/tone';
+import { audioContext, playerActive } from '../audio/tone';
+import { setBusy } from '../updates';
 import { S } from '../strings';
 
 interface Props {
@@ -42,10 +43,13 @@ export function Auralize({ response, filters }: Props) {
     if (n) { try { n.src.stop(); } catch { /* */ } n.src.disconnect(); n.gA.disconnect(); n.gB.disconnect(); }
     nodes.current = null;
     setPlaying(false);
+    setBusy('aural', false);
+    playerActive('aural', false);
   };
   useEffect(() => stop, []);
 
   const start = () => {
+    playerActive('aural', true);
     const ctx = audioContext();
     const dev = response.db.map((v, i) => v - response.target[i]);
     const mean = dev.reduce((a, b) => a + b, 0) / dev.length;
@@ -73,6 +77,7 @@ export function Auralize({ response, filters }: Props) {
     src.start();
     nodes.current = { src, gA, gB };
     setPlaying(true);
+    setBusy('aural', true);
   };
 
   const flip = (v: boolean) => {

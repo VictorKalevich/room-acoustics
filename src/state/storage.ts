@@ -6,7 +6,7 @@ import { SURFACES } from '../core/types';
 import { MATERIAL_BY_ID } from '../core/materials';
 
 export const FILE_FORMAT = 'room-acoustics-project';
-export const FILE_VERSION = 3;
+export const FILE_VERSION = 4; // 4: обработка, скос потолка, окна и двери, фильтры сабвуферов
 export const FILE_EXT = '.roomacoustics.json';
 
 export function serializeProject(p: Project): string {

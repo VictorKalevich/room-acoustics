@@ -76,3 +76,19 @@ describe('FIR по кривой (наушники)', () => {
     expect(got[2]).toBeCloseTo(0, 0);
   });
 });
+
+import { sweepSegment } from '../../src/core/dsp';
+describe('участок свипа в длинной записи', () => {
+  it('находит свип посреди записи и отбрасывает оборванный', () => {
+    const sw = logSweep(10, 1000, 2, fs);
+    const rec = new Float32Array(fs * 8);
+    rec.set(sw, fs * 3);
+    const seg = sweepSegment(rec, sw.length, fs)!;
+    expect(seg).not.toBeNull();
+    expect(seg.length).toBeLessThan(fs * 4);
+    expect(seg.length).toBeGreaterThan(sw.length);
+    const cut = new Float32Array(fs * 4);
+    cut.set(sw.subarray(0, fs * 1.5), fs * 2.5);
+    expect(sweepSegment(cut, sw.length, fs)).toBeNull();
+  });
+});

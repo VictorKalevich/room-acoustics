@@ -424,7 +424,8 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     if (d.notes?.length) notes.push(...d.notes);
   }
   // устойчивость вариантов к сдвигу на 10 см
-  for (const p of [...best, baseline]) p.robust = robustness(ctx, sources, c, p);
+  // в волновой модели каждый сдвиг слушателя — новый волновой расчёт (≈ 1 с): там устойчивость смотрят слоем карты в ручном режиме
+  if (!wave) for (const p of new Set([...best, baseline])) p.robust = robustness(ctx, sources, c, p);
   if (wave) notes.push('Расчёт по волновой модели (комната со смежными помещениями): поиск на сетке до 180 Гц, итоговые варианты — на полной.');
   if (baseline.score - best[0].score < 0.3) notes.push('Базовая расстановка уже близка к оптимальной для этой комнаты.');
   return {

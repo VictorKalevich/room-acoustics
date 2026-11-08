@@ -325,3 +325,28 @@ export function firFromCurve(freqs: number[], db: number[], fs: number, n = 6553
   }
   return out;
 }
+
+/**
+ * Участок записи со свипом: от начала звучания (−0,3 с) до конца свипа (+1,2 с на хвост комнаты).
+ * Сокращает работу деконволюции для длинных ручных записей. null — сигнал не уместился в запись.
+ */
+export function sweepSegment(rec: Float32Array, sweepLen: number, fs: number): Float32Array | null {
+  let pk = 0;
+  for (let i = 0; i < rec.length; i++) pk = Math.max(pk, Math.abs(rec[i]));
+  if (pk <= 0) return null;
+  // огибающая по блокам 10 мс; начало — первый блок громче 10 % максимума огибающей
+  const blk = Math.max(1, Math.round(0.01 * fs));
+  const env: number[] = [];
+  for (let i = 0; i < rec.length; i += blk) {
+    let s = 0;
+    for (let j = i; j < Math.min(rec.length, i + blk); j++) s += rec[j] * rec[j];
+    env.push(Math.sqrt(s / blk));
+  }
+  const top = Math.max(...env);
+  const first = env.findIndex((v) => v > 0.1 * top);
+  if (first < 0) return null;
+  const start = Math.max(0, first * blk - Math.round(0.3 * fs));
+  const end = first * blk + sweepLen + Math.round(1.2 * fs);
+  if (end > rec.length + Math.round(0.8 * fs)) return null; // свип оборван «Стопом»
+  return rec.subarray(start, Math.min(rec.length, end));
+}

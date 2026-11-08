@@ -1,6 +1,6 @@
 // Мини-плеер над нижней панелью: виден, только пока играет тон.
 import { useEffect, useState } from 'preact/hooks';
-import { getTone, onTone, setToneFrequency, setToneVolume, stopTone } from '../audio/tone';
+import { getTone, onTone, setToneFrequency, setToneVolume, stopTone, toggleTone } from '../audio/tone';
 import { fmt } from '../format';
 import { S } from '../strings';
 
@@ -37,7 +37,8 @@ export function PlayButton({ f, label }: { f: number; label?: string }) {
       aria-label={on ? S.tone.stop : S.tone.play(fmt(f, 1))}
       onClick={(e) => {
         e.stopPropagation();
-        import('../audio/tone').then((m) => m.toggleTone(f, label ?? ''));
+        // синхронно в обработчике касания: иначе iOS не запустит звук
+        toggleTone(f, label ?? '');
       }}
     >
       <svg viewBox="0 0 16 16" aria-hidden="true">{on ? <rect x="4" y="4" width="8" height="8" rx="1" /> : <path d="M5 3.5v9l7.5-4.5z" />}</svg>

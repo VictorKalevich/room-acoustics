@@ -108,7 +108,9 @@ export function App() {
 
   const go = (t: Tab) => {
     setTab(t);
-    history.replaceState(null, '', `#${t}`);
+    // адрес отражает и подраздел: «Моды → 3D / Обзор», «Расстановка → Вручную»
+    const hash = t === 'modes' && modesView !== 'list' ? modesView : t === 'placement' && placementMode === 'manual' ? 'manual' : t;
+    history.replaceState(null, '', `#${hash}`);
     scrollTo({ top: 0 });
   };
 

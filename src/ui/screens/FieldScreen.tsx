@@ -21,7 +21,7 @@ interface Pick { f: number; n?: [number, number, number] }
 
 // состояние экрана живёт между переключениями вкладок
 const saved: {
-  kind: FieldKind; picks: Pick[]; view: View; active: number; band: [number, number]; threshold: number; slice: [number, number] | null;
+  kind: FieldKind; picks: Pick[]; view: View; active: number; band: [number, number]; threshold: number; slice: [number, number] | null; roomKey?: string;
 } = { kind: 'excited', picks: [], view: 'single', active: 0, band: [40, 60], threshold: 6, slice: null };
 
 /** Открыть экран 3D сразу на этой частоте (переход из «Обзора»). */
@@ -81,6 +81,12 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     return modes.filter((m) => m.f > 0 && m.f <= fTop).slice(0, 24).map((m) => ({ f: Math.round(m.f * 10) / 10, n: m.n }));
   }, [wave, sysModes, modes, fTop]);
   // по умолчанию — самая низкая мода
+  // другая комната — моды другие: прежний выбор частот (и номера мод) не годится
+  const roomKey = `${room.depth}|${room.width}|${room.height}|${(room.extensions ?? []).length}|${room.slope ? 1 : 0}`;
+  useEffect(() => {
+    if (saved.roomKey && saved.roomKey !== roomKey) { setPicks(quick.length ? [quick[0]] : []); setActive(0); }
+    saved.roomKey = roomKey;
+  }, [roomKey]);
   useEffect(() => { if (!picks.length && quick.length) setPicks([quick[0]]); }, [quick]);
 
   const nearestMode = (f: number) => modes.filter((m) => m.f > 0).reduce((a, b) => (Math.abs(b.f - f) < Math.abs(a.f - f) ? b : a), modes[1] ?? modes[0]);

@@ -1,5 +1,6 @@
 // Отчёт: всё по комнате на одной странице. «Сохранить PDF» — системная печать (на iPhone — «Поделиться → Сохранить в Файлы»).
-import { useMemo } from 'preact/hooks';
+import { useMemo, useRef } from 'preact/hooks';
+import { shareFile } from '../audio/mic';
 import type { Project } from '../../state/project';
 import type { Mode, ReverbResult } from '../../core/types';
 import { SURFACES } from '../../core/types';
@@ -27,10 +28,19 @@ export function ReportScreen({ project, modes, reverb }: Props) {
   const subs = sources.filter((s) => s.kind === 'sub');
   const axial = o.decays.filter((d) => d.kind === 'axial').slice(0, 10);
   const date = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  const root = useRef<HTMLDivElement>(null);
+  // запасной путь: отчёт отдельным HTML-файлом со стилями (в режиме приложения на iPhone печать может не открываться)
+  const shareHtml = () => {
+    const css = Array.from(document.styleSheets).map((sh) => { try { return Array.from(sh.cssRules).map((r) => r.cssText).join('\n'); } catch { return ''; } }).join('\n');
+    const body = root.current?.outerHTML ?? '';
+    const html = `<!doctype html><html lang="ru" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${S.report.title(project.name).replace(/</g, '&lt;')}</title><style>${css}</style></head><body><main class="content">${body}</main></body></html>`;
+    void shareFile(html, `${project.name.replace(/[\\/:*?"<>|]+/g, '_') || 'room'}-report.html`, 'text/html');
+  };
   return (
-    <div class="screen report">
+    <div class="screen report" ref={root}>
       <div class="btn-row no-print">
         <button type="button" class="btn btn--primary" onClick={() => window.print()}>{S.report.print}</button>
+        <button type="button" class="btn" onClick={shareHtml}>{S.report.shareFile}</button>
       </div>
       <p class="muted small no-print">{S.report.printHint}</p>
 
@@ -99,6 +109,7 @@ export function ReportScreen({ project, modes, reverb }: Props) {
             <thead><tr><th>№</th><th>{S.report.freq}</th><th>Q</th><th>{S.report.gainCol}</th></tr></thead>
             <tbody>{eq.filters.map((f, i) => <tr><td>{i + 1}</td><td>{fmt(f.f, 1)} Гц</td><td>{fmt(f.q, 2)}</td><td>{fmt(f.gainDb, 1)} дБ</td></tr>)}</tbody>
           </table>
+          <p class="muted small">{S.report.eqNote}</p>
           <pre class="report-pre">{exportEqualizerAPO(eq.filters)}</pre>
         </Panel>
       )}

@@ -14,7 +14,7 @@ describe('файл проекта', () => {
 
   it('чужой формат и новая версия отклоняются', () => {
     expect(() => parseProjectFile('{"format":"x","version":1}')).toThrow(/не файл проекта/);
-    expect(() => parseProjectFile('{"format":"room-acoustics-project","version":4}')).toThrow(/новой версией/);
+    expect(() => parseProjectFile('{"format":"room-acoustics-project","version":5}')).toThrow(/новой версией/);
     expect(() => parseProjectFile('not json')).toThrow();
   });
 

@@ -165,3 +165,26 @@ test('005: план обработки, скос потолка и помощн�
   await page.getByText('Показывать подсказку текущего шага сверху экрана').click();
   await expect(page.locator('.wizard-strip')).toBeVisible();
 });
+
+test('аудит: свои фильтры сабвуфера — возможности, подбор, применение', async ({ page }) => {
+  await page.goto('/#placement');
+  await page.getByText('Регулировки сабвуфера').click();
+  await page.locator('.sub-caps').first().getByRole('radio', { name: '4' }).click();
+  await page.getByText('Есть all-pass (фазовый) фильтр').first().click();
+  await page.goto('/#tuning');
+  await page.getByText('Дополнительно: свои PEQ и all-pass для каждого сабвуфера').click();
+  await page.getByRole('button', { name: 'Подобрать фильтры сабвуферов' }).click();
+  await expect(page.locator('.subf .stat-row')).toBeVisible({ timeout: 30_000 });
+  await page.locator('.subf').getByRole('button', { name: 'Применить' }).click();
+  await expect(page.locator('.subf').getByRole('button', { name: 'Применено' })).toBeVisible();
+});
+
+test('аудит: синхронизация — открыть файл другого проекта', async ({ page }) => {
+  await page.goto('/#sync');
+  // файл с другим проектом (минимальный корректный)
+  const file = JSON.stringify({ format: 'room-acoustics-project', version: 4, project: { id: 'other', name: 'Дача', updatedAt: '2026-11-01T10:00:00.000Z', room: { depth: 6, width: 4.5, height: 2.7 } } });
+  await page.locator('input[accept=".json,application/json"]').setInputFiles({ name: 'dacha.roomacoustics.json', mimeType: 'application/json', buffer: Buffer.from(file) });
+  await expect(page.getByText('В файле другой проект — «Дача»')).toBeVisible();
+  await page.getByRole('button', { name: 'Открыть', exact: true }).click();
+  await expect(page.locator('.topbar__room')).toContainText('Дача, 6,00 × 4,50 × 2,70');
+});

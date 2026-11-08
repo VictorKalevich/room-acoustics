@@ -48,7 +48,18 @@ export async function checkForUpdate(manual = false): Promise<void> {
   }
 }
 
+// Пока идёт замер, звучит тон или есть несохранённые точки, перезапуск на новую версию откладывается.
+const busy = new Set<string>();
+let pendingReload = false;
+export function setBusy(key: string, on: boolean) {
+  if (on) busy.add(key); else busy.delete(key);
+  if (!on && pendingReload && busy.size === 0) void reload();
+}
+export function isBusy(): boolean { return busy.size > 0; }
+
 async function reload() {
+  if (busy.size) { pendingReload = true; set('updating'); return; }
+  pendingReload = false;
   set('updating');
   try { sessionStorage.setItem('ra-updated', '1'); } catch { /* приватный режим */ }
   try { await Promise.race([beforeReload?.(), new Promise((r) => setTimeout(r, 1500))]); } catch { /* сохранение не критично */ }
@@ -67,6 +78,17 @@ export function consumeJustUpdated(): boolean {
 }
 
 export function startUpdates() {
+  // старая страница после обновления не найдёт свои ленивые модули (их уже нет на сервере) — перезапускаемся
+  addEventListener('vite:preloadError', (e) => {
+    // не чаще раза в 30 с — иначе при настоящей ошибке сети страница ушла бы в бесконечный перезапуск
+    let last = 0;
+    try { last = Number(sessionStorage.getItem('ra-preload-reload') ?? 0); } catch { /* */ }
+    if (Date.now() - last < 30_000) return;
+    e.preventDefault();
+    if (busy.size) { pendingReload = true; return; }
+    try { sessionStorage.setItem('ra-preload-reload', String(Date.now())); } catch { /* */ }
+    location.reload();
+  });
   import('virtual:pwa-register')
     .then(({ registerSW }) =>
       registerSW({

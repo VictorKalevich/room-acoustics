@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import type { Measurement, Room, Setup } from '../../core/types';
-import { analyzeSweep, calAt, clapRT60, logGrid, logSweep, parseCalibration, powerAverage, RT_BANDS, smoothOct, spectrumDb, wav16, type SweepResult } from '../../core/dsp';
+import { analyzeSweep, calAt, clapRT60, logGrid, logSweep, parseCalibration, powerAverage, RT_BANDS, smoothOct, sweepSegment, wav16, type SweepResult } from '../../core/dsp';
+import { setBusy } from '../updates';
 import { computeReverb } from '../../core/reverb';
 import { openMic, playBuffer, shareFile, type Mic } from '../audio/mic';
 import { getTone, onTone } from '../audio/tone';
@@ -95,7 +96,9 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
       try {
         const sweep = logSweep(F1, F2, T, m.sampleRate);
         if (rec.length < sweep.length) throw new Error(S.measure.tooShort);
-        const r = analyzeSweep(rec, sweep, F1, F2, m.sampleRate);
+        const seg = sweepSegment(rec, sweep.length, m.sampleRate);
+        if (!seg) throw new Error(S.measure.cutOff);
+        const r = analyzeSweep(seg, sweep, F1, F2, m.sampleRate);
         const warn = r.peak > 0.98 ? S.measure.clip : r.peak < 0.01 ? S.measure.quiet : r.snrDb < 20 ? S.measure.noisy(Math.round(r.snrDb)) : null;
         setTakes((t) => [...t, { ...r, db: applyCal(r.f, r.db) }]);
         setMsg(warn ? { t: warn, tone: 'warn' } : { t: S.measure.takeOk(Math.round(r.snrDb)), tone: 'good' });
@@ -111,6 +114,7 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
     try {
       if (!mic.current) mic.current = await openMic();
       const m = mic.current;
+      if (!m.running()) { setMsg({ t: S.measure.tapAgain, tone: 'warn' }); return; }
       m.start();
       setState('rec');
       if (playHere) {
@@ -125,9 +129,13 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
     }
   };
 
+  const [savedN, setSavedN] = useState(0);
+  // пока есть несохранённые точки, приложение не перезапускается на новую версию
+  useEffect(() => { setBusy('takes', takes.length > 0 && takes.length !== savedN); return () => setBusy('takes', false); }, [takes.length, savedN]);
   const avg = takes.length ? powerAverage(takes.map((t) => t.db)) : null;
   const save = () => {
     if (!avg) return;
+    setSavedN(takes.length);
     const f = takes[0].f;
     const m: Measurement = { name: S.measure.measName(takes.length), importedAt: new Date().toISOString(), f, db: avg };
     onSetup({ ...project.current, measurement: m });
@@ -144,6 +152,7 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
         <input type="checkbox" checked={playHere} onChange={(e) => setPlayHere((e.target as HTMLInputElement).checked)} />
         <span>{S.measure.playHere}</span>
       </label>
+      {playHere && <p class="muted small">{S.measure.btWarn}</p>}
       {!playHere && (
         <button type="button" class="btn" onClick={() => shareFile(wav16(logSweep(F1, F2, T, 48000), 48000), 'sweep-10-1000Hz-6s.wav', 'audio/wav')}>
           {S.measure.download}
@@ -198,6 +207,7 @@ function ClapTool({ project }: { project: Project }) {
     try {
       if (!mic.current) mic.current = await openMic();
       const m = mic.current;
+      if (!m.running()) { setMsg(S.measure.tapAgain); return; }
       m.start();
       setState('rec');
       setTimeout(() => {
@@ -299,10 +309,16 @@ function RtaTool({ project, applyCal }: { project: Project; applyCal: (f: number
         setOn(false);
       }
     })();
-    return () => { stop = true; cancelAnimationFrame(raf); an?.disconnect(); };
+    return () => {
+      stop = true;
+      cancelAnimationFrame(raf);
+      an?.disconnect();
+      // выключили анализатор — отпускаем микрофон (на iPhone гаснет индикатор и звук возвращается в обычный режим)
+      mic.current?.close();
+      mic.current = null;
+    };
   }, [on]);
   useEffect(() => () => mic.current?.close(), []);
-  void spectrumDb;
   // прогноз модели в точке, где стоит телефон
   const probeSetup = useMemo(() => (here ? { ...current, listener: { x: here.x, y: here.y, z: c.earHeight } } : null), [here, current, c.earHeight]);
   const { ev } = useSetupEval(room, sources, c, probeSetup);

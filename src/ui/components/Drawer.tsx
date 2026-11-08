@@ -1,5 +1,5 @@
 // Выдвижное меню слева: новые и редкие разделы. Открывается кнопкой ☰, закрывается касанием мимо или свайпом влево.
-import { useRef } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { S } from '../strings';
 
 export type DrawerItem = 'measure' | 'report' | 'sync' | 'help' | 'about';
@@ -14,10 +14,19 @@ const ICONS: Record<DrawerItem, string> = {
 
 export function Drawer({ open, current, onClose, onPick }: { open: boolean; current: string; onClose: () => void; onPick: (i: DrawerItem) => void }) {
   const x0 = useRef<number | null>(null);
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    addEventListener('keydown', k);
+    panel.current?.querySelector<HTMLButtonElement>('.drawer__item')?.focus({ preventScroll: true });
+    return () => removeEventListener('keydown', k);
+  }, [open]);
   return (
     <div class={`drawer${open ? ' is-open' : ''}`} aria-hidden={!open}>
       <div class="drawer__backdrop" onClick={onClose} />
       <nav
+        ref={panel}
         class="drawer__panel"
         aria-label={S.drawer.title}
         onTouchStart={(e) => { x0.current = e.touches[0].clientX; }}

@@ -1,5 +1,5 @@
 // Микрофон: запись без обработки (эхоподавление, шумоподавление и автоусиление выключены) и живой анализатор.
-import { audioContext } from './tone';
+import { audioContext, micOpened } from './tone';
 
 const WORKLET = `
 class RaRec extends AudioWorkletProcessor {
@@ -16,52 +16,68 @@ export interface Mic {
   stop(): Float32Array;
   analyser(fftSize?: number): AnalyserNode;
   close(): void;
+  /** Звук действительно идёт (на iPhone после первого разрешения может понадобиться ещё одно касание). */
+  running(): boolean;
 }
 
 let workletReady: Promise<void> | null = null;
 
+/**
+ * Открывает микрофон. Вызывать из обработчика касания: AudioContext создаётся и запускается
+ * до запроса разрешения, иначе iOS оставит его на паузе и запись будет пустой.
+ */
 export async function openMic(): Promise<Mic> {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error('Браузер не даёт доступа к микрофону. Откройте приложение в Safari по адресу сайта (https).');
+  const ctx = audioContext();
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } as MediaTrackConstraints,
   });
-  const ctx = audioContext();
+  micOpened(true);
+  if (ctx.state !== 'running') await ctx.resume().catch(() => undefined);
   const src = ctx.createMediaStreamSource(stream);
   const label = stream.getAudioTracks()[0]?.label ?? '';
   const chunks: Float32Array[] = [];
   let recording = false;
-  let node: AudioWorkletNode | ScriptProcessorNode;
+  let node: AudioWorkletNode | ScriptProcessorNode | null = null;
   const mute = ctx.createGain();
   mute.gain.value = 0;
   mute.connect(ctx.destination);
   if (ctx.audioWorklet) {
-    if (!workletReady) {
-      const url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
-      workletReady = ctx.audioWorklet.addModule(url);
+    try {
+      if (!workletReady) {
+        const url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
+        workletReady = ctx.audioWorklet.addModule(url);
+      }
+      await workletReady;
+      const w = new AudioWorkletNode(ctx, 'ra-rec');
+      w.port.onmessage = (e) => { if (recording) chunks.push(e.data as Float32Array); };
+      node = w;
+    } catch {
+      workletReady = null; // запасной путь ниже
     }
-    await workletReady;
-    const w = new AudioWorkletNode(ctx, 'ra-rec');
-    w.port.onmessage = (e) => { if (recording) chunks.push(e.data as Float32Array); };
-    node = w;
-  } else {
+  }
+  if (!node) {
     const sp = ctx.createScriptProcessor(4096, 1, 1);
     sp.onaudioprocess = (e) => { if (recording) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
     node = sp;
   }
-  src.connect(node);
-  node.connect(mute);
+  const rec = node;
+  src.connect(rec);
+  rec.connect(mute);
   const analysers: AnalyserNode[] = [];
+  let closed = false;
   return {
     sampleRate: ctx.sampleRate,
     label,
+    running: () => ctx.state === 'running',
     start() {
       chunks.length = 0;
       recording = true;
-      if (node instanceof AudioWorkletNode) node.port.postMessage(true);
+      if (rec instanceof AudioWorkletNode) rec.port.postMessage(true);
     },
     stop() {
       recording = false;
-      if (node instanceof AudioWorkletNode) node.port.postMessage(false);
+      if (rec instanceof AudioWorkletNode) rec.port.postMessage(false);
       const n = chunks.reduce((a, c) => a + c.length, 0);
       const out = new Float32Array(n);
       let o = 0;
@@ -74,13 +90,18 @@ export async function openMic(): Promise<Mic> {
       a.fftSize = fftSize;
       a.smoothingTimeConstant = 0.75;
       src.connect(a);
+      // анализатор должен быть подключён к выходу (через ноль), иначе Safari его не обрабатывает
+      a.connect(mute);
       analysers.push(a);
       return a;
     },
     close() {
+      if (closed) return;
+      closed = true;
       recording = false;
-      try { src.disconnect(); node.disconnect(); mute.disconnect(); analysers.forEach((a) => a.disconnect()); } catch { /* уже отключено */ }
+      try { src.disconnect(); rec.disconnect(); mute.disconnect(); analysers.forEach((a) => a.disconnect()); } catch { /* уже отключено */ }
       stream.getTracks().forEach((t) => t.stop());
+      micOpened(false);
     },
   };
 }

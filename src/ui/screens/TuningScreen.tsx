@@ -94,6 +94,7 @@ function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: Setup) 
     setApplied(false);
   };
   const xoAdj = c.crossover.adjustable && sources.some((s) => s.kind === 'speaker');
+  const [filtersReset, setFiltersReset] = useState(false);
 
   return (
     <Panel title={S.tuning.subTitle}>
@@ -142,10 +143,16 @@ function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: Setup) 
             type="button"
             class="btn"
             disabled={applied}
-            onClick={() => { onSetup({ ...current, subSettings: res.settings, crossoverHz: res.crossoverHz }); setApplied(true); }}
+            onClick={() => {
+              const hadFilters = Object.values(current.subSettings).some((v) => (v.peq?.length ?? 0) + (v.allpass?.length ?? 0) > 0);
+              onSetup({ ...current, subSettings: res.settings, crossoverHz: res.crossoverHz });
+              setApplied(true);
+              setFiltersReset(hadFilters);
+            }}
           >
             {applied ? S.tuning.applied : S.tuning.apply}
           </button>
+          {applied && filtersReset && <Note tone="warn">{S.subf.resetNote}</Note>}
         </div>
       )}
       <Details summary={S.tuning.manualSettings}>
