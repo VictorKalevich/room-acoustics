@@ -1,20 +1,29 @@
 import { useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
-import type { Leakage, Mode, Room, Setup, SubSetting } from '../../core/types';
+import type { Leakage, Mode, Room, Setup, SubSetting, Treatment } from '../../core/types';
+import { makeId } from '../../state/project';
+import { computeReverb } from '../../core/reverb';
+import { modeDecays, type ModeDecay } from '../../core/overview';
+import { THICKNESSES, suggestTreatments } from '../../core/treatments';
 import { evaluateSetup, type SetupEval } from '../../core/system';
 import { isWave } from '../../core/geometry';
 import { useSetupEval } from '../useEval';
 import { useEffect } from 'preact/hooks';
 import { hasAdjustments, optionsFor, type IntegrationResult } from '../../core/integration';
-import { designEq, exportEqualizerAPO, exportMiniDSP, exportREW, type EqResult } from '../../core/eq';
+import { biquad, designEq, exportEqualizerAPO, exportMiniDSP, exportREW, type EqResult } from '../../core/eq';
+import { allpassBiquad, type SubFilterResult } from '../../core/subfilters';
 import { bassAdvice, porousLowLimit, reflectionPoints } from '../../core/treatment';
 import { compareMeasurement, measurementAt, parseRew, type CalibrationResult, type Comparison } from '../../core/measure';
 import { speedOfSound } from '../../core/physics';
 import { compute } from '../compute';
 import { PlanView, type PlanMark, type WallMark } from '../components/PlanView';
 import { ResponseChart } from '../components/Charts';
-import { NumberField, Panel, Segmented, Note, Details } from '../components/Fields';
+import { NumberField, Panel, Segmented, Note, Details, SelectField } from '../components/Fields';
 import { S } from '../strings';
+import { Term } from '../components/Term';
+import { Auralize } from '../components/Auralize';
+import { shareFile } from '../audio/mic';
+import { firLinearPhase, firMinPhase, wavFloat32 } from '../../core/dsp';
 import { fmt } from '../format';
 
 interface Props {
@@ -31,7 +40,7 @@ export function TuningScreen({ project, modes, onSetup, onRoom }: Props) {
   return (
     <div class="screen">
       <Panel title={S.tuning.setup}>
-        <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} seats={ev?.seats ?? []} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} showDims={false} />
+        <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} seats={ev?.seats ?? []} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} showDims={false} />
         <div class="score">
           <div class="score__main">
             <span class="score__value">{ev ? fmt(ev.score, 1) : '…'}</span>
@@ -47,7 +56,7 @@ export function TuningScreen({ project, modes, onSetup, onRoom }: Props) {
       {subs.length ? <SubPanel project={project} onSetup={onSetup} /> : <Panel title={S.tuning.subTitle}><p class="muted small">{S.tuning.noSub}</p></Panel>}
       <EqPanel project={project} />
       <MeasurePanel project={project} onRoom={onRoom} onSetup={onSetup} />
-      <TreatmentPanel project={project} modes={modes} />
+      <TreatmentPanel project={project} modes={modes} onRoom={onRoom} />
     </div>
   );
 }
@@ -163,6 +172,9 @@ function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: Setup) 
           <NumberField id="xo" label={S.tuning.xo} unit="Гц" value={current.crossoverHz ?? Math.max(...sources.filter((s) => s.kind === 'sub').map((s) => s.fHigh))} min={c.crossover.min} max={c.crossover.max} digits={0} onChange={(x) => onSetup({ ...current, crossoverHz: x })} />
         )}
       </Details>
+      <Details summary={S.subf.title}>
+        <SubFiltersBlock project={project} onSetup={onSetup} />
+      </Details>
     </Panel>
   );
 }
@@ -239,6 +251,16 @@ function EqPanel({ project }: { project: Project }) {
           <ExportBlock id="eq-rew" title="REW" text={exportREW(res.eq.filters)} file="eq-rew.txt" />
           <Segmented label="miniDSP, частота дискретизации" value={fs} options={[{ value: 48000, label: '48 кГц' }, { value: 96000, label: '96 кГц' }]} onChange={setFs} />
           <ExportBlock id="eq-minidsp" title={`miniDSP biquad, ${fs / 1000} кГц`} text={exportMiniDSP(res.eq.filters, fs)} file={`eq-minidsp-${fs / 1000}k.txt`} />
+          <h4 class="subhead">{S.fir.title}</h4>
+          <p class="muted small">{S.fir.intro} <Term id="fir">FIR</Term>.</p>
+          <div class="btn-row">
+            <button type="button" class="btn btn--small" onClick={() => shareFile(wavFloat32([firMinPhase(res.eq.filters, fs)], fs), `eq-fir-minphase-${fs / 1000}k.wav`, 'audio/wav')}>{S.fir.min(fs / 1000)}</button>
+            <button type="button" class="btn btn--small" onClick={() => shareFile(wavFloat32([firLinearPhase(res.eq.filters, fs)], fs), `eq-fir-linphase-${fs / 1000}k.wav`, 'audio/wav')}>{S.fir.lin(fs / 1000)}</button>
+          </div>
+          <p class="muted small">{S.fir.note(fs / 1000)}</p>
+          <Details summary={S.aural.title}>
+            <Auralize response={{ f: res.f, db: res.before, target: res.target }} filters={res.eq.filters} />
+          </Details>
         </>
       )}
       {res && res.eq.dips.length > 0 && (
@@ -380,7 +402,7 @@ function MeasurePanel({ project, onRoom, onSetup }: { project: Project; onRoom: 
 
 // ---------- Обработка ----------
 
-function TreatmentPanel({ project, modes }: { project: Project; modes: Mode[] }) {
+function TreatmentPanel({ project, modes, onRoom }: { project: Project; modes: Mode[]; onRoom: (r: Room) => void }) {
   const { room, sources, constraints: c, current } = project;
   const spk = sources.filter((s) => s.kind === 'speaker' && current.positions[s.id]).map((s) => ({ id: s.id, pos: current.positions[s.id] }));
   const refl = reflectionPoints(room, spk, current.listener);
@@ -391,7 +413,7 @@ function TreatmentPanel({ project, modes }: { project: Project; modes: Mode[] })
   return (
     <Panel title={S.tuning.treatTitle}>
       <h3 class="subhead">{S.tuning.reflections}</h3>
-      <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} wallMarks={wallMarks} marks={ceilMarks} showDims={false} />
+      <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} wallMarks={wallMarks} marks={ceilMarks} showDims={false} />
       <p class="muted small">{S.tuning.reflectionsHint} Кружки на стенах — боковые отражения, кольца внутри — точки на потолке.</p>
       <ul class="plain-list small">
         {refl.map((r) => (
@@ -417,6 +439,192 @@ function TreatmentPanel({ project, modes }: { project: Project; modes: Mode[] })
         </ul>
       )}
       <p class="muted small">{S.tuning.porous(fmt(porousLowLimit(0.1, 0.1, speedOfSound(room.temperatureC)), 0))}</p>
+      <TreatmentPlan project={project} modes={modes} onRoom={onRoom} reflections={refl} />
     </Panel>
+  );
+}
+
+// ---------- План обработки и «что если» ----------
+
+function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Project; modes: Mode[]; onRoom: (r: Room) => void; reflections: ReturnType<typeof reflectionPoints> }) {
+  const { room, sources, constraints: c, current } = project;
+  const list = room.treatments ?? [];
+  const set = (treatments: Treatment[]) => onRoom({ ...room, treatments });
+  const patch = (id: string, p: Partial<Treatment>) => set(list.map((t) => (t.id === id ? { ...t, ...p } : t)));
+  const add = (kind: Treatment['kind']) => {
+    const t: Treatment = kind === 'corner'
+      ? { id: makeId(), kind, corner: 'front-left', thickness: 0.3, width: 0.6, height: Math.min(room.height, 2.4), enabled: true }
+      : kind === 'panel'
+        ? { id: makeId(), kind, wall: 'left', at: room.depth / 3, z: 1.2, thickness: 0.1, gap: 0.05, width: 0.6, height: 1.2, enabled: true }
+        : { id: makeId(), kind, x: room.depth / 3, y: room.width / 2, thickness: 0.1, gap: 0.1, width: 1.2, height: 1.2, enabled: true };
+    set([...list, t]);
+  };
+  // «что если»: сравнение без обработки и с ней
+  const bare = useMemo(() => ({ ...room, treatmentsOn: false }), [room]);
+  const withT = useMemo(() => ({ ...room, treatmentsOn: true }), [room]);
+  const dBare = useMemo(() => modeDecays(bare, modes, computeReverb(bare), 150), [bare, modes]);
+  const dWith = useMemo(() => modeDecays(withT, modes, computeReverb(withT), 150), [withT, modes]);
+  const { ev: evBare } = useSetupEval(bare, sources, c, list.length ? current : null);
+  const { ev: evWith } = useSetupEval(withT, sources, c, list.length ? current : null);
+  const longCount = (d: ModeDecay[]) => d.filter((x) => x.kind !== 'oblique' && x.t60 > x.limit).length;
+  const meanAx = (d: ModeDecay[]) => { const a = d.filter((x) => x.kind === 'axial'); return a.length ? a.reduce((s, x) => s + x.t60, 0) / a.length : 0; };
+  const area: Record<string, number> = {};
+  for (const t of list.filter((t) => t.enabled !== false)) area[t.thickness] = (area[t.thickness] ?? 0) + t.width * t.height;
+  return (
+    <>
+      <h3 class="subhead">{S.treat.title}</h3>
+      <p class="small">{S.treat.intro}</p>
+      {list.length === 0 && (
+        <button type="button" class="btn btn--primary" onClick={() => onRoom({ ...room, treatments: suggestTreatments(room, reflections, makeId), treatmentsOn: true })}>{S.treat.suggest}</button>
+      )}
+      {list.length > 0 && (
+        <>
+          <label class="check">
+            <input type="checkbox" checked={!!room.treatmentsOn} onChange={(e) => onRoom({ ...room, treatmentsOn: (e.target as HTMLInputElement).checked })} />
+            <span>{S.treat.apply}</span>
+          </label>
+          <div class="treat-compare">
+            <div><span class="muted small">{S.treat.longModes}</span><strong>{longCount(dBare)} → {longCount(dWith)}</strong></div>
+            <div><span class="muted small">{S.treat.axialT60}</span><strong>{fmt(meanAx(dBare), 1)} → {fmt(meanAx(dWith), 1)} с</strong></div>
+            <div><span class="muted small">{S.treat.flatness}</span><strong>{evBare ? fmt(evBare.score, 1) : '…'} → {evWith ? fmt(evWith.score, 1) : '…'} дБ</strong></div>
+            <div><span class="muted small">RT60</span><strong>{fmt(computeReverb(bare).tMid, 2)} → {fmt(computeReverb(withT).tMid, 2)} с</strong></div>
+          </div>
+          <p class="muted small">{room.treatmentsOn ? S.treat.onNote : S.treat.offNote}</p>
+          <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={list} showDims={false} />
+          {list.map((t, i) => (
+            <div class="zone-card">
+              <div class="zone-card__head">
+                <label class="check">
+                  <input type="checkbox" checked={t.enabled !== false} onChange={(e) => patch(t.id, { enabled: (e.target as HTMLInputElement).checked })} />
+                  <span><strong>{S.treat.kinds[t.kind]} {i + 1}</strong></span>
+                </label>
+                <button type="button" class="btn btn--small btn--ghost" onClick={() => set(list.filter((x) => x.id !== t.id))}>{S.openings.remove}</button>
+              </div>
+              {t.kind === 'corner' && (
+                <SelectField label={S.treat.corner} value={t.corner ?? 'front-left'} options={(['front-left', 'front-right', 'back-left', 'back-right'] as const).map((k) => ({ value: k, label: S.treat.corners[k] }))} onChange={(v) => patch(t.id, { corner: v as Treatment['corner'] })} />
+              )}
+              {t.kind === 'panel' && (
+                <div class="grid-2">
+                  <SelectField label={S.openings.wall} value={t.wall ?? 'left'} options={(['front', 'back', 'left', 'right'] as const).map((w) => ({ value: w, label: S.openings.walls[w] }))} onChange={(v) => patch(t.id, { wall: v as Treatment['wall'] })} />
+                  <NumberField compact id={`${t.id}-at`} label={S.treat.center} value={t.at ?? 0} unit="м" min={0} max={30} onChange={(v) => patch(t.id, { at: v })} />
+                </div>
+              )}
+              {t.kind === 'cloud' && (
+                <div class="grid-2">
+                  <NumberField compact id={`${t.id}-x`} label={S.treat.cx} value={t.x ?? 0} unit="м" min={0} max={30} onChange={(v) => patch(t.id, { x: v })} />
+                  <NumberField compact id={`${t.id}-y`} label={S.treat.cy} value={t.y ?? 0} unit="м" min={0} max={30} onChange={(v) => patch(t.id, { y: v })} />
+                </div>
+              )}
+              <div class="grid-3">
+                <SelectField label={S.treat.thickness} value={String(t.thickness)} options={THICKNESSES.map((d) => ({ value: String(d), label: `${Math.round(d * 100)} см` }))} onChange={(v) => patch(t.id, { thickness: +v })} />
+                <NumberField compact id={`${t.id}-w`} label={t.kind === 'cloud' ? S.treat.sizeY : S.treat.width} value={t.width} unit="м" min={0.1} max={10} onChange={(v) => patch(t.id, { width: v })} />
+                <NumberField compact id={`${t.id}-h`} label={t.kind === 'cloud' ? S.treat.sizeX : S.treat.height} value={t.height} unit="м" min={0.1} max={10} onChange={(v) => patch(t.id, { height: v })} />
+              </div>
+              {t.kind !== 'corner' && (
+                <NumberField compact id={`${t.id}-g`} label={S.treat.gap} value={t.gap ?? 0} unit="м" min={0} max={0.5} onChange={(v) => patch(t.id, { gap: v })} />
+              )}
+            </div>
+          ))}
+          <div class="btn-row">
+            <button type="button" class="btn btn--small" onClick={() => add('corner')}>{S.treat.addCorner}</button>
+            <button type="button" class="btn btn--small" onClick={() => add('panel')}>{S.treat.addPanel}</button>
+            <button type="button" class="btn btn--small" onClick={() => add('cloud')}>{S.treat.addCloud}</button>
+          </div>
+          <h4 class="subhead">{S.treat.shopping}</h4>
+          <ul class="plain-list small">
+            {Object.entries(area).sort((a, b) => +a[0] - +b[0]).map(([d, a]) => <li>{S.treat.material(Math.round(+d * 100), fmt(a, 1))}</li>)}
+          </ul>
+          <p class="muted small">{S.treat.materialNote}</p>
+        </>
+      )}
+    </>
+  );
+}
+
+// ---------- Свои фильтры сабвуферов (PEQ и all-pass) ----------
+
+function SubFiltersBlock({ project, onSetup }: { project: Project; onSetup: (s: Setup) => void }) {
+  const { room, sources, constraints: c, current } = project;
+  const subs = sources.filter((s) => s.kind === 'sub' && current.positions[s.id]);
+  const capable = subs.filter((s) => (s.peqBands ?? 0) > 0 || s.allpass);
+  const [res, setRes] = useState<SubFilterResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [applied, setApplied] = useState(false);
+  const [fs, setFs] = useState(48000);
+  const run = () => {
+    setBusy(true);
+    setApplied(false);
+    compute<SubFilterResult>('subFilters', { room, sources, constraints: c, setup: current })
+      .promise.then((r) => { setRes(r); setBusy(false); })
+      .catch(() => setBusy(false));
+  };
+  const textFor = (id: string, set?: SubSetting) => {
+    const lines = [`# ${S.placement.sourceName(id)}`];
+    (set?.peq ?? []).forEach((p) => lines.push(`Filter: ON PK Fc ${p.f.toFixed(1)} Hz Gain ${p.gainDb.toFixed(1)} dB Q ${p.q.toFixed(2)}`));
+    (set?.allpass ?? []).forEach((p) => lines.push(`Filter: ON AP Fc ${p.f.toFixed(1)} Hz Q ${p.q.toFixed(2)}`));
+    return lines.join('\n');
+  };
+  const dspFor = (set?: SubSetting) => {
+    const out: string[] = [];
+    let i = 1;
+    for (const p of set?.peq ?? []) {
+      const b = biquad(p, fs);
+      out.push(`biquad${i++},`, `b0=${b.b0.toFixed(15)},`, `b1=${b.b1.toFixed(15)},`, `b2=${b.b2.toFixed(15)},`, `a1=${(-b.a1).toFixed(15)},`, `a2=${(-b.a2).toFixed(15)},`);
+    }
+    for (const p of set?.allpass ?? []) {
+      const b = allpassBiquad(p, fs);
+      out.push(`biquad${i++},`, `b0=${b.b0.toFixed(15)},`, `b1=${b.b1.toFixed(15)},`, `b2=${b.b2.toFixed(15)},`, `a1=${(-b.a1).toFixed(15)},`, `a2=${(-b.a2).toFixed(15)},`);
+    }
+    return out.join('\n');
+  };
+  return (
+    <div class="subf">
+      <p class="small">{S.subf.intro} <Term id="peq">PEQ</Term>, <Term id="allpass">all-pass</Term>.</p>
+      {capable.length === 0 ? <Note>{S.subf.noCaps}</Note> : (
+        <button type="button" class="btn btn--primary" disabled={busy} onClick={run}>{busy ? S.tuning.running : S.subf.run}</button>
+      )}
+      {res && (
+        <>
+          <div class="stat-row">
+            <div class="stat"><span class="stat__value">{fmt(res.before, 1)} <small>дБ</small></span><span class="stat__label">{S.tuning.before}</span></div>
+            <div class="stat"><span class="stat__value">{fmt(res.after, 1)} <small>дБ</small></span><span class="stat__label">{S.tuning.after}</span></div>
+          </div>
+          {subs.map((s) => {
+            const set = res.settings[s.id];
+            const n = (set?.peq?.length ?? 0) + (set?.allpass?.length ?? 0);
+            return (
+              <div class="sub-settings">
+                <span class="range-row__label">{S.placement.sourceName(s.id)}</span>
+                {n === 0 ? <p class="muted small">{S.subf.none}</p> : (
+                  <ul class="plain-list small">
+                    {(set?.peq ?? []).map((p) => <li>PEQ {fmt(p.f, 1)} Гц, {p.gainDb > 0 ? '+' : ''}{fmt(p.gainDb, 1)} дБ, Q {fmt(p.q, 1)}</li>)}
+                    {(set?.allpass ?? []).map((p) => <li>All-pass {fmt(p.f, 1)} Гц, Q {fmt(p.q, 2)}</li>)}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+          <ResponseChart
+            fLo={res.responseAfter.f[0]}
+            fHi={res.responseAfter.f[res.responseAfter.f.length - 1]}
+            lines={[
+              { f: res.responseAfter.f, db: res.responseAfter.target, cls: 'is-target', dash: true },
+              { f: res.responseBefore.f, db: res.responseBefore.db, cls: 'is-baseline' },
+              { f: res.responseAfter.f, db: res.responseAfter.db, cls: 'is-room' },
+            ]}
+          />
+          {res.notes.map((t) => <Note>{t}</Note>)}
+          <button type="button" class="btn" disabled={applied} onClick={() => { onSetup({ ...current, subSettings: res.settings }); setApplied(true); }}>
+            {applied ? S.tuning.applied : S.tuning.apply}
+          </button>
+          <h4 class="subhead">{S.tuning.eqExport}</h4>
+          <ExportBlock id="subf-apo" title="Equalizer APO" text={subs.map((s) => textFor(s.id, res.settings[s.id])).join('\n\n')} file="sub-filters-apo.txt" />
+          <Segmented label="miniDSP, частота дискретизации" value={fs} options={[{ value: 48000, label: '48 кГц' }, { value: 96000, label: '96 кГц' }]} onChange={setFs} />
+          {subs.map((s) => (
+            <ExportBlock id={`subf-${s.id}`} title={`miniDSP: ${S.placement.sourceName(s.id)}`} text={dspFor(res.settings[s.id])} file={`sub-filters-${s.id}-${fs / 1000}k.txt`} />
+          ))}
+        </>
+      )}
+    </div>
   );
 }

@@ -13,26 +13,43 @@ import { ProjectsScreen } from './screens/ProjectsScreen';
 import { TuningScreen } from './screens/TuningScreen';
 import { FieldScreen } from './screens/FieldScreen';
 import { Segmented } from './components/Fields';
+import { Drawer, type DrawerItem } from './components/Drawer';
+import { TermSheet } from './components/Term';
+import { MiniPlayer } from './components/MiniPlayer';
+import { WizardStrip } from './components/WizardStrip';
+import { wizardOn } from './wizard';
+import { HelpScreen } from './screens/HelpScreen';
+import { MeasureScreen } from './screens/MeasureScreen';
+import { ReportScreen } from './screens/ReportScreen';
+import { SyncScreen } from './screens/SyncScreen';
+import { OverviewScreen } from './screens/OverviewScreen';
+import { AboutPanel } from './screens/ProjectsScreen';
+import { setFieldFocus } from './screens/FieldScreen';
 import { S } from './strings';
 import { fmt } from './format';
 import { consumeJustUpdated, setBeforeReload } from './updates';
 
-type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects';
-const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects'];
+type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects' | DrawerItem;
+const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects', 'measure', 'report', 'sync', 'help', 'about'];
 /** Вкладки нижней панели; «Проекты» — кнопка в верхней панели. */
-const BAR: Tab[] = ['room', 'modes', 'placement', 'tuning'];
+const BAR: ('room' | 'modes' | 'placement' | 'tuning')[] = ['room', 'modes', 'placement', 'tuning'];
 const TITLES: Record<Tab, string> = {
   room: S.room.title,
   modes: S.modes.title,
   placement: S.placement.title,
   tuning: S.tuning.title,
   projects: S.projects.title,
+  measure: S.drawer.items.measure,
+  report: S.drawer.items.report,
+  sync: S.drawer.items.sync,
+  help: S.drawer.items.help,
+  about: S.drawer.items.about,
 };
 
 function readTab(): Tab {
   const h = location.hash.replace('#', '');
   if (h === 'manual') return 'placement';
-  if (h === 'field') return 'modes';
+  if (h === 'field' || h === 'overview') return 'modes';
   return TABS.includes(h as Tab) ? (h as Tab) : 'room';
 }
 
@@ -56,7 +73,10 @@ function fitConstraints(c: Constraints, room: Room): Constraints {
 export function App() {
   const [tab, setTab] = useState<Tab>(readTab);
   const [placementMode, setPlacementMode] = useState<'auto' | 'manual'>(location.hash === '#manual' ? 'manual' : 'auto');
-  const [modesView, setModesView] = useState<'list' | 'field'>(location.hash === '#field' ? 'field' : 'list');
+  const [modesView, setModesView] = useState<'list' | 'field' | 'overview'>(location.hash === '#field' ? 'field' : location.hash === '#overview' ? 'overview' : 'list');
+  const [drawer, setDrawer] = useState(false);
+  const [wizard, setWizard] = useState(wizardOn());
+  const [, setWizardTick] = useState(0);
   const [project, setProject] = useState<Project>(() => newProject());
   const [ready, setReady] = useState(false);
   const [justUpdated, setJustUpdated] = useState(consumeJustUpdated);
@@ -70,6 +90,7 @@ export function App() {
       setTab(readTab());
       if (location.hash === '#manual') setPlacementMode('manual');
       if (location.hash === '#field') setModesView('field');
+      if (location.hash === '#overview') setModesView('overview');
     };
     addEventListener('hashchange', onHash);
     return () => removeEventListener('hashchange', onHash);
@@ -112,10 +133,11 @@ export function App() {
   const onConstraints = (constraints: Constraints) => touch({ constraints });
   const onSetup = (current: Setup) => touch({ current }, false);
   const onSetups = (setups: Setup[]) => touch({ setups }, false);
-  const setModes = (v: 'list' | 'field') => {
+  const setModes = (v: 'list' | 'field' | 'overview') => {
     setModesView(v);
-    history.replaceState(null, '', v === 'field' ? '#field' : '#modes');
+    history.replaceState(null, '', v === 'list' ? '#modes' : `#${v}`);
   };
+  const refreshWizard = () => { setWizard(wizardOn()); setWizardTick((x) => x + 1); };
   const setMode = (m: 'auto' | 'manual') => {
     setPlacementMode(m);
     history.replaceState(null, '', m === 'manual' ? '#manual' : '#placement');
@@ -130,6 +152,9 @@ export function App() {
     <div class="app">
       <header class="topbar">
         <div class="topbar__inner">
+          <button type="button" class="topbar__menu" aria-label={S.drawer.open} aria-expanded={drawer} onClick={() => setDrawer(true)}>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16 M4 12h16 M4 17h16" /></svg>
+          </button>
           <div class="topbar__text">
             <h1 class="topbar__title">{TITLES[tab]}</h1>
             <span class="topbar__room">
@@ -155,18 +180,24 @@ export function App() {
         </div>
       )}
 
+      <Drawer open={drawer} current={tab} onClose={() => setDrawer(false)} onPick={(i) => { setDrawer(false); go(i); }} />
+      <TermSheet />
+
       <main class="content">
+        {wizard && <WizardStrip project={project} onGo={(t) => go(t)} onChange={refreshWizard} />}
         <div hidden={tab !== 'room'}>
           <RoomScreen project={project} reverb={reverb} onRoom={onRoom} />
         </div>
         {tab === 'modes' && (
           <>
             <div class="screen modes-switch">
-              <Segmented label={S.modes.title} value={modesView} options={[{ value: 'list' as const, label: S.modesView.list }, { value: 'field' as const, label: S.modesView.field }]} onChange={setModes} />
+              <Segmented label={S.modes.title} value={modesView} options={[{ value: 'list' as const, label: S.modesView.list }, { value: 'field' as const, label: S.modesView.field }, { value: 'overview' as const, label: S.modesView.overview }]} onChange={setModes} />
             </div>
-            {modesView === 'list'
-              ? <ModesScreen room={r} modes={modes} fMax={fMax} reverb={reverb} />
-              : <FieldScreen project={project} modes={modes} onSetup={onSetup} />}
+            {modesView === 'list' && <ModesScreen room={r} modes={modes} fMax={fMax} reverb={reverb} />}
+            {modesView === 'field' && <FieldScreen project={project} modes={modes} onSetup={onSetup} />}
+            {modesView === 'overview' && (
+              <OverviewScreen project={project} modes={modes} reverb={reverb} onGo={(t, f) => { if (t === 'field') { if (f) setFieldFocus(f); setModes('field'); } else go(t as Tab); }} />
+            )}
           </>
         )}
         <div hidden={tab !== 'placement'}>
@@ -190,7 +221,14 @@ export function App() {
             onRename={(name) => touch({ name }, false)}
           />
         )}
+        {tab === 'measure' && <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={(t: Tab) => go(t)} />}
+        {tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} />}
+        {tab === 'sync' && <SyncScreen project={project} onReplace={(p: Project) => setProject(p)} />}
+        {tab === 'help' && <HelpScreen project={project} onGo={(t) => go(t)} onWizard={refreshWizard} />}
+        {tab === 'about' && <div class="screen"><AboutPanel /></div>}
       </main>
+
+      <MiniPlayer />
 
       <nav class="tabbar" aria-label="Разделы">
         {BAR.map((t) => (
@@ -205,7 +243,7 @@ export function App() {
 }
 
 function TabIcon({ tab }: { tab: Tab }) {
-  const paths: Record<Tab, string> = {
+  const paths: Partial<Record<Tab, string>> = {
     room: 'M4 5h16v14H4z M4 5l3 3h10l3-3 M7 8v8 M17 8v8',
     modes: 'M3 19h18 M6 19V7 M10 19v-7 M14 19V5 M18 19v-9',
     placement: 'M5 4h4v5H5z M15 4h4v5h-4z M12 19.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M7 9l5 6 5-6',
@@ -214,7 +252,7 @@ function TabIcon({ tab }: { tab: Tab }) {
   };
   return (
     <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d={paths[tab]} />
+      <path d={paths[tab] ?? ''} />
     </svg>
   );
 }

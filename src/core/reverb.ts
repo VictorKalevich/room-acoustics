@@ -1,12 +1,24 @@
 import type { ReverbResult, Room, SurfaceId } from './types';
 import { SURFACES } from './types';
 import { FURNISHING, OCTAVES, alphaAt, getMaterial } from './materials';
-import { absorbingOpenings, openingArea } from './geometry';
+import { absorbingOpenings, openingArea, roomVolume } from './geometry';
+import { activeTreatments, treatmentAlpha, treatmentArea, treatmentSurfaces } from './treatments';
 
 /** Площади поверхностей комнаты, м². */
 export function surfaceAreas(room: Room): Record<SurfaceId, number> {
   const { depth: x, width: y, height: z } = room;
-  return { floor: x * y, ceiling: x * y, front: y * z, back: y * z, left: x * z, right: x * z };
+  const out: Record<SurfaceId, number> = { floor: x * y, ceiling: x * y, front: y * z, back: y * z, left: x * z, right: x * z };
+  const s = room.slope;
+  if (s) {
+    // скос: стена у скоса ниже, две соседние стены теряют треугольник, потолок длиннее
+    const along = s.wall === 'front' || s.wall === 'back' ? y : x;
+    const tri = (s.run * (z - s.low)) / 2;
+    out[s.wall] = along * s.low;
+    const side: SurfaceId[] = s.wall === 'front' || s.wall === 'back' ? ['left', 'right'] : ['front', 'back'];
+    for (const k of side) out[k] -= tri;
+    out.ceiling = along * ((s.wall === 'front' || s.wall === 'back' ? x : y) - s.run) + along * Math.hypot(s.run, z - s.low);
+  }
+  return out;
 }
 
 /**
@@ -27,6 +39,15 @@ export function surfaceAbsorptionAt(room: Room, f: number): Record<SurfaceId, nu
   for (const k of SURFACES) {
     out[k] = alphaAt(getMaterial(room.materials[k]).alpha, f) * S[k] + (furn * S[k]) / total;
   }
+  // Обработка: площадь элемента × (α элемента − α стены под ним)
+  for (const t of activeTreatments(room)) {
+    const at = alphaAt(treatmentAlpha(t), f);
+    const area = treatmentArea(t);
+    for (const { s, share } of treatmentSurfaces(t)) {
+      const aw = alphaAt(getMaterial(room.materials[s]).alpha, f);
+      out[s] += area * share * Math.max(0, at - aw);
+    }
+  }
   // Проёмы поглощают полностью: добавляем (1 − α стены) × площадь проёма
   for (const o of absorbingOpenings(room)) {
     const a = openingArea(room, o);
@@ -46,7 +67,7 @@ export function schroederFrequency(tMid: number, volume: number): number {
  * Эйринг T = 0,161V/(−S·ln(1 − ᾱ) + 4mV). Основная формула — Эйринг при ᾱ > 0,2.
  */
 export function computeReverb(room: Room): ReverbResult {
-  const V = room.depth * room.width * room.height;
+  const V = roomVolume(room);
   const S = Object.values(surfaceAreas(room)).reduce((a, b) => a + b, 0);
   const sabine: number[] = [];
   const eyring: number[] = [];

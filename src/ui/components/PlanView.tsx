@@ -1,5 +1,5 @@
 import { useRef } from 'preact/hooks';
-import type { Extension, Opening, Placement, Room, Vec3, WallFeature, WallId, Zone } from '../../core/types';
+import type { Extension, Opening, Placement, Room, Treatment, Vec3, WallFeature, WallId, Zone } from '../../core/types';
 import { extensionBox } from '../../core/geometry';
 import type { Heatmap } from '../../core/field';
 import type { FieldSlice } from '../../core/field3d';
@@ -38,6 +38,10 @@ export interface PlanProps {
   openings?: Opening[];
   /** Окна и закрытые двери — ориентиры на стенах. */
   features?: WallFeature[];
+  /** Обработка: ловушки, панели, облака. */
+  treatments?: Treatment[];
+  /** Скос потолка (показывается полосой у стены). */
+  slope?: { wall: WallId; low: number; run: number } | null;
   listenerZone?: [number, number] | null;
   heatmap?: Heatmap | null;
   /** Срез звукового поля на выбранных частотах (экран 3D). */
@@ -257,9 +261,45 @@ export function PlanView(p: PlanProps) {
         <g class={`plan__zone-rect is-${z.kind}`}>
           <rect x={X(z.y0)} y={Y(z.x0)} width={(z.y1 - z.y0) * scale} height={(z.x1 - z.x0) * scale} fill="url(#zonehatch)" />
           <rect x={X(z.y0)} y={Y(z.x0)} width={(z.y1 - z.y0) * scale} height={(z.x1 - z.x0) * scale} class="plan__zone-outline" />
-          <text x={X((z.y0 + z.y1) / 2)} y={Y((z.x0 + z.x1) / 2) + 4} text-anchor="middle">{S.zones.short[z.kind]}</text>
+          <text x={X((z.y0 + z.y1) / 2)} y={Y((z.x0 + z.x1) / 2) + 4} text-anchor="middle">{z.name ?? S.zones.short[z.kind]}</text>
         </g>
       ))}
+
+      {(p.treatments ?? []).filter((t) => t.enabled !== false).map((t) => {
+        if (t.kind === 'corner') {
+          const leg = (t.width / Math.SQRT2) * scale;
+          const [fb, lr] = (t.corner ?? 'front-left').split('-');
+          const cx = lr === 'left' ? ox : ox + rw, cy = fb === 'front' ? oy : oy + rh;
+          const sx = lr === 'left' ? 1 : -1, sy = fb === 'front' ? 1 : -1;
+          return <polygon class="plan__treat is-corner" points={`${cx},${cy} ${cx + sx * leg},${cy} ${cx},${cy + sy * leg}`} />;
+        }
+        if (t.kind === 'cloud') {
+          return <rect class="plan__treat is-cloud" x={X((t.y ?? 0) - t.width / 2)} y={Y((t.x ?? 0) - t.height / 2)} width={t.width * scale} height={t.height * scale} rx="3" />;
+        }
+        const d = (t.thickness + (t.gap ?? 0)) * scale;
+        const a0 = (t.at ?? 0) - t.width / 2, a1 = (t.at ?? 0) + t.width / 2;
+        const r =
+          t.wall === 'left' ? { x: ox, y: Y(a0), w: d, h: t.width * scale } :
+          t.wall === 'right' ? { x: ox + rw - d, y: Y(a0), w: d, h: t.width * scale } :
+          t.wall === 'front' ? { x: X(a0), y: oy, w: t.width * scale, h: d } :
+          { x: X(a0), y: oy + rh - d, w: (a1 - a0) * scale, h: d };
+        return <rect class="plan__treat is-panel" x={r.x} y={r.y} width={r.w} height={r.h} />;
+      })}
+
+      {p.slope && (() => {
+        const s = p.slope!;
+        const run = s.run * scale;
+        const r =
+          s.wall === 'front' ? { x: ox, y: oy, w: rw, h: run } :
+          s.wall === 'back' ? { x: ox, y: oy + rh - run, w: rw, h: run } :
+          s.wall === 'left' ? { x: ox, y: oy, w: run, h: rh } : { x: ox + rw - run, y: oy, w: run, h: rh };
+        return (
+          <g class="plan__slope">
+            <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="url(#zonehatch)" />
+            <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 4} text-anchor="middle">{S.shape.slopeShort(fmt(s.low, 1))}</text>
+          </g>
+        );
+      })()}
 
       {p.listenerZone && (
         <rect x={ox + 4} y={Y(p.listenerZone[0])} width={rw - 8} height={Math.max(2, (p.listenerZone[1] - p.listenerZone[0]) * scale)} class="plan__zone" rx="6" />
@@ -371,6 +411,8 @@ export function keysFor(p: PlanProps, items: PlanItem[] = p.items ?? [], seats: 
   if ((p.marks ?? []).some((m) => m.kind === 'probe')) keys.push('probe');
   if ((p.wallMarks ?? []).length) keys.push('reflection');
   if ((p.marks ?? []).some((m) => m.kind === 'trap')) keys.push('trap');
+  if ((p.treatments ?? []).some((t) => t.enabled !== false)) keys.push('treat');
+  if (p.slope) keys.push('slope');
   if (p.listenerZone) keys.push('listenerZone');
   if ((p.zones ?? []).length) keys.push('zone');
   if (feats.some((f) => f.kind === 'window')) keys.push('window');
@@ -382,7 +424,7 @@ export function keysFor(p: PlanProps, items: PlanItem[] = p.items ?? [], seats: 
 
 export type KeyId =
   | 'front' | 'spk' | 'sub' | 'listener' | 'triangle' | 'seats' | 'heat' | 'best' | 'probe'
-  | 'reflection' | 'trap' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor' | 'field';
+  | 'reflection' | 'trap' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor' | 'field' | 'treat' | 'slope';
 
 /** Маленький значок обозначения — теми же стилями, что и на плане. */
 function KeyIcon({ id }: { id: KeyId }) {
@@ -394,6 +436,8 @@ function KeyIcon({ id }: { id: KeyId }) {
       case 'listener': return <g class="plan__listener"><circle cx="14" cy="10" r="8" /><circle cx="14" cy="10" r="2.5" class="plan__dot" /></g>;
       case 'triangle': return <polygon class="plan__triangle" points="3,3 25,3 14,18" />;
       case 'seats': return <circle class="plan__seat" cx="14" cy="10" r="5" />;
+      case 'slope': return <g class="plan__slope"><rect x="3" y="3" width="22" height="14" fill="url(#keyhatch)" /></g>;
+      case 'treat': return <g><polygon class="plan__treat is-corner" points="2,2 14,2 2,14" /><rect class="plan__treat is-panel" x="16" y="6" width="10" height="5" /></g>;
       case 'field': return <g><rect x="2" y="4" width="8" height="12" fill="rgba(26,71,230,0.8)" /><rect x="10" y="4" width="8" height="12" fill="none" stroke="currentColor" stroke-width="0.6" stroke-dasharray="2 2" /><rect x="18" y="4" width="8" height="12" fill="rgba(214,31,20,0.8)" /></g>;
       case 'heat': return <g><rect x="2" y="4" width="8" height="12" fill="hsl(160 62% 48%)" /><rect x="10" y="4" width="8" height="12" fill="hsl(88 62% 48%)" /><rect x="18" y="4" width="8" height="12" fill="hsl(15 62% 48%)" /></g>;
       case 'best': return <g class="plan__mark is-best"><circle cx="14" cy="10" r="9" /><text x="14" y="14" text-anchor="middle">1</text></g>;

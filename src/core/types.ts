@@ -21,6 +21,9 @@ export interface Zone {
   y0: number;
   y1: number;
   canSit: boolean;
+  /** Подпись (например, «Диван») и признак, что зона взята из скана. */
+  name?: string;
+  fromScan?: boolean;
 }
 
 export type WallId = 'front' | 'back' | 'left' | 'right';
@@ -65,6 +68,27 @@ export interface Extension {
 
 export type AcousticModel = 'auto' | 'modal' | 'wave';
 
+/** Элемент обработки: угловая басовая ловушка, панель на стене, облако под потолком. */
+export interface Treatment {
+  id: string;
+  kind: 'corner' | 'panel' | 'cloud';
+  /** Толщина поглотителя и воздушный зазор за ним, м. */
+  thickness: number;
+  gap?: number;
+  /** Ширина и высота (для облака — размеры в плане), м. */
+  width: number;
+  height: number;
+  corner?: 'front-left' | 'front-right' | 'back-left' | 'back-right';
+  wall?: WallId;
+  /** Центр панели вдоль стены и по высоте, м. */
+  at?: number;
+  z?: number;
+  /** Центр облака в плане, м. */
+  x?: number;
+  y?: number;
+  enabled?: boolean;
+}
+
 export interface Calibration {
   /** Множитель затухания мод (подстройка по замеру). */
   dampingScale: number;
@@ -86,6 +110,11 @@ export interface Room {
   model: AcousticModel;
   /** Окна и закрытые двери (для ориентира на плане). */
   features: WallFeature[];
+  /** Скос потолка у стены wall: у стены высота low, на расстоянии run от неё — полная высота. */
+  slope?: { wall: WallId; low: number; run: number } | null;
+  /** План обработки и признак «учитывать в расчёте». */
+  treatments?: Treatment[];
+  treatmentsOn?: boolean;
 }
 
 /** Коэффициенты поглощения по октавам 63, 125, 250, 500, 1000, 2000, 4000 Гц. */
@@ -151,6 +180,9 @@ export interface SourceSpec {
   maxDelayMs?: number;
   phaseMode?: PhaseMode;
   levelAdjustable?: boolean;
+  /** Сколько полос параметрического эквалайзера есть у канала сабвуфера (0 — нет) и есть ли all-pass. */
+  peqBands?: number;
+  allpass?: boolean;
 }
 
 /** Настройки сабвуфера: задержка, фаза, уровень. */
@@ -158,6 +190,9 @@ export interface SubSetting {
   delayMs: number;
   phaseDeg: number;
   gainDb: number;
+  /** Свои фильтры канала сабвуфера: пиковые (PEQ) и фазовые (all-pass 2-го порядка). */
+  peq?: { f: number; gainDb: number; q: number }[];
+  allpass?: { f: number; q: number }[];
 }
 
 export interface Seats {
@@ -183,6 +218,8 @@ export interface Constraints {
   subWallGap: number;
   seats: Seats;
   crossover: CrossoverSpec;
+  /** Добавить к вариантам схему DBA (нужно ≥ 2 сабвуферов). */
+  dba?: boolean;
 }
 
 export interface Measurement {
@@ -219,6 +256,12 @@ export interface Placement {
   penalties: Penalty[];
   angleDeg: number | null;
   response: { f: number[]; db: number[]; target: number[] };
+  /** Настройки сабвуферов варианта (например, для схемы DBA) и схема. */
+  subSettings?: Record<string, SubSetting>;
+  scheme?: 'dba';
+  /** Устойчивость: на сколько дБ в среднем ухудшается оценка при сдвиге источников и слушателя на 10 см. */
+  robust?: number;
+  notes?: string[];
 }
 
 export interface PlacementResult {

@@ -30,7 +30,38 @@ export function extensionBox(room: Room, e: Extension): Box {
 export function effectiveModel(room: Room): 'modal' | 'wave' {
   if (room.model === 'modal') return 'modal';
   if (room.model === 'wave') return 'wave';
-  return (room.extensions ?? []).length > 0 ? 'wave' : 'modal';
+  return (room.extensions ?? []).length > 0 || !!room.slope ? 'wave' : 'modal';
+}
+
+/** Высота потолка основной комнаты в точке плана (учитывает скос). */
+export function ceilingAt(room: Room, x: number, y: number): number {
+  const s = room.slope;
+  if (!s) return room.height;
+  const d = s.wall === 'front' ? x : s.wall === 'back' ? room.depth - x : s.wall === 'left' ? y : room.width - y;
+  if (d >= s.run) return room.height;
+  return s.low + ((room.height - s.low) * Math.max(0, d)) / s.run;
+}
+
+/** Объём, срезанный скосом, м³. */
+export function slopeCut(room: Room): number {
+  const s = room.slope;
+  if (!s) return 0;
+  const L = s.wall === 'front' || s.wall === 'back' ? room.width : room.depth;
+  return (L * s.run * (room.height - s.low)) / 2;
+}
+
+/** Объём основной комнаты с учётом скоса. */
+export function roomVolume(room: Room): number {
+  return room.depth * room.width * room.height - slopeCut(room);
+}
+
+export function validateSlope(room: Room): string | null {
+  const s = room.slope;
+  if (!s) return null;
+  const extent = s.wall === 'front' || s.wall === 'back' ? room.depth : room.width;
+  if (!(s.low >= 0.5 && s.low < room.height)) return 'Высота у стены со скосом должна быть от 0,5 м и меньше высоты комнаты.';
+  if (!(s.run > 0.2 && s.run <= extent)) return 'Ширина скоса должна быть больше 0,2 м и не больше размера комнаты.';
+  return null;
 }
 
 export const isWave = (room: Room) => effectiveModel(room) === 'wave';

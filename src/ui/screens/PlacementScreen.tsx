@@ -8,6 +8,7 @@ import { ManualScreen } from './ManualScreen';
 import { PlanView } from '../components/PlanView';
 import { ResponseChart } from '../components/Charts';
 import { S } from '../strings';
+import { Term } from '../components/Term';
 import { fmt, fmtInt } from '../format';
 
 interface Props {
@@ -80,7 +81,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
 
   const openManual = (p: Placement) => {
     const positions = Object.fromEntries(p.sources.filter((s) => s.pos).map((s) => [s.id, s.pos]));
-    onSetup({ ...project.current, listener: p.listener, positions, subSettings: {}, crossoverHz: null });
+    onSetup({ ...project.current, listener: p.listener, positions, subSettings: p.subSettings ?? {}, crossoverHz: null });
     onMode('manual');
     scrollTo({ top: 0 });
   };
@@ -104,6 +105,12 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
           options={[0, 1, 2, 3, 4].map((n) => ({ value: n, label: n === 0 ? 'Нет' : String(n) }))}
           onChange={(n) => setCounts(spk.length, n)}
         />
+        {subs.length >= 2 && (
+          <label class="check">
+            <input type="checkbox" checked={!!c.dba} onChange={(e) => setC({ dba: (e.target as HTMLInputElement).checked })} />
+            <span>{S.robust.dbaToggle} <Term id="dba">DBA</Term></span>
+          </label>
+        )}
         <h3 class="subhead">{S.placement.range}</h3>
         <RangeRow
           label={S.placement.speakerRange}
@@ -145,6 +152,16 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
                 <label class="check">
                   <input type="checkbox" checked={!!s.levelAdjustable} onChange={(e) => updateSource(s.id, { levelAdjustable: (e.target as HTMLInputElement).checked })} />
                   <span>{S.sub.level}</span>
+                </label>
+                <Segmented
+                  label={`${S.sub.peqBands} (${S.placement.subRange(i + 1).toLowerCase()})`}
+                  value={s.peqBands ?? 0}
+                  options={[0, 2, 4, 6, 10].map((n) => ({ value: n, label: n === 0 ? S.sub.none : String(n) }))}
+                  onChange={(v) => updateSource(s.id, { peqBands: v })}
+                />
+                <label class="check">
+                  <input type="checkbox" checked={!!s.allpass} onChange={(e) => updateSource(s.id, { allpass: (e.target as HTMLInputElement).checked })} />
+                  <span>{S.sub.allpass}</span>
                 </label>
               </div>
             ))}
@@ -255,7 +272,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
       <div ref={resultRef}>
         {!result && !running && (
           <Panel>
-            <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} listenerZone={[c.listenerMinX, c.listenerMaxX]} />
+            <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} listenerZone={[c.listenerMinX, c.listenerMaxX]} />
             <p class="small">{S.placement.empty}</p>
           </Panel>
         )}
@@ -271,12 +288,21 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
                   class={i === sel ? 'is-on' : ''}
                   onClick={() => onSelect(i)}
                 >
-                  {i < result.best.length ? S.placement.variant(i + 1) : S.placement.baseline}
+                  {i < result.best.length ? (variants[i].scheme === 'dba' ? 'DBA' : S.placement.variant(i + 1)) : S.placement.baseline}
                 </button>
               ))}
             </div>
             <ScoreLine p={current} baseline={result.baseline} isBaseline={sel === variants.length - 1} />
-            <PlanView depth={room.depth} width={room.width} placement={current} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} />
+            {current.robust != null && (
+              <p class="small">
+                <span class={`robust-tag ${current.robust <= 0.5 ? 'is-good' : current.robust <= 1.5 ? 'is-mid' : 'is-bad'}`}>
+                  {current.robust <= 0.5 ? S.robust.good : current.robust <= 1.5 ? S.robust.mid : S.robust.bad}
+                </span>{' '}
+                <span class="muted">{S.robust.detail(fmt(current.robust, 1))} <Term id="robust">?</Term></span>
+              </p>
+            )}
+            {current.scheme === 'dba' && <Note>{S.robust.dbaNote}</Note>}
+            <PlanView depth={room.depth} width={room.width} placement={current} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} />
             <button type="button" class="btn" onClick={() => openManual(current)}>{S.manual.openManual}</button>
             <Positions p={current} />
             <h3 class="subhead">{S.placement.response}</h3>

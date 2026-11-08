@@ -1,10 +1,11 @@
 // Волновая модель (research R21): FDTD на кубической сетке для комнаты со смежными помещениями.
 // Схема SLF с частотно-независимыми локально реагирующими границами (Kowalczyk & van Walstijn, 2008).
 import type { Room, Vec3, WallId } from './types';
-import { extensionBox, roomBox, type Box } from './geometry';
+import { ceilingAt, extensionBox, roomBox, type Box } from './geometry';
 import { speedOfSound } from './physics';
 import { FURNISHING, alphaAt, getMaterial } from './materials';
 import { surfaceAreas } from './reverb';
+import { activeTreatments, treatmentAlpha, treatmentArea, treatmentKey, treatmentSurfaces } from './treatments';
 
 export const LAMBDA = 0.577; // число Куранта, чуть меньше 1/√3
 const PPW = 10; // узлов на длину волны верхней частоты
@@ -50,7 +51,7 @@ export function alphaToBeta(alpha: number): number {
 export function geometryKey(room: Room, fMax: number): string {
   return JSON.stringify([
     room.depth, room.width, room.height, room.temperatureC, room.materials, room.furnishing,
-    room.openings, room.extensions, room.calibration, Math.round(fMax),
+    room.openings, room.extensions, room.calibration, Math.round(fMax), treatmentKey(room), room.slope ?? null,
   ]);
 }
 
@@ -108,6 +109,7 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
         const x = cx(i), y = cy(j), z = cz(k);
         for (let b = 0; b < boxes.length; b++) {
           if (inside(boxes[b], x, y, z)) {
+            if (b === 0 && room.slope && z > ceilingAt(room, x, y)) break; // под скосом — не воздух
             const cell = i + nx * (j + ny * k);
             cellNode[cell] = N++;
             regionCell[cell] = b;
@@ -129,7 +131,17 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
   const furnA = (alphaAt(FURNISHING[room.furnishing], 63) + alphaAt(FURNISHING[room.furnishing], 125)) / 2 * S.floor;
   const furnAlpha = furnA / sTotal;
   const scale = room.calibration?.dampingScale ?? 1;
-  const roomAlpha = (surf: WallId | 'floor' | 'ceiling') => Math.min(0.999, (lfAlpha(room.materials[surf]) + furnAlpha) * scale);
+  // обработка: прибавка к среднему поглощению поверхности (размазано по её площади)
+  const treatAlpha: Record<string, number> = {};
+  for (const t of activeTreatments(room)) {
+    const a = treatmentAlpha(t);
+    const at = (alphaAt(a, 63) + alphaAt(a, 125) + alphaAt(a, 250)) / 3;
+    for (const { s, share } of treatmentSurfaces(t)) {
+      const aw = lfAlpha(room.materials[s]);
+      treatAlpha[s] = (treatAlpha[s] ?? 0) + (treatmentArea(t) * share * Math.max(0, at - aw)) / S[s];
+    }
+  }
+  const roomAlpha = (surf: WallId | 'floor' | 'ceiling') => Math.min(0.999, (lfAlpha(room.materials[surf]) + furnAlpha + (treatAlpha[surf] ?? 0)) * scale);
   const plasterAlpha = Math.min(0.999, lfAlpha('plaster') * scale);
   const betaRoom: Record<string, number> = {};
   for (const sf of ROOM_FACE) betaRoom[sf] = alphaToBeta(roomAlpha(sf));
@@ -183,7 +195,9 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
       let beta: number;
       if (r === 0) {
         const sf = ROOM_FACE[d];
-        beta = sf !== 'floor' && sf !== 'ceiling' && inOpening(sf, x, y, z) ? betaOpen : betaRoom[sf];
+        const nxp = cx(ii), nyp = cy(jj), nzp = cz(kk);
+        const underSlope = !!room.slope && inside(boxes[0], nxp, nyp, nzp);
+        beta = underSlope ? betaRoom.ceiling : sf !== 'floor' && sf !== 'ceiling' && inOpening(sf, x, y, z) ? betaOpen : betaRoom[sf];
       } else {
         const e = exts[r - 1];
         // направление к стене комнаты, от неё, вдоль стены

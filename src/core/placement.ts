@@ -1,13 +1,14 @@
-import type { Constraints, Placement, PlacementResult, Room, SourceSpec, Vec3 } from './types';
+import type { Constraints, Placement, PlacementResult, Room, SourceSpec, SubSetting, Vec3 } from './types';
 import { PlacementError } from './types';
 import { logFreqs, db20 } from './frequency';
 import { receiverKernel, applyKernel, modeShapes, type Kernel } from './response';
 import { flatnessScore } from './metric';
 import {
-  MIN_LISTEN_DIST, evaluateSetup, filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed,
+  MIN_LISTEN_DIST, clampToRoom, evaluateSetup, filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed,
   speakerPenalties, sumPenalties, type EvalCtx, type Spectrum,
 } from './system';
 import { isWave } from './geometry';
+import { speedOfSound } from './physics';
 import { waveSpectra } from './acoustics';
 
 export interface PlacementInput {
@@ -124,8 +125,8 @@ export function baselinePositions(room: Room, sources: SourceSpec[], c: Constrai
   return { listener: { x: listenerX, y: room.width / 2, z: c.earHeight }, positions };
 }
 
-function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listener: Vec3, positions: Record<string, Vec3>): Placement {
-  const e = evaluateSetup(ctx.room, sources, c, { listener, positions, subSettings: {}, crossoverHz: null }, { ctx });
+function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listener: Vec3, positions: Record<string, Vec3>, subSettings: Record<string, SubSetting> = {}): Placement {
+  const e = evaluateSetup(ctx.room, sources, c, { listener, positions, subSettings, crossoverHz: null }, { ctx });
   const single = (c.seats?.count ?? 1) <= 1;
   const others = e.perReceiver.slice(1);
   return {
@@ -415,7 +416,15 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   }
   best.sort((a, b) => a.score - b.score);
 
+  // схема DBA: сабвуферы у передней и задней стен, задние — с задержкой и в противофазе
   const notes = [...ctx.notes];
+  if (c.dba && sources.filter((s) => s.kind === 'sub').length >= 2) {
+    const d = dbaVariant(ctx, sources, c, best[0]);
+    best.push(d);
+    if (d.notes?.length) notes.push(...d.notes);
+  }
+  // устойчивость вариантов к сдвигу на 10 см
+  for (const p of [...best, baseline]) p.robust = robustness(ctx, sources, c, p);
   if (wave) notes.push('Расчёт по волновой модели (комната со смежными помещениями): поиск на сетке до 180 Гц, итоговые варианты — на полной.');
   if (baseline.score - best[0].score < 0.3) notes.push('Базовая расстановка уже близка к оптимальной для этой комнаты.');
   return {
@@ -428,4 +437,66 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     elapsedMs: Date.now() - t0,
     notes,
   };
+}
+
+// ---------- DBA и устойчивость ----------
+
+/** Расстановка сабвуферов DBA: половина у передней стены, половина у задней (зеркально), задние — задержка и 180°. */
+export function dbaLayout(room: Room, sources: SourceSpec[], c: Constraints): { positions: Record<string, Vec3>; settings: Record<string, SubSetting>; notes: string[] } {
+  const subs = sources.filter((s) => s.kind === 'sub');
+  const nf = Math.ceil(subs.length / 2), nb = subs.length - nf;
+  const g = Math.max(0.1, c.subWallGap);
+  const positions: Record<string, Vec3> = {};
+  const settings: Record<string, SubSetting> = {};
+  const notes: string[] = [];
+  const cAir = speedOfSound(room.temperatureC);
+  const delayMs = ((room.depth - 2 * g) / cAir) * 1000;
+  subs.forEach((s, i) => {
+    const front = i < nf;
+    const k = front ? i : i - nf;
+    const cnt = front ? nf : nb;
+    const y = (room.width * (2 * k + 1)) / (2 * cnt);
+    positions[s.id] = { x: front ? g : room.depth - g, y, z: s.height };
+    if (!front) {
+      const canDelay = s.delayMode === 'adjustable' && (s.maxDelayMs ?? 20) >= delayMs;
+      const canInvert = s.phaseMode && s.phaseMode !== 'none';
+      settings[s.id] = { delayMs: canDelay ? Math.round(delayMs * 10) / 10 : 0, phaseDeg: canInvert ? 180 : 0, gainDb: 0 };
+      if (!canDelay) notes.push(`DBA: задним сабвуферам нужна задержка ≈ ${delayMs.toFixed(1).replace('.', ',')} мс — у ${s.id.replace('sub', 'сабвуфера ')} её нет или не хватает, схема работает частично.`);
+      if (!canInvert) notes.push(`DBA: задним сабвуферам нужна инверсия полярности (180°) — у ${s.id.replace('sub', 'сабвуфера ')} её нет.`);
+    }
+  });
+  if (nf !== nb) notes.push('DBA лучше работает с чётным числом сабвуферов: поровну у передней и задней стен.');
+  return { positions, settings, notes: [...new Set(notes)] };
+}
+
+function dbaVariant(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, base: Placement): Placement {
+  const { positions: subPos, settings, notes } = dbaLayout(ctx.room, sources, c);
+  const positions: Record<string, Vec3> = {};
+  for (const s of base.sources) if (s.pos) positions[s.id] = s.pos;
+  Object.assign(positions, subPos);
+  const p = toPlacement(ctx, sources, c, base.listener, positions, settings);
+  return { ...p, subSettings: settings, scheme: 'dba', notes };
+}
+
+/** Среднее ухудшение оценки (дБ) при сдвиге каждого источника и слушателя на ±10 см по осям. В волновой модели — только слушатель. */
+export function robustness(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, p: Placement): number {
+  const positions: Record<string, Vec3> = {};
+  for (const s of p.sources) if (s.pos) positions[s.id] = s.pos;
+  const settings = p.subSettings ?? {};
+  const ev = (listener: Vec3, pos: Record<string, Vec3>) =>
+    evaluateSetup(ctx.room, sources, c, { listener, positions: pos, subSettings: settings, crossoverHz: null }, { ctx, ppo: 12 }).score;
+  const base = ev(p.listener, positions);
+  const shifts = [[0.1, 0], [-0.1, 0], [0, 0.1], [0, -0.1]];
+  const ids = isWave(ctx.room) ? [] : Object.keys(positions);
+  let sum = 0, n = 0;
+  for (const [dx, dy] of shifts) {
+    const l = clampToRoom(ctx.room, { ...p.listener, x: p.listener.x + dx, y: p.listener.y + dy }, 0.1);
+    sum += Math.max(0, ev(l, positions) - base); n++;
+    for (const id of ids) {
+      const q = positions[id];
+      const moved = { ...positions, [id]: clampToRoom(ctx.room, { ...q, x: q.x + dx, y: q.y + dy }) };
+      sum += Math.max(0, ev(p.listener, moved) - base); n++;
+    }
+  }
+  return n ? Math.round((sum / n) * 100) / 100 : 0;
 }

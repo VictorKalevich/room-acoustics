@@ -4,7 +4,7 @@ import type { Object3D } from 'three';
 import type { Project } from '../../state/project';
 import { defaultConstraints, makeId, rotateRoom, rotateSetup } from '../../state/project';
 import type { Room, SurfaceId, ReverbResult, Furnishing, Zone, ZoneKind, Leakage, Opening, Extension, WallId, AcousticModel, WallFeature } from '../../core/types';
-import { validateExtension, wallLength } from '../../core/geometry';
+import { validateExtension, validateSlope, wallLength } from '../../core/geometry';
 import { SURFACES } from '../../core/types';
 import { MATERIALS, FURNISHING_LABEL } from '../../core/materials';
 import { speedOfSound } from '../../core/physics';
@@ -46,7 +46,7 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
   return (
     <div class="screen">
       <Panel class="panel--hero">
-        <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} />
+        <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} />
         <div class="dims">
           <NumberField label={S.room.depth} hint={S.room.depthHint} value={room.depth} unit="м" min={1} max={50} onChange={(v) => set({ depth: v })} />
           <NumberField label={S.room.width} hint={S.room.widthHint} value={room.width} unit="м" min={1} max={50} onChange={(v) => set({ width: v })} />
@@ -135,6 +135,8 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
   );
 }
 
+const SIT = new Set(['sofa', 'couch', 'chair', 'armchair', 'bed']);
+
 function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoom'] }) {
   const [state, setState] = useState<ScanState>({ phase: 'idle' });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -153,6 +155,10 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
   ] : []), [layout]);
   const [kinds, setKinds] = useState<WallItemKind[]>([]);
   useEffect(() => { setKinds(found.map((f) => f.guess)); }, [found]);
+  // мебель из разметки: учитывать как препятствие и можно ли на ней сидеть
+  const furn = layout?.furniture ?? [];
+  const [furnUse, setFurnUse] = useState<{ on: boolean; sit: boolean }[]>([]);
+  useEffect(() => { setFurnUse(furn.map((f) => ({ on: true, sit: SIT.has(f.name) }))); }, [layout]);
   const input = useRef<HTMLInputElement>(null);
 
   const runWorker = <T,>(msg: Record<string, unknown>, tri: Float32Array) =>
@@ -182,7 +188,7 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
     t[13] -= rc.y0;
     try {
       const r = await runWorker<{ layout: LayoutResult }>({ type: 'layout', labels: loaded.labels, transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: det.height } }, loaded.triangles);
-      setLayout({ ...layout, openings: r.layout.openings, windows: r.layout.windows, extension: r.layout.extension });
+      setLayout({ ...layout, openings: r.layout.openings, windows: r.layout.windows, furniture: r.layout.furniture, extension: r.layout.extension });
     } catch { /* оставляем прежние */ }
   };
 
@@ -239,6 +245,15 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
       extensions: ext ? [{ ...ext, id: makeId(), name: S.openings.corridor }] : project.room.extensions,
       // окна и закрытые двери — для ориентира на плане
       features: found.length > 0 ? parts.flatMap((p) => (p.feature ? [p.feature] : [])) : project.room.features ?? [],
+      // мебель из скана заменяет прежнюю мебель из скана; зоны, добавленные вручную, остаются
+      zones: furn.length
+        ? [
+            ...project.room.zones.filter((z) => !z.fromScan),
+            ...furn.flatMap((f, i) => (furnUse[i]?.on ?? true)
+              ? [{ id: makeId(), kind: 'furniture' as const, x0: f.x0, x1: f.x1, y0: f.y0, y1: f.y1, canSit: furnUse[i]?.sit ?? SIT.has(f.name), name: S.layout.furnitureNames[f.name] ?? S.layout.furnitureOther, fromScan: true }]
+              : []),
+          ]
+        : project.room.zones,
     };
     const { transform: _t, ...rest } = det;
     void _t;
@@ -270,6 +285,12 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
       <button type="button" class="btn" disabled={busy} onClick={() => input.current?.click()}>
         <FileIcon /> {S.room.chooseFile}
       </button>
+      <Details summary={S.scanGuide.title}>
+        <ol class="small scan-guide">
+          {S.scanGuide.steps.map((t) => <li>{t}</li>)}
+        </ol>
+        <p class="muted small">{S.scanGuide.formats}</p>
+      </Details>
 
       {busy && (
         <p class="progress-text" role="status">
@@ -353,6 +374,25 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
                   <p class="muted small">{S.layout.kindsNote}</p>
                 </div>
               )}
+              {furn.length > 0 && (
+                <div class="found-openings">
+                  <h4 class="subhead">{S.layout.furnitureTitle}</h4>
+                  {furn.map((f, i) => (
+                    <div class="found-opening">
+                      <span class="small">{S.layout.furnitureItem(S.layout.furnitureNames[f.name] ?? S.layout.furnitureOther, fmt(f.x1 - f.x0, 2), fmt(f.y1 - f.y0, 2), fmt(f.top, 2))}</span>
+                      <label class="check">
+                        <input type="checkbox" checked={furnUse[i]?.on ?? true} onChange={(e) => { const v = (e.target as HTMLInputElement).checked; setFurnUse((u) => u.map((x, j) => (j === i ? { ...x, on: v } : x))); setApplied(false); }} />
+                        <span>{S.layout.furnitureUse}</span>
+                      </label>
+                      <label class="check">
+                        <input type="checkbox" checked={furnUse[i]?.sit ?? false} disabled={!(furnUse[i]?.on ?? true)} onChange={(e) => { const v = (e.target as HTMLInputElement).checked; setFurnUse((u) => u.map((x, j) => (j === i ? { ...x, sit: v } : x))); setApplied(false); }} />
+                        <span>{S.zones.canSit}</span>
+                      </label>
+                    </div>
+                  ))}
+                  <p class="muted small">{S.layout.furnitureNote}</p>
+                </div>
+              )}
             </>
           )}
           <div class="meter" aria-label={`${S.room.confidence} ${Math.round(det.confidence * 100)} %`}>
@@ -363,6 +403,11 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
             <span class="meter__value">{Math.round(det.confidence * 100)} %</span>
           </div>
           {det.warnings.map((w) => <Note tone="warn">{w}</Note>)}
+          {layout && !layout.labeled && <Note>{S.scanGuide.noLabels}</Note>}
+          {layout && (Object.entries(layout.coverage ?? {}) as [WallId, number][])
+            .filter(([, v]) => v < 0.45)
+            .map(([w, v]) => <Note tone="warn">{S.scanGuide.lowCoverage(S.openings.walls[w], Math.round(v * 100))}</Note>)}
+          {loaded && loaded.count < 300 && !layout?.labeled && <Note tone="warn">{S.scanGuide.coarse}</Note>}
           <Segmented
             label={S.room.unitsLabel}
             value={units}
@@ -407,6 +452,15 @@ function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void
   };
   const addOpening = () =>
     onRoom({ ...room, openings: [...openings, { id: makeId(), wall: 'right', a0: Math.min(1, room.depth - 1), a1: Math.min(2, room.depth), height: Math.min(2.1, room.height) }] });
+  const addNiche = () =>
+    onRoom({
+      ...room,
+      extensions: [...exts, {
+        id: makeId(), name: S.shape.niche, wall: 'right', a0: Math.min(1, room.depth - 1.5), a1: Math.min(2.5, room.depth), depth: 1.2, height: room.height,
+        arch: { a0: Math.min(1, room.depth - 1.5), a1: Math.min(2.5, room.depth), height: room.height },
+        openStart: false, openEnd: false, openFar: false,
+      }],
+    });
   const addCorridor = () =>
     onRoom({
       ...room,
@@ -519,7 +573,26 @@ function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void
       <div class="btn-row">
         <button type="button" class="btn" onClick={addCorridor}>{S.openings.addCorridor}</button>
         <button type="button" class="btn" onClick={addOpening}>{S.openings.addOpening}</button>
+        <button type="button" class="btn" onClick={addNiche}>{S.shape.addNiche}</button>
       </div>
+      <p class="muted small">{S.shape.nicheHint}</p>
+
+      <h3 class="subhead">{S.shape.slopeTitle}</h3>
+      <label class="check">
+        <input type="checkbox" checked={!!room.slope} onChange={(e) => onRoom({ ...room, slope: (e.target as HTMLInputElement).checked ? { wall: 'front', low: Math.max(0.6, Math.round(room.height * 0.5 * 10) / 10), run: Math.min(1.5, room.depth / 2) } : null })} />
+        <span>{S.shape.slopeOn}</span>
+      </label>
+      {room.slope && (
+        <div class="zone-card">
+          <SelectField label={S.shape.slopeWall} value={room.slope.wall} options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, wall: v as WallId } })} />
+          <div class="grid-2">
+            <NumberField compact id="slope-low" label={S.shape.slopeLow} value={room.slope.low} unit="м" min={0.5} max={room.height} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, low: v } })} />
+            <NumberField compact id="slope-run" label={S.shape.slopeRun} value={room.slope.run} unit="м" min={0.2} max={50} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, run: v } })} />
+          </div>
+          {validateSlope(room) && <Note tone="warn">{validateSlope(room)}</Note>}
+          <p class="muted small">{S.shape.slopeHint}</p>
+        </div>
+      )}
 
       <h3 class="subhead">{S.openings.featuresTitle}</h3>
       <p class="muted small">{S.openings.featuresIntro}</p>

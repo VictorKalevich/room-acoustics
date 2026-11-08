@@ -6,6 +6,7 @@ import { calibrate, compareMeasurement } from '../core/measure';
 import { evaluateSetup } from '../core/system';
 import { systemModes } from '../core/fdtd';
 import { computeField } from '../core/field3d';
+import { optimizeSubFilters } from '../core/subfilters';
 
 interface Job { id: number; type: string; payload: any }
 const queue: Job[] = [];
@@ -30,6 +31,7 @@ function run(job: Job) {
       case 'evaluate': result = evaluateSetup(p.room, p.sources, p.constraints, p.setup, { ppo: p.ppo, onProgress: progress }); break;
       case 'modes': result = systemModes(p.room, p.fMax, { onProgress: progress }).modes; break;
       case 'field': result = computeField(p, progress); break;
+      case 'subFilters': result = optimizeSubFilters(p.room, p.sources, p.constraints, p.setup); break;
       default: throw new Error(`Неизвестная задача ${type}`);
     }
     const fr = result as { energy?: Float32Array; mask?: Uint8Array };

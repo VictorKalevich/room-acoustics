@@ -116,7 +116,7 @@ export function ProjectsScreen({ project, onReplace, onRename }: Props) {
   );
 }
 
-function AboutPanel() {
+export function AboutPanel() {
   const [st, setSt] = useState<UpdateStatus>(getStatus());
   useEffect(() => onStatus(setSt), []);
   const d = new Date(BUILD.time);

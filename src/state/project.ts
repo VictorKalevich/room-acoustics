@@ -1,6 +1,6 @@
-import type { Constraints, Room, SourceSpec, SurfaceId, PlacementResult, Setup, Vec3, Zone } from '../core/types';
+import type { Constraints, Room, SourceSpec, SurfaceId, PlacementResult, Setup, Treatment, Vec3, Zone } from '../core/types';
 import { baselinePositions } from '../core/placement';
-import { rotateExtension, rotateOpening, validateExtension } from '../core/geometry';
+import { rotateExtension, rotateOpening, validateExtension, validateSlope } from '../core/geometry';
 import type { DetectSummary } from '../scan/detect';
 
 export interface Project {
@@ -40,6 +40,9 @@ export function defaultRoom(): Room {
     calibration: null,
     openings: [],
     features: [],
+    treatments: [],
+    treatmentsOn: false,
+    slope: null,
     extensions: [],
     model: 'auto',
   };
@@ -130,6 +133,15 @@ export function rotateZone(room: Room, z: Zone): Zone {
   return { ...z, x0: z.y0, x1: z.y1, y0: room.depth - z.x1, y1: room.depth - z.x0 };
 }
 
+const CORNER_ROT = { 'front-left': 'front-right', 'front-right': 'back-right', 'back-right': 'back-left', 'back-left': 'front-left' } as const;
+
+export function rotateTreatment(room: Room, t: Treatment): Treatment {
+  if (t.kind === 'corner') return { ...t, corner: CORNER_ROT[t.corner ?? 'front-left'] };
+  if (t.kind === 'cloud') { const p = rotatePoint(room, { x: t.x ?? 0, y: t.y ?? 0, z: 0 }); return { ...t, x: p.x, y: p.y }; }
+  const r = rotateOpening(room, { wall: t.wall ?? 'left', a0: t.at ?? 0, a1: t.at ?? 0 });
+  return { ...t, wall: r.wall, at: r.a0 };
+}
+
 export function rotateSetup(room: Room, s: Setup): Setup {
   return {
     ...s,
@@ -157,6 +169,8 @@ export function rotateRoom(room: Room): Room {
     zones: (room.zones ?? []).map((z) => rotateZone(room, z)),
     openings: (room.openings ?? []).map((o) => rotateOpening(room, o)),
     features: (room.features ?? []).map((f) => rotateOpening(room, f)),
+    treatments: (room.treatments ?? []).map((t) => rotateTreatment(room, t)),
+    slope: room.slope ? { ...room.slope, wall: rotateOpening(room, { wall: room.slope.wall, a0: 0, a1: 0 }).wall } : room.slope,
     extensions: (room.extensions ?? []).map((e) => rotateExtension(room, e)),
   };
 }
@@ -180,6 +194,8 @@ export function validateRoom(room: Room): FieldError[] {
   if (!Number.isFinite(room.temperatureC) || room.temperatureC < -10 || room.temperatureC > 40) {
     errs.push({ field: 'temperatureC', message: 'Температура: от −10 до 40 °C' });
   }
+  const se = validateSlope(room);
+  if (se) errs.push({ field: 'slope', message: se });
   for (const e of room.extensions ?? []) {
     const err = validateExtension(room, e);
     if (err) errs.push({ field: `ext.${e.id}`, message: `${e.name || 'Коридор'}: ${err}` });

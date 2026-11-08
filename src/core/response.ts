@@ -3,6 +3,7 @@ import type { Complex, Leakage, Mode, ReverbResult, Room, Vec3 } from './types';
 /** Частота «утечки» воздуха для нулевой моды, Гц (research R15). */
 export const LEAK_HZ: Record<Leakage, number> = { sealed: 0, typical: 8, door: 25, open: 45 };
 import { speedOfSound } from './physics';
+import { roomVolume } from './geometry';
 import { computeReverb, surfaceAbsorptionAt } from './reverb';
 
 /**
@@ -11,7 +12,7 @@ import { computeReverb, surfaceAbsorptionAt } from './reverb';
  * ε_i = 2 при n_i > 0, иначе 1. Нормировка /2 даёт для косых мод значение Сэбина cA/(8V).
  */
 export function modeDamping(mode: Pick<Mode, 'n' | 'f'>, room: Room, rev?: ReverbResult): number {
-  const V = rev?.volume ?? room.depth * room.width * room.height;
+  const V = rev?.volume ?? roomVolume(room);
   const c = speedOfSound(room.temperatureC);
   const a = surfaceAbsorptionAt(room, Math.max(mode.f, 20));
   const Ax = a.front + a.back;

@@ -95,12 +95,17 @@ async function parse(buf: ArrayBuffer, format: ScanFormat): Promise<THREE.Object
 }
 
 const LABEL_RE = /^(door|window|opening)[\s_-]*\d*$/i;
+/** Категории мебели RoomPlan / Polycam (имя узла начинается с категории: sofa_0, table_dining_rect_0). */
+const FURN_RE = /^(storage|shelf|cabinet|wardrobe|refrigerator|fridge|stove|oven|bed|sink|washer|dryer|washerdryer|toilet|bathtub|dishwasher|table|desk|sofa|couch|chair|armchair|fireplace|television|tv|stairs|piano)(?=$|[\s_\-\d])/i;
 
 /** Тип размеченного объекта по имени узла или его ближайшего предка (Door_0, Window_1, Opening_2). */
-function labelOf(o: THREE.Object3D): { kind: ScanObjectKind; node: THREE.Object3D } | null {
+function labelOf(o: THREE.Object3D): { kind: ScanObjectKind; node: THREE.Object3D; name: string } | null {
   for (let p: THREE.Object3D | null = o; p; p = p.parent) {
-    const m = LABEL_RE.exec(p.name.trim());
-    if (m) return { kind: m[1].toLowerCase() as ScanObjectKind, node: p };
+    const nm = p.name.trim();
+    const m = LABEL_RE.exec(nm);
+    if (m) return { kind: m[1].toLowerCase() as ScanObjectKind, node: p, name: m[1].toLowerCase() };
+    const f = FURN_RE.exec(nm);
+    if (f) return { kind: 'furniture', node: p, name: f[1].toLowerCase() };
   }
   return null;
 }
@@ -123,6 +128,7 @@ export function extractTriangles(root: THREE.Object3D, maxTriangles = MAX_TRIANG
   const out = new Float32Array(Math.ceil(total / step) * 9);
   const ids = new Uint16Array(Math.ceil(total / step));
   const objects: ScanObjectKind[] = [];
+  const names: string[] = [];
   const objIndex = new Map<THREE.Object3D, number>();
   const v = new THREE.Vector3();
   let k = 0;
@@ -136,7 +142,7 @@ export function extractTriangles(root: THREE.Object3D, maxTriangles = MAX_TRIANG
     let id = 0;
     if (lb && objects.length < 65000) {
       id = objIndex.get(lb.node) ?? 0;
-      if (!id) { objects.push(lb.kind); id = objects.length; objIndex.set(lb.node, id); }
+      if (!id) { objects.push(lb.kind); names.push(lb.name); id = objects.length; objIndex.set(lb.node, id); }
     }
     for (let f = 0; f < nTri; f++, t++) {
       if (t % step !== 0) continue;
@@ -148,7 +154,7 @@ export function extractTriangles(root: THREE.Object3D, maxTriangles = MAX_TRIANG
       }
     }
   }
-  const labels = objects.length ? { ids: ids.slice(0, k / 9), objects } : undefined;
+  const labels = objects.length ? { ids: ids.slice(0, k / 9), objects, names } : undefined;
   return { triangles: out.subarray(0, k), total, decimated: step > 1, labels };
 }
 

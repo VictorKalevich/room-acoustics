@@ -126,3 +126,42 @@ test('004: экран 3D — поле, способы показа, порог �
   await page.getByRole('button', { name: 'Проекты' }).click();
   await expect(page.locator('.app-version')).toBeVisible();
 });
+
+test('005: меню слева открывает новые разделы', async ({ page }) => {
+  await page.goto('/#room');
+  for (const [item, check] of [
+    ['Замер', '.screen >> text=Замер свипом'],
+    ['Отчёт', '.report__title'],
+    ['Синхронизация', 'text=Синхронизация через Файлы'],
+    ['Помощник и словарь', 'text=Словарь терминов'],
+    ['О приложении', '.app-version'],
+  ] as const) {
+    await page.getByRole('button', { name: 'Открыть меню' }).click();
+    await page.locator('.drawer__item', { has: page.locator('.drawer__label', { hasText: new RegExp(`^${item}$`) }) }).click();
+    await expect(page.locator(check).first()).toBeVisible({ timeout: 15_000 });
+  }
+});
+
+test('005: обзор — оценка, проблемы, затухание мод; тон моды', async ({ page }) => {
+  await page.goto('/#overview');
+  await expect(page.locator('.score-ring__num')).toBeVisible();
+  await expect(page.locator('.decay-chart__pt').first()).toBeAttached();
+  await page.getByRole('radio', { name: 'Список' }).click();
+  await page.locator('.modes-table .play-btn').first().click();
+  await expect(page.locator('.miniplayer')).toBeVisible();
+  await page.locator('.miniplayer').getByRole('button', { name: 'Стоп' }).click();
+  await expect(page.locator('.miniplayer')).toHaveCount(0);
+});
+
+test('005: план обработки, скос потолка и помощник', async ({ page }) => {
+  await page.goto('/#tuning');
+  await page.getByRole('button', { name: 'Предложить план' }).click();
+  await expect(page.locator('.treat-compare')).toBeVisible();
+  await expect(page.locator('.plan__treat').first()).toBeAttached();
+  await page.goto('/#room');
+  await page.getByText('Есть скос потолка (мансарда)').click();
+  await expect(page.locator('.plan__slope').first()).toBeAttached();
+  await page.goto('/#help');
+  await page.getByText('Показывать подсказку текущего шага сверху экрана').click();
+  await expect(page.locator('.wizard-strip')).toBeVisible();
+});

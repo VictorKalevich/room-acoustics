@@ -37,6 +37,11 @@ export function normalizeProject(raw: any): Project {
   if (room.calibration && !(room.calibration.dampingScale > 0)) room.calibration = null;
   if (!Array.isArray(room.openings)) room.openings = [];
   if (!Array.isArray(room.extensions)) room.extensions = [];
+  room.treatments = Array.isArray(room.treatments)
+    ? room.treatments.filter((t: any) => t && ['corner', 'panel', 'cloud'].includes(t.kind) && t.width > 0 && t.height > 0 && t.thickness > 0)
+    : [];
+  room.treatmentsOn = !!room.treatmentsOn;
+  if (!room.slope || !['front', 'back', 'left', 'right'].includes(room.slope.wall) || !(room.slope.low > 0) || !(room.slope.run > 0)) room.slope = null;
   room.features = Array.isArray(room.features)
     ? room.features.filter((f: any) => f && (f.kind === 'window' || f.kind === 'door') && ['front', 'back', 'left', 'right'].includes(f.wall) && f.a1 > f.a0)
     : [];

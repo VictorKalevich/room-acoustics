@@ -13,6 +13,7 @@ import { HeightRange } from '../components/HeightRange';
 import { NumberField, Note, Panel, Segmented } from '../components/Fields';
 import { SPAN } from '../fieldColors';
 import { S } from '../strings';
+import { PlayButton } from '../components/MiniPlayer';
 import { fmt } from '../format';
 
 type View = 'single' | 'average' | 'band';
@@ -22,6 +23,14 @@ interface Pick { f: number; n?: [number, number, number] }
 const saved: {
   kind: FieldKind; picks: Pick[]; view: View; active: number; band: [number, number]; threshold: number; slice: [number, number] | null;
 } = { kind: 'excited', picks: [], view: 'single', active: 0, band: [40, 60], threshold: 6, slice: null };
+
+/** Открыть экран 3D сразу на этой частоте (переход из «Обзора»). */
+export function setFieldFocus(f: number) {
+  const p = { f: Math.round(f * 10) / 10 };
+  if (!saved.picks.some((q) => Math.abs(q.f - p.f) < 0.05)) saved.picks = [...saved.picks, p].sort((a, b) => a.f - b.f);
+  saved.view = 'single';
+  saved.active = saved.picks.findIndex((q) => Math.abs(q.f - p.f) < 0.05);
+}
 
 interface Props {
   project: Project;
@@ -165,6 +174,8 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     extensions: room.extensions,
     openings: room.openings,
     features: room.features,
+    treatments: room.treatments,
+    slope: room.slope,
     field: sl ? { slice: sl, threshold } : null,
     marks: probe ? [{ x: probe.x, y: probe.y, label: '', kind: 'probe' }] : [],
     onMove: move,
@@ -225,6 +236,12 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
           ]}
           onChange={setView}
         />
+        {view === 'single' && picks[activeIdx] && (
+          <div class="play-row">
+            <PlayButton f={picks[activeIdx].f} />
+            <span class="small">{S.field.playHint(fmt(picks[activeIdx].f, 1))}</span>
+          </div>
+        )}
         {view === 'single' && picks.length > 1 && (
           <div class="chips" role="radiogroup" aria-label={S.field.which}>
             {picks.map((p, i) => (

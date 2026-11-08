@@ -14,12 +14,17 @@ export interface LayoutOpening {
 }
 
 /** Размеченные объекты скана (RoomPlan/Polycam: Door_0, Window_1, Opening_2). */
-export type ScanObjectKind = 'door' | 'window' | 'opening';
+export type ScanObjectKind = 'door' | 'window' | 'opening' | 'furniture';
 export interface ScanLabels {
   /** Номер объекта для каждого треугольника: 0 — без разметки, k — objects[k − 1]. */
   ids: Uint16Array;
   objects: ScanObjectKind[];
+  /** Категория объекта (для мебели: sofa, table, storage…). */
+  names?: string[];
 }
+
+/** Мебель из разметки скана в координатах выбранной комнаты. */
+export interface LayoutFurniture { name: string; x0: number; x1: number; y0: number; y1: number; top: number }
 
 export interface LayoutResult {
   /** Точки контура стен (x, y попарно) в координатах комнаты. */
@@ -28,6 +33,11 @@ export interface LayoutResult {
   openings: LayoutOpening[];
   /** Окна из разметки скана (для ориентира на плане). */
   windows: { wall: WallId; a0: number; a1: number; bottom: number; top: number }[];
+  furniture: LayoutFurniture[];
+  /** Доля каждой стены, покрытая сканом (0…1) в полосе 0,1–1,9 м. */
+  coverage: Record<WallId, number>;
+  /** В файле есть разметка (двери, окна, мебель). */
+  labeled: boolean;
   extension: Omit<Extension, 'id' | 'name'> | null;
 }
 
@@ -75,7 +85,7 @@ function transformTris(raw: Float32Array, m: number[], labels?: ScanLabels) {
   const nr = new Float32Array(n * 3);
   const a = new Float32Array(n);
   const lab = new Uint8Array(n); // 0 — поверхность, 1 — дверь, 2 — окно, 3 — проём
-  const kindCode = { door: 1, window: 2, opening: 3 } as const;
+  const kindCode = { door: 1, window: 2, opening: 3, furniture: 4 } as const;
   // габариты размеченных объектов
   const nObj = labels?.objects.length ?? 0;
   const box = new Float64Array(nObj * 6);
@@ -117,6 +127,7 @@ function transformTris(raw: Float32Array, m: number[], labels?: ScanLabels) {
   }
   const objects = Array.from({ length: nObj }, (_, k) => ({
     kind: labels!.objects[k],
+    name: labels!.names?.[k] ?? labels!.objects[k],
     x0: box[k * 6], y0: box[k * 6 + 1], z0: box[k * 6 + 2],
     x1: box[k * 6 + 3], y1: box[k * 6 + 4], z1: box[k * 6 + 5],
   })).filter((b) => Number.isFinite(b.x0));
@@ -128,6 +139,7 @@ function labeledOpenings(T: Tris, d: Dims): { openings: LayoutOpening[]; windows
   const out: LayoutOpening[] = [];
   const windows: LayoutResult['windows'] = [];
   for (const b of T.objects) {
+    if (b.kind === 'furniture') continue;
     const isWindow = b.kind === 'window' || b.z0 > 0.4 || b.z1 - b.z0 < 1.2; // не до пола — не проём
     let best: { w: (typeof WALLS)[number]; dist: number } | null = null;
     for (const w of WALLS) {
@@ -173,7 +185,8 @@ export function analyzeLayout(raw: Float32Array, transform: number[], d: Dims, l
   // размеченные двери и проёмы точнее дыр в сетке: дыры, которые с ними совпадают, отбрасываем
   const { openings: marked, windows } = labeledOpenings(T, d);
   const overlaps = (p: LayoutOpening, q: LayoutOpening) => p.wall === q.wall && Math.min(p.a1, q.a1) - Math.max(p.a0, q.a0) > 0.1;
-  const openings = [...marked, ...findOpenings(T, vertical, d).filter((g) => !marked.some((m) => overlaps(g, m)))];
+  const coverage: Partial<Record<WallId, number>> = {};
+  const openings = [...marked, ...findOpenings(T, vertical, d, coverage).filter((g) => !marked.some((m) => overlaps(g, m)))];
   let extension: LayoutResult['extension'] = null;
   // коридор ищем за самым широким проёмом
   for (const o of [...openings].sort((p, q) => q.a1 - q.a0 - (p.a1 - p.a0))) {
@@ -184,6 +197,13 @@ export function analyzeLayout(raw: Float32Array, transform: number[], d: Dims, l
     outline: Float32Array.from(outline),
     bounds: { x0: bx0, x1: bx1, y0: by0, y1: by1 },
     windows,
+    coverage: coverage as Record<WallId, number>,
+    labeled: T.objects.length > 0,
+    furniture: T.objects
+      .filter((b) => b.kind === 'furniture')
+      .map((b) => ({ name: b.name, x0: Math.max(0, b.x0), x1: Math.min(d.depth, b.x1), y0: Math.max(0, b.y0), y1: Math.min(d.width, b.y1), top: round(b.z1) }))
+      .filter((b) => b.x1 - b.x0 > 0.1 && b.y1 - b.y0 > 0.1)
+      .map((b) => ({ ...b, x0: round(b.x0), x1: round(b.x1), y0: round(b.y0), y1: round(b.y1) })),
     openings: openings.filter((o) => !extension || o.wall !== extension.wall || Math.abs(o.a0 - extension.arch.a0) > 0.05),
     extension,
   };
@@ -192,7 +212,7 @@ export function analyzeLayout(raw: Float32Array, transform: number[], d: Dims, l
 type Tris = ReturnType<typeof transformTris>;
 
 /** Проёмы до пола: участки стены с покрытием < 25 % по высоте 0,1–1,9 м шириной ≥ 0,6 м. */
-export function findOpenings(T: Tris, vertical: number[], d: Dims): LayoutOpening[] {
+export function findOpenings(T: Tris, vertical: number[], d: Dims, coverage?: Partial<Record<WallId, number>>): LayoutOpening[] {
   const out: LayoutOpening[] = [];
   const bin = 0.2;
   for (const w of WALLS) {
@@ -214,6 +234,11 @@ export function findOpenings(T: Tris, vertical: number[], d: Dims): LayoutOpenin
       if (z >= 0.1 && z <= 1.9) low[b] += T.a[i];
       const zb = Math.min(zBins - 1, Math.max(0, Math.floor(z / 0.1)));
       byZ[b][zb] += T.a[i];
+    }
+    if (coverage) {
+      let s = 0;
+      for (let b = 0; b < nb; b++) s += Math.min(1, low[b] / (bin * 1.8));
+      coverage[w.wall] = s / nb;
     }
     // сглаживание по соседним бинам
     const cov = Array.from(low, (_, b) => {

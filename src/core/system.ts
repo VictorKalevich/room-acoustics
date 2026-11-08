@@ -55,12 +55,35 @@ export function withCrossover(sources: SourceSpec[], xo: number | null | undefin
   return sources.map((s) => (s.kind === 'speaker' ? { ...s, fLow: xo } : { ...s, fHigh: xo }));
 }
 
-/** Регулировки сабвуфера на частоте f: G·e^{j(φ − 2πfτ)}. */
+/** Комплексный отклик аналогового прототипа пикового фильтра (PEQ) на частоте f. */
+export function peqComplex(p: { f: number; gainDb: number; q: number }, f: number): Complex {
+  const A = Math.pow(10, p.gainDb / 40);
+  const w = f / p.f;
+  // (1 − w² + j·w·A/Q) / (1 − w² + j·w/(A·Q))
+  const nr = 1 - w * w, ni = (w * A) / p.q, dr = 1 - w * w, di = w / (A * p.q);
+  const d = dr * dr + di * di;
+  return { re: (nr * dr + ni * di) / d, im: (ni * dr - nr * di) / d };
+}
+
+/** All-pass 2-го порядка: (1 − w² − j·w/Q) / (1 − w² + j·w/Q) — модуль 1, сдвиг фазы до −360°. */
+export function allpassComplex(p: { f: number; q: number }, f: number): Complex {
+  const w = f / p.f;
+  const r = 1 - w * w, i = w / p.q;
+  const d = r * r + i * i;
+  return { re: (r * r - i * i) / d, im: (-2 * r * i) / d };
+}
+
+const cmul = (a: Complex, b: Complex): Complex => ({ re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re });
+
+/** Регулировки сабвуфера на частоте f: G·e^{j(φ − 2πfτ)} × PEQ × all-pass. */
 export function subAdjust(set: SubSetting | undefined, f: number): Complex {
   if (!set) return { re: 1, im: 0 };
   const g = Math.pow(10, set.gainDb / 20);
   const ph = (set.phaseDeg * Math.PI) / 180 - 2 * Math.PI * f * (set.delayMs / 1000);
-  return { re: g * Math.cos(ph), im: g * Math.sin(ph) };
+  let out: Complex = { re: g * Math.cos(ph), im: g * Math.sin(ph) };
+  for (const p of set.peq ?? []) out = cmul(out, peqComplex(p, f));
+  for (const p of set.allpass ?? []) out = cmul(out, allpassComplex(p, f));
+  return out;
 }
 
 export type Spectrum = { re: Float64Array; im: Float64Array };

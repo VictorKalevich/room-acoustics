@@ -7,6 +7,8 @@ import { bonelloCheck, modeIssues, proportionsNotes } from '../../core/modes';
 import { ModeChart } from '../components/Charts';
 import { Panel, Note, Details } from '../components/Fields';
 import { S } from '../strings';
+import { PlayButton } from '../components/MiniPlayer';
+import { Term } from '../components/Term';
 import { fmt } from '../format';
 
 export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: Mode[]; fMax: number; reverb: ReverbResult }) {
@@ -27,7 +29,7 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
           </div>
           <div class="stat">
             <span class="stat__value">{fmt(reverb.schroeder, 0)} <small>Гц</small></span>
-            <span class="stat__label">{S.room.schroeder}</span>
+            <span class="stat__label"><Term id="schroeder">{S.room.schroeder}</Term></span>
           </div>
         </div>
         <ModeChart modes={modes} fMax={fMax} schroeder={reverb.schroeder} />
@@ -67,6 +69,7 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
       </Panel>
 
       <Panel title={S.modes.table}>
+        <p class="muted small">{S.tone.hintTable} {S.tone.warn}</p>
         <div class="table-scroll">
           <table class="modes-table">
             <thead>
@@ -74,6 +77,7 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
                 <th>{S.modes.colF}</th>
                 <th>{S.modes.colN}</th>
                 <th>{S.modes.colKind}</th>
+                <th><span class="visually-hidden">{S.tone.player}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -85,6 +89,7 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
                     {S.modes.kinds[m.kind]}
                     {m.degenerate && <span class="tag">{S.modes.degenerate}</span>}
                   </td>
+                  <td class="play-cell"><PlayButton f={m.f} label={m.n.join(' ')} /></td>
                 </tr>
               ))}
             </tbody>
@@ -132,13 +137,14 @@ function SystemModesPanel({ room, fMax }: { room: Room; fMax: number }) {
       {modes && (
         <div class="table-scroll">
           <table class="modes-table sysmodes-table">
-            <thead><tr><th>{S.sysmodes.colF}</th><th>{S.sysmodes.colShare}</th><th /></tr></thead>
+            <thead><tr><th>{S.sysmodes.colF}</th><th>{S.sysmodes.colShare}</th><th /><th /></tr></thead>
             <tbody>
               {shown.map((m) => (
                 <tr>
                   <td class="num">{fmt(m.f, 1)}</td>
                   <td class={`num${m.roomShare < 0.5 ? ' is-corridor' : ''}`}>{Math.round(m.roomShare * 100)} %</td>
                   <td class={m.roomShare < 0.5 ? 'is-corridor' : ''}>{m.roomShare < 0.5 ? S.sysmodes.corridorMode : ''}</td>
+                  <td class="play-cell"><PlayButton f={m.f} /></td>
                 </tr>
               ))}
             </tbody>

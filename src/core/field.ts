@@ -269,3 +269,29 @@ export function subHeatmap(room: Room, sources: SourceSpec[], c: Constraints, se
     elapsedMs: Date.now() - t0,
   };
 }
+
+/**
+ * Карта устойчивости: в каждой точке — насколько сильно меняется оценка при сдвиге на ~10 см
+ * (наибольшая разница с соседями на расстоянии ≤ 10 см). Меньше — устойчивее.
+ */
+export function robustnessMap(h: Heatmap, radius = 0.1): Heatmap {
+  const r = Math.max(1, Math.round(radius / h.step));
+  const out = new Float32Array(h.scores.length).fill(NaN);
+  for (let i = 0; i < h.nx; i++)
+    for (let j = 0; j < h.ny; j++) {
+      const v = h.scores[i * h.ny + j];
+      if (!Number.isFinite(v)) continue;
+      let m = 0;
+      for (let di = -r; di <= r; di++)
+        for (let dj = -r; dj <= r; dj++) {
+          if (!di && !dj) continue;
+          if (di * di + dj * dj > r * r) continue;
+          const a = i + di, b = j + dj;
+          if (a < 0 || b < 0 || a >= h.nx || b >= h.ny) continue;
+          const w = h.scores[a * h.ny + b];
+          if (Number.isFinite(w)) m = Math.max(m, Math.abs(w - v));
+        }
+      out[i * h.ny + j] = m;
+    }
+  return { ...h, scores: out, ...minMax(out) };
+}

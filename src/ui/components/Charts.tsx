@@ -22,12 +22,12 @@ export function ResponseChart({ lines, fLo, fHi }: { lines: Line[]; fLo: number;
   const W = 340, H = 210, l = 34, r = 10, t = 12, b = 26;
   const x = logScale(fLo, fHi, l, W - r);
   // центрируем по цели
-  const all = lines.flatMap((ln) => ln.db);
+  const all = lines.flatMap((ln) => ln.db).filter((v) => Number.isFinite(v));
   const mean = all.reduce((a, v) => a + v, 0) / Math.max(1, all.length);
   const ref = Math.round(mean / 5) * 5;
   const yMin = ref - 18;
   const yMax = ref + 15;
-  const y = (v: number) => t + ((yMax - Math.max(yMin, Math.min(yMax, v))) / (yMax - yMin)) * (H - t - b);
+  const y = (v: number) => t + ((yMax - Math.max(yMin, Math.min(yMax, Number.isFinite(v) ? v : yMin))) / (yMax - yMin)) * (H - t - b);
   const ticks = TICKS.filter((f) => f >= fLo && f <= fHi);
   const yTicks = [-10, 0, 10];
   return (

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { makeId } from '../../state/project';
 import type { Setup, Vec3 } from '../../core/types';
-import type { Heatmap } from '../../core/field';
+import { robustnessMap, type Heatmap } from '../../core/field';
 import { evaluateSetup } from '../../core/system';
 import { isWave } from '../../core/geometry';
 import { useSetupEval } from '../useEval';
@@ -33,6 +33,8 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [probe, setProbe] = useState<{ x: number; y: number } | null>(null);
   const [compareId, setCompareId] = useState<string | null>(null);
+  const [layer, setLayer] = useState<'flat' | 'robust'>('flat');
+  const robustHeat = useMemo(() => (heat ? robustnessMap(heat) : null), [heat]);
   const [name, setName] = useState('');
   const job = useRef<ComputeJob<Heatmap> | null>(null);
 
@@ -126,8 +128,8 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
           width={room.width}
           items={items}
           seats={evalCur?.seats ?? []}
-          zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features}
-          heatmap={heat}
+          zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope}
+          heatmap={layer === 'robust' ? robustHeat : heat}
           marks={marks}
           selectedId={selected}
           onSelect={setSelected}
@@ -136,7 +138,9 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
           keyNotes={effMode === 'sub' ? { best: S.manual.keyBestSub, probe: S.manual.keyProbeSub, heat: S.manual.keyHeatSub } : undefined}
           label="План комнаты с картой оценок"
         />
-        {heat && <HeatLegend hm={heat} />}
+        {heat && <HeatLegend hm={layer === 'robust' ? robustHeat! : heat} />}
+        <Segmented label={S.robust.layer} value={layer} options={[{ value: 'flat' as const, label: S.robust.layers.flat }, { value: 'robust' as const, label: S.robust.layers.robust }]} onChange={setLayer} />
+        {layer === 'robust' && <p class="muted small">{S.robust.layerHint}</p>}
         <p class="progress-text small" role="status" aria-live="polite">
           {busy ? <><span class="spinner" aria-hidden="true" /> {S.manual.computing}</> : <span class="muted">{S.manual.hint}</span>}
         </p>
