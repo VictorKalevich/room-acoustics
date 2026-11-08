@@ -24,11 +24,44 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run lint
       - run: npm test
       - run: npm run build
+      # сквозные сценарии в эмуляции iPhone: сломанный экран не уедет на телефоны
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+        env:
+          CI: '1'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+  # те же сценарии на движке Safari (WebKit): для сведения, публикацию не останавливает
+  e2e-safari:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps webkit
+      - run: npm run e2e:safari
+        env:
+          CI: '1'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-safari
+          path: playwright-report
+          retention-days: 7
   deploy:
     needs: build
     runs-on: ubuntu-latest

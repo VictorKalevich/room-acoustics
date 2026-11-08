@@ -165,6 +165,8 @@ export default function Field3D({ room, field, energy, threshold, items, slice }
     c.camera.position.copy(eye);
     c.controls.target.copy(target);
     c.controls.update();
+  // только геометрия: смена материалов не должна сбрасывать камеру
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room.depth, room.width, room.height, room.extensions]);
 
   // колонки, сабвуферы, слушатель
@@ -195,22 +197,24 @@ export default function Field3D({ room, field, energy, threshold, items, slice }
   }, [items]);
 
   // плоскости среза
+  const [z0, z1] = slice;
+  const { depth: rd, width: rw } = room;
   useEffect(() => {
     const c = ctx.current;
     if (!c) return;
     disposeGroup(c.sliceG);
     const accent = cssColor('--accent', '#2d45c2');
-    const zs = Math.abs(slice[1] - slice[0]) < 0.01 ? [slice[0]] : slice;
+    const zs = Math.abs(z1 - z0) < 0.01 ? [z0] : [z0, z1];
     for (const z of zs) {
       const pl = new THREE.Mesh(
-        new THREE.PlaneGeometry(room.depth, room.width),
+        new THREE.PlaneGeometry(rd, rw),
         new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false }),
       );
-      pl.position.set(room.depth / 2, room.width / 2, z);
+      pl.position.set(rd / 2, rw / 2, z);
       c.sliceG.add(pl);
-      c.sliceG.add(boxEdges(0, 0, z, room.depth, room.width, z, accent, 0.6));
+      c.sliceG.add(boxEdges(0, 0, z, rd, rw, z, accent, 0.6));
     }
-  }, [slice[0], slice[1], room.depth, room.width]);
+  }, [z0, z1, rd, rw]);
 
   // облако точек
   useEffect(() => {

@@ -82,7 +82,7 @@ export function ProjectsScreen({ project, onReplace, onRename }: Props) {
         ) : (
           <ul class="project-list">
             {list.map((p) => (
-              <li>
+              <li key={p.id}>
                 <div>
                   <strong>{p.name}</strong>
                   <span class="muted small">

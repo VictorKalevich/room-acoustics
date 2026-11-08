@@ -43,6 +43,11 @@ const THRESHOLDS = [3, 6, 9, 12];
 /** Сколько частот-кнопок видно сразу (остальные — по «Ещё»): первые моды — самые важные. */
 const QUICK_SHOWN = 12;
 
+/** Ближайшая к частоте мода (без нулевой). */
+function nearestOf(modes: Mode[], f: number): Mode {
+  return modes.filter((m) => m.f > 0).reduce((a, b) => (Math.abs(b.f - f) < Math.abs(a.f - f) ? b : a), modes[1] ?? modes[0]);
+}
+
 export function FieldScreen({ project, modes, onSetup }: Props) {
   const { room, sources, constraints: c, current } = project;
   const wave = isWave(room);
@@ -70,12 +75,15 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   useEffect(() => { import('../components/Field3D').then((m) => setView3D(() => m.default)).catch(() => undefined); }, []);
   // срез — в пределах высоты комнаты
   useEffect(() => {
-    if (slice[1] > room.height || slice[0] > room.height) setSlice([Math.min(slice[0], room.height), Math.min(slice[1], room.height)]);
+    const h = room.height;
+    setSlice((s) => (s[0] > h || s[1] > h ? [Math.min(s[0], h), Math.min(s[1], h)] : s));
   }, [room.height]);
 
   // моды для быстрого выбора: прямоугольная модель — расчётные, волновая — моды системы
   useEffect(() => {
-    if (!wave) { setSysModes(null); return; }
+    // прежние моды другой комнаты не показываем, пока считаются новые
+    setSysModes(null);
+    if (!wave) return;
     const j = compute<SystemMode[]>('modes', { room, fMax: Math.min(200, fTop) });
     j.promise.then(setSysModes).catch(() => setSysModes([]));
     return () => j.cancel();
@@ -88,12 +96,12 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   // другая комната — моды другие: прежний выбор частот (и номера мод) не годится
   const roomKey = `${room.depth}|${room.width}|${room.height}|${(room.extensions ?? []).length}|${room.slope ? 1 : 0}`;
   useEffect(() => {
-    if (saved.roomKey && saved.roomKey !== roomKey) { setPicks(quick.length ? [quick[0]] : []); setActive(0); }
+    // сбрасываем выбор; самую низкую моду подставит следующий эффект, когда моды новой комнаты будут готовы
+    if (saved.roomKey && saved.roomKey !== roomKey) { setPicks([]); setActive(0); }
     saved.roomKey = roomKey;
   }, [roomKey]);
-  useEffect(() => { if (!picks.length && quick.length) setPicks([quick[0]]); }, [quick]);
+  useEffect(() => { if (quick.length) setPicks((ps) => (ps.length ? ps : [quick[0]])); }, [quick]);
 
-  const nearestMode = (f: number) => modes.filter((m) => m.f > 0).reduce((a, b) => (Math.abs(b.f - f) < Math.abs(a.f - f) ? b : a), modes[1] ?? modes[0]);
   const isPicked = (p: Pick) => picks.some((q) => Math.abs(q.f - p.f) < 0.05);
   const toggle = (p: Pick) => {
     setPicks((ps) => (isPicked(p) ? ps.filter((q) => Math.abs(q.f - p.f) >= 0.05) : [...ps, p].sort((a, b) => a.f - b.f)));
@@ -110,14 +118,14 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     if (view === 'band') {
       if (shapeModal) {
         const inBand = modes.filter((m) => m.f > 0 && m.f >= Math.min(...band) && m.f <= Math.max(...band));
-        const list = inBand.length ? inBand : [nearestMode((band[0] + band[1]) / 2)];
+        const list = inBand.length ? inBand : [nearestOf(modes, (band[0] + band[1]) / 2)];
         return { freqs: list.map((m) => m.f), modes: list.map((m) => m.n) };
       }
       return { freqs: bandFreqs(band[0], band[1]) };
     }
     if (!picks.length) return null;
     if (shapeModal) {
-      const ms = picks.map((p) => (p.n ? { f: p.f, n: p.n } : { f: nearestMode(p.f).f, n: nearestMode(p.f).n }));
+      const ms = picks.map((p) => (p.n ? { f: p.f, n: p.n } : { f: nearestOf(modes, p.f).f, n: nearestOf(modes, p.f).n }));
       return { freqs: ms.map((m) => m.f), modes: ms.map((m) => m.n) };
     }
     return { freqs: picks.map((p) => p.f) };
@@ -137,6 +145,8 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
         .catch((e) => { if (job.current === j) { setError(e.message); setBusy(false); } });
     }, 300);
     return () => clearTimeout(t);
+    // положение слушателя на поле не влияет — не пересчитываем, когда его двигают
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room, sources, current.positions, current.subSettings, current.crossoverHz, kind, request]);
   useEffect(() => () => job.current?.cancel(), []);
 
@@ -155,13 +165,13 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   }, [field, view, activeIdx, request]);
   const sl = useMemo(() => (field && energy ? sliceField(field, energy, slice[0], slice[1]) : null), [field, energy, slice]);
 
-  const items: PlanItem[] = [
+  const items = useMemo<PlanItem[]>(() => [
     ...sources.filter((s) => current.positions[s.id]).map((s) => ({
       id: s.id, kind: (s.kind === 'sub' ? 'sub' : 'spk') as PlanItem['kind'], pos: current.positions[s.id],
     })),
     { id: 'listener', kind: 'listener', pos: current.listener },
-  ];
-  const items3d = useMemo(() => items.map((i) => ({ id: i.id, kind: i.kind, pos: i.pos as Vec3 })), [current, sources]);
+  ], [current, sources]);
+  const items3d = useMemo(() => items.map((i) => ({ id: i.id, kind: i.kind, pos: i.pos as Vec3 })), [items]);
   const move = (id: string, pos: { x: number; y: number }) => {
     if (id === 'listener') { onSetup({ ...current, listener: { x: pos.x, y: pos.y, z: c.earHeight } }); return; }
     const spec = sources.find((s) => s.id === id);
@@ -219,7 +229,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
             <span class="field__label">{S.field.freqs}</span>
             <div class="chips" role="group" aria-label={S.field.freqs}>
               {(allChips ? quick : quick.filter((p, i) => i < QUICK_SHOWN || isPicked(p))).map((p) => (
-                <button type="button" class={`chip${isPicked(p) ? ' is-on' : ''}`} aria-pressed={isPicked(p)} onClick={() => toggle(p)}>
+                <button key={p.n ? p.n.join('-') : p.f} type="button" class={`chip${isPicked(p) ? ' is-on' : ''}`} aria-pressed={isPicked(p)} onClick={() => toggle(p)}>
                   {fmt(p.f, 1)}{p.n && <small> {p.n.join('')}</small>}
                 </button>
               ))}
@@ -229,7 +239,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
                 </button>
               )}
               {picks.filter((p) => !quick.some((q) => Math.abs(q.f - p.f) < 0.05)).map((p) => (
-                <button type="button" class="chip is-on is-custom" aria-pressed="true" onClick={() => toggle(p)}>{fmt(p.f, 1)} ×</button>
+                <button key={p.f} type="button" class="chip is-on is-custom" aria-pressed="true" onClick={() => toggle(p)}>{fmt(p.f, 1)} ×</button>
               ))}
             </div>
             <div class="custom-freq">
@@ -260,7 +270,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
         {view === 'single' && picks.length > 1 && (
           <div class="chips" role="radiogroup" aria-label={S.field.which}>
             {picks.map((p, i) => (
-              <button type="button" role="radio" aria-checked={i === activeIdx} class={`chip${i === activeIdx ? ' is-on' : ''}`} onClick={() => setActive(i)}>
+              <button key={i} type="button" role="radio" aria-checked={i === activeIdx} class={`chip${i === activeIdx ? ' is-on' : ''}`} onClick={() => setActive(i)}>
                 {fmt(p.f, 1)} Гц
               </button>
             ))}

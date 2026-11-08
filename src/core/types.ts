@@ -234,6 +234,8 @@ export interface Measurement {
   db: number[];
   /** Сколько точек усреднено (замер свипом в приложении); у импорта из REW — одна. */
   points?: number;
+  /** Сеанс записи в приложении: повторное сохранение того же сеанса уточняет замер, а не создаёт новый. */
+  session?: string;
 }
 
 /** Вариант расстановки: положения, основное место слушателя, настройки сабвуферов. */
@@ -245,6 +247,8 @@ export interface Setup {
   subSettings: Record<string, SubSetting>;
   crossoverHz: number | null;
   measurement: Measurement | null;
+  /** Прошлые замеры этой расстановки (свежие первыми) — для сравнения «до и после». */
+  history?: Measurement[];
 }
 
 export interface Penalty {

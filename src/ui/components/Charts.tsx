@@ -32,21 +32,22 @@ export function ResponseChart({ lines, fLo, fHi }: { lines: Line[]; fLo: number;
   const yTicks = [-10, 0, 10];
   return (
     <svg class="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="График АЧХ">
-      {ticks.map((f) => (
-        <g class="chart__grid">
+      {ticks.map((f, ki) => (
+        <g key={ki} class="chart__grid">
           <line x1={x(f)} x2={x(f)} y1={t} y2={H - b} />
-          <text x={x(f)} y={H - 8} text-anchor="middle">{f}</text>
+          {/* у правого края подпись частоты наезжала бы на «Гц» */}
+          {x(f) < W - r - 26 && <text x={x(f)} y={H - 8} text-anchor="middle">{f}</text>}
         </g>
       ))}
-      {yTicks.map((v) => (
-        <g class="chart__grid">
+      {yTicks.map((v, ki) => (
+        <g key={ki} class="chart__grid">
           <line x1={l} x2={W - r} y1={y(ref + v)} y2={y(ref + v)} />
           <text x={l - 5} y={y(ref + v) + 4} text-anchor="end">{v > 0 ? `+${v}` : v === 0 ? '0' : `−${-v}`}</text>
         </g>
       ))}
       <text x={W - r} y={H - 8} class="chart__unit" text-anchor="end">Гц</text>
-      {lines.map((ln) => (
-        <polyline
+      {lines.map((ln, ki) => (
+        <polyline key={ki}
           class={`chart__line ${ln.cls}`}
           stroke-dasharray={ln.dash ? '5 4' : undefined}
           points={ln.f.map((f, i) => `${x(f).toFixed(1)},${y(ln.db[i]).toFixed(1)}`).join(' ')}
@@ -65,8 +66,8 @@ export function ModeChart({ modes, fMax, schroeder }: { modes: Mode[]; fMax: num
   const ticks = TICKS.filter((f) => f >= 20 && f <= fMax);
   return (
     <svg class="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Распределение мод по частоте">
-      {ticks.map((f) => (
-        <g class="chart__grid">
+      {ticks.map((f, ki) => (
+        <g key={ki} class="chart__grid">
           <line x1={x(f)} x2={x(f)} y1={t} y2={base} />
           <text x={x(f)} y={H - 8} text-anchor="middle">{f}</text>
         </g>
@@ -78,8 +79,8 @@ export function ModeChart({ modes, fMax, schroeder }: { modes: Mode[]; fMax: num
           <text x={x(schroeder) - 4} y={t + 10} text-anchor="end">{`fШ ${fmt(schroeder, 0)}`}</text>
         </g>
       )}
-      {modes.map((m) => (
-        <line
+      {modes.map((m, ki) => (
+        <line key={ki}
           class={`chart__mode chart__mode--${m.kind}`}
           x1={x(m.f)}
           x2={x(m.f)}
@@ -92,7 +93,7 @@ export function ModeChart({ modes, fMax, schroeder }: { modes: Mode[]; fMax: num
       {/* совпадающие сильные моды (осевые) отмечены точкой */}
       {modes
         .filter((m) => m.degenerate && m.kind === 'axial')
-        .map((m) => <circle class="chart__degenerate" cx={x(m.f)} cy={base - hOf.axial - 4} r="3.5" />)}
+        .map((m, ki) => <circle key={ki} class="chart__degenerate" cx={x(m.f)} cy={base - hOf.axial - 4} r="3.5" />)}
     </svg>
   );
 }

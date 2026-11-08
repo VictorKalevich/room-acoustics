@@ -1,13 +1,20 @@
 // Локальное хранение проектов (IndexedDB) и файл проекта (contracts/project-file.md).
 import type { Project } from './project';
 import { defaultConstraints, defaultRoom, defaultSetup, defaultSources, defaultSub, makeId, syncSetup, validateRoom, validateSources } from './project';
-import type { Setup, SourceSpec } from '../core/types';
+import type { Measurement, Setup, SourceSpec } from '../core/types';
 import { DAMPING_MODEL, SURFACES } from '../core/types';
 import { MATERIAL_BY_ID } from '../core/materials';
+import { HISTORY_MAX } from './variant';
 
 export const FILE_FORMAT = 'room-acoustics-project';
-export const FILE_VERSION = 4; // 4: обработка, скос потолка, окна и двери, фильтры сабвуферов
+export const FILE_VERSION = 5; // 4: обработка, скос потолка, окна и двери, фильтры сабвуферов; 5: история замеров
 export const FILE_EXT = '.roomacoustics.json';
+
+/** Замер пригоден: частоты и уровни — числа, поровну, хотя бы несколько точек. */
+function validMeasurement(m: any): m is Measurement {
+  return !!m && Array.isArray(m.f) && Array.isArray(m.db) && m.f.length >= 2 && m.f.length === m.db.length
+    && m.f.every((v: unknown) => typeof v === 'number' && Number.isFinite(v)) && m.db.every((v: unknown) => typeof v === 'number' && Number.isFinite(v));
+}
 
 export function serializeProject(p: Project): string {
   return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, project: p }, null, 2);
@@ -29,8 +36,8 @@ export function parseProjectFile(text: string): Project {
 
 /** Заполняет отсутствующие поля умолчаниями и проверяет диапазоны. */
 export function normalizeProject(raw: any): Project {
-  const room = { ...defaultRoom(), ...(raw.room ?? {}) };
-  room.materials = { ...defaultRoom().materials, ...(raw.room?.materials ?? {}) };
+  const room = { ...defaultRoom(), ...raw.room };
+  room.materials = { ...defaultRoom().materials, ...raw.room?.materials };
   for (const s of SURFACES) if (!MATERIAL_BY_ID[room.materials[s]]) room.materials[s] = defaultRoom().materials[s];
   if (!Array.isArray(room.zones)) room.zones = [];
   if (!['sealed', 'typical', 'door', 'open'].includes(room.leakage)) room.leakage = 'typical';
@@ -57,18 +64,19 @@ export function normalizeProject(raw: any): Project {
   const dc = defaultConstraints(room);
   const constraints = {
     ...dc,
-    ...(raw.constraints ?? {}),
-    seats: { ...dc.seats, ...(raw.constraints?.seats ?? {}) },
-    crossover: { ...dc.crossover, ...(raw.constraints?.crossover ?? {}) },
+    ...raw.constraints,
+    seats: { ...dc.seats, ...raw.constraints?.seats },
+    crossover: { ...dc.crossover, ...raw.constraints?.crossover },
   };
   const fixSetup = (s: any, name: string): Setup =>
     syncSetup(
       {
         ...defaultSetup(room, sources, constraints, name),
-        ...(s ?? {}),
+        ...s,
         subSettings: s?.subSettings ?? {},
         crossoverHz: s?.crossoverHz ?? null,
-        measurement: s?.measurement ?? null,
+        measurement: validMeasurement(s?.measurement) ? s.measurement : null,
+        history: Array.isArray(s?.history) && s.history.some(validMeasurement) ? s.history.filter(validMeasurement).slice(0, HISTORY_MAX) : undefined,
       },
       room,
       sources,

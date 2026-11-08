@@ -44,12 +44,12 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
       {(isWave(room) || (room.extensions ?? []).length > 0) && <SystemModesPanel room={room} fMax={Math.min(200, Math.max(120, reverb.schroeder))} />}
 
       <Panel title={S.modes.proportions}>
-        {notes.length ? notes.map((n) => <Note tone="warn">{n}</Note>) : <Note tone="good">{S.modes.proportionsOk}</Note>}
+        {notes.length ? notes.map((n, ki) => <Note key={ki} tone="warn">{n}</Note>) : <Note tone="good">{S.modes.proportionsOk}</Note>}
         {issues.clusters.length > 0 && (
           <>
             <h3 class="subhead">{S.modes.clusters}</h3>
             <ul class="plain-list">
-              {issues.clusters.map((c) => <li>{fmt(c.f1, 1)} и {fmt(c.f2, 1)} Гц</li>)}
+              {issues.clusters.map((c, ki) => <li key={ki}>{fmt(c.f1, 1)} и {fmt(c.f2, 1)} Гц</li>)}
             </ul>
           </>
         )}
@@ -57,7 +57,7 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
           <>
             <h3 class="subhead">{S.modes.gaps}</h3>
             <ul class="plain-list">
-              {issues.gaps.map((c) => <li>{fmt(c.f1, 1)} – {fmt(c.f2, 1)} Гц</li>)}
+              {issues.gaps.map((c, ki) => <li key={ki}>{fmt(c.f1, 1)} – {fmt(c.f2, 1)} Гц</li>)}
             </ul>
           </>
         )}
@@ -81,8 +81,8 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
               </tr>
             </thead>
             <tbody>
-              {shown.map((m) => (
-                <tr class={`is-${m.kind}`}>
+              {shown.map((m, ki) => (
+                <tr key={ki} class={`is-${m.kind}`}>
                   <td class="num">{fmt(m.f, 1)}</td>
                   <td class="num">{m.n.join(' ')}</td>
                   <td>
@@ -139,8 +139,8 @@ function SystemModesPanel({ room, fMax }: { room: Room; fMax: number }) {
           <table class="modes-table sysmodes-table">
             <thead><tr><th>{S.sysmodes.colF}</th><th>{S.sysmodes.colShare}</th><th /><th /></tr></thead>
             <tbody>
-              {shown.map((m) => (
-                <tr>
+              {shown.map((m, ki) => (
+                <tr key={ki}>
                   <td class="num">{fmt(m.f, 1)}</td>
                   <td class={`num${m.roomShare < 0.5 ? ' is-corridor' : ''}`}>{Math.round(m.roomShare * 100)} %</td>
                   <td class={m.roomShare < 0.5 ? 'is-corridor' : ''}>{m.roomShare < 0.5 ? S.sysmodes.corridorMode : ''}</td>

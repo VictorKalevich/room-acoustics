@@ -5,11 +5,14 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { ScanLabels, ScanObjectKind } from './layout';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { cleanTriangles } from './clean';
 
 export type ScanFormat = 'obj' | 'glb' | 'gltf' | 'ply' | 'stl';
 
 export const SUPPORTED = 'OBJ, GLB, glTF (со встроенными данными), PLY, STL';
 export const MAX_TRIANGLES = 2_000_000;
+/** Больше — iPhone может не хватить памяти на разбор (текстовый OBJ раздувается в несколько раз). */
+export const MAX_FILE_MB = 500;
 
 export class ScanError extends Error {
   constructor(message: string) {
@@ -26,6 +29,8 @@ export interface LoadedScan {
   format: ScanFormat;
   triangleCount: number;
   decimated: boolean;
+  /** Сколько треугольников отброшено как мусор (нечисловые координаты, далёкие выбросы). */
+  dropped: number;
 }
 
 function detectFormat(name: string, head: Uint8Array): ScanFormat {
@@ -88,10 +93,32 @@ async function parse(buf: ArrayBuffer, format: ScanFormat): Promise<THREE.Object
       return new THREE.Mesh(g, defaultMaterial(!!g.getAttribute('color')));
     }
     case 'stl': {
+      checkStl(buf);
       const g = new STLLoader().parse(buf);
       return new THREE.Mesh(g, defaultMaterial(!!g.getAttribute('color')));
     }
   }
+}
+
+/**
+ * Двоичный STL: загрузчик сразу выделяет память под заявленное в заголовке число треугольников.
+ * В повреждённом файле там бывает что угодно (до 4 млрд) — проверяем, что данные действительно есть.
+ */
+function checkStl(buf: ArrayBuffer) {
+  const head = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(buf.byteLength, 256)));
+  if (buf.byteLength < 84) {
+    if (/^\s*solid/.test(head)) return; // крошечный текстовый STL — разберёт текстовый парсер
+    throw new ScanError('Файл STL обрезан или повреждён.');
+  }
+  const faces = new DataView(buf).getUint32(80, true);
+  const expected = 84 + faces * 50;
+  if (expected === buf.byteLength) return;
+  // текстовый STL («solid …», внутри — facet/vertex)
+  if (/^\s*solid/.test(head) && /facet|vertex/.test(head + new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(buf.byteLength, 4096))))) return;
+  if (expected > buf.byteLength) {
+    throw new ScanError(`Файл STL обрезан или повреждён: в заголовке ${faces.toLocaleString('ru-RU')} треугольников, а данных меньше.`);
+  }
+  // лишние байты в конце (некоторые программы дописывают) — не страшно
 }
 
 const LABEL_RE = /^(door|window|opening)[\s_-]*\d*$/i;
@@ -160,6 +187,9 @@ export function extractTriangles(root: THREE.Object3D, maxTriangles = MAX_TRIANG
 
 export async function loadScan(file: File): Promise<LoadedScan> {
   if (file.size === 0) throw new ScanError('Файл пустой.');
+  if (file.size > MAX_FILE_MB * 1024 * 1024) {
+    throw new ScanError(`Файл слишком большой (${Math.round(file.size / 1024 / 1024)} МБ, можно до ${MAX_FILE_MB} МБ). Экспортируйте скан с меньшей детализацией.`);
+  }
   const buf = await file.arrayBuffer();
   const format = detectFormat(file.name, new Uint8Array(buf, 0, Math.min(buf.byteLength, 128)));
   let preview: THREE.Object3D;
@@ -169,9 +199,14 @@ export async function loadScan(file: File): Promise<LoadedScan> {
     if (e instanceof ScanError) throw e;
     throw new ScanError(`Не удалось прочитать файл (${format.toUpperCase()}). Поддерживаются: ${SUPPORTED}.`);
   }
-  const { triangles, total, decimated, labels } = extractTriangles(preview);
-  if (total < 20) {
+  const ex = extractTriangles(preview);
+  if (ex.total < 20) {
     throw new ScanError('В файле нет поверхностей (или это облако точек). Экспортируйте скан как сетку (mesh).');
   }
-  return { triangles, labels, preview, format, triangleCount: total, decimated };
+  const c = cleanTriangles(ex.triangles, ex.labels?.ids);
+  if (c.triangles.length / 9 < 20) {
+    throw new ScanError('Координаты в файле повреждены: почти все точки нечисловые. Экспортируйте скан заново.');
+  }
+  const labels = ex.labels && c.ids ? { ...ex.labels, ids: c.ids } : ex.labels;
+  return { triangles: c.triangles, labels, preview, format, triangleCount: ex.total, decimated: ex.decimated, dropped: c.invalid + c.outliers };
 }

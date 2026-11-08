@@ -11,6 +11,7 @@ import { S } from '../strings';
 import { Term } from '../components/Term';
 import { fmt, fmtInt } from '../format';
 import { ROBUST_GOOD, ROBUST_MID } from '../../core/metric';
+import { placementLayout, sameLayout, setupFromPlacement, shouldAdoptBest } from '../../state/variant';
 
 interface Props {
   project: Project;
@@ -79,7 +80,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
         onResult(r, 0);
         // своей расстановки ещё нет (стоит исходная) — лучший вариант сразу становится текущим:
         // по нему считаются «Настройка», «Обзор», 3D и замер
-        if (sameLayout(project.current, defaultSetup(room, sources, c)) && r.best[0]) applyVariant(r.best[0]);
+        if (shouldAdoptBest(project.current, defaultSetup(room, sources, c), r.best[0])) applyVariant(r.best[0]);
         requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       })
       .catch((e) => { setRunning(false); setError(e.message || S.errors.generic); });
@@ -87,8 +88,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
 
   /** Вариант становится текущей расстановкой (её используют настройка, обзор, 3D и замер). */
   const applyVariant = (p: Placement) => {
-    const positions = Object.fromEntries(p.sources.filter((s) => s.pos).map((s) => [s.id, s.pos]));
-    onSetup({ ...project.current, listener: p.listener, positions, subSettings: p.subSettings ?? {}, crossoverHz: null });
+    onSetup(setupFromPlacement(project.current, p));
   };
   const openManual = (p: Placement) => {
     applyVariant(p);
@@ -96,7 +96,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
     scrollTo({ top: 0 });
   };
 
-  const isCurrent = (p: Placement) => sameLayout(project.current, { listener: p.listener, positions: Object.fromEntries(p.sources.filter((x) => x.pos).map((x) => [x.id, x.pos])) });
+  const isCurrent = (p: Placement) => sameLayout(project.current, placementLayout(p));
   const variants: Placement[] = result ? [...result.best, result.baseline] : [];
   const sel = Math.min(project.selectedIndex, Math.max(0, variants.length - 1));
   const current = variants[sel] ?? null;
@@ -131,7 +131,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
           onHi={(v) => updateSpeakers({ fHigh: v })}
         />
         {subs.map((s, i) => (
-          <RangeRow
+          <RangeRow key={s.id}
             label={S.placement.subRange(i + 1)}
             lo={s.fLow}
             hi={s.fHigh}
@@ -139,11 +139,11 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             onHi={(v) => updateSource(s.id, { fHigh: v })}
           />
         ))}
-        {srcErrors.map((e) => <Note tone="warn">{e.message}</Note>)}
+        {srcErrors.map((e, ki) => <Note key={ki} tone="warn">{e.message}</Note>)}
         {subs.length > 0 && (
           <Details summary={S.sub.caps}>
             {subs.map((s, i) => (
-              <div class="sub-caps">
+              <div key={s.id} class="sub-caps">
                 <span class="range-row__label">{S.placement.subRange(i + 1)}</span>
                 <Segmented
                   label={S.sub.delay}
@@ -293,7 +293,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             {result.stale && <Note tone="warn">{S.placement.stale}</Note>}
             <div class="tabs" role="tablist">
               {variants.map((_, i) => (
-                <button
+                <button key={i}
                   type="button"
                   role="tab"
                   aria-selected={i === sel}
@@ -348,10 +348,10 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             {current.penalties.length > 0 && (
               <>
                 <h3 class="subhead">{S.placement.penalties}</h3>
-                <ul class="plain-list small">{current.penalties.map((p) => <li>{p.name}</li>)}</ul>
+                <ul class="plain-list small">{current.penalties.map((p, ki) => <li key={ki}>{p.name}</li>)}</ul>
               </>
             )}
-            {result.notes.map((n) => <Note>{n}</Note>)}
+            {result.notes.map((n, ki) => <Note key={ki}>{n}</Note>)}
             <p class="muted small">
               {S.placement.evaluated(fmtInt(result.evaluated), fmt(result.elapsedMs / 1000, 1))} Оценка по полосе {fmt(result.fLo, 0)}–{fmt(result.fHi, 0)} Гц.
             </p>
@@ -417,8 +417,8 @@ function Positions({ p }: { p: Placement }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr>
+          {rows.map((r, ki) => (
+            <tr key={ki}>
               <th scope="row">{r.name}</th>
               <td class="num">{fmt(r.pos.x, 2)}</td>
               <td class="num">{fmt(r.pos.y, 2)}</td>
@@ -429,16 +429,4 @@ function Positions({ p }: { p: Placement }) {
       </table>
     </div>
   );
-}
-
-/** Одинаковы ли расстановки (места слушателя и источников, с точностью до 1 мм). */
-function sameLayout(a: Pick<Setup, 'listener' | 'positions'>, b: Pick<Setup, 'listener' | 'positions'>): boolean {
-  const near = (p: { x: number; y: number }, q: { x: number; y: number }) => Math.abs(p.x - q.x) < 1e-3 && Math.abs(p.y - q.y) < 1e-3;
-  if (!near(a.listener, b.listener)) return false;
-  const ids = new Set([...Object.keys(a.positions), ...Object.keys(b.positions)]);
-  for (const id of ids) {
-    const p = a.positions[id], q = b.positions[id];
-    if (!p || !q || !near(p, q)) return false;
-  }
-  return true;
 }

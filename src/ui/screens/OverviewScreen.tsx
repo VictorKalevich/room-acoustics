@@ -39,7 +39,7 @@ export function OverviewScreen({ project, modes, reverb, onGo }: Props) {
         </div>
         <ul class="subscores">
           {o.subs.map((s) => (
-            <li>
+            <li key={s.id}>
               <span class="subscores__name"><Term id={SUB_TERM[s.id]}>{S.overview.subs[s.id]}</Term></span>
               <span class="subscores__bar" aria-hidden="true"><span style={{ width: `${s.value}%` }} class={s.value < 45 ? 'is-low' : s.value < 70 ? 'is-mid' : ''} /></span>
               <span class="subscores__val">{s.value}</span>
@@ -52,8 +52,8 @@ export function OverviewScreen({ project, modes, reverb, onGo }: Props) {
       <Panel title={S.overview.problems}>
         {o.problems.length === 0 && <Note tone="good">{S.overview.noProblems}</Note>}
         <ul class="problems">
-          {shown.map((p) => (
-            <li class={`problem is-${p.severity}`}>
+          {shown.map((p, ki) => (
+            <li key={ki} class={`problem is-${p.severity}`}>
               <div class="problem__head">
                 <span class={`sev sev--${p.severity}`}>{S.overview.sev[p.severity as Severity]}</span>
                 <strong>{p.title}</strong>
@@ -62,7 +62,7 @@ export function OverviewScreen({ project, modes, reverb, onGo }: Props) {
               <p class="small muted">{p.detail}</p>
               <div class="btn-row">
                 {p.actions.map((a) => (
-                  <button type="button" class="btn btn--small btn--ghost" onClick={() => onGo(a, p.f)}>{S.overview.actions[a]}</button>
+                  <button key={a} type="button" class="btn btn--small btn--ghost" onClick={() => onGo(a, p.f)}>{S.overview.actions[a]}</button>
                 ))}
               </div>
             </li>
@@ -116,11 +116,11 @@ function DecayChart({ decays, volume }: { decays: ModeDecay[]; volume: number })
   const xt = [20, 30, 40, 50, 70, 100, 150, 200].filter((f) => f <= f1 && X(f) < W - r - 24);
   return (
     <svg class="chart decay-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Время затухания мод">
-      {yt.map((v) => <g><line x1={l} x2={W - r} y1={Y(v)} y2={Y(v)} class="chart__grid" /><text x={l - 4} y={Y(v) + 3} text-anchor="end" class="chart__tick">{fmt(v, 1)}</text></g>)}
-      {xt.map((f) => <text x={X(f)} y={H - 8} text-anchor="middle" class="chart__tick">{f}</text>)}
+      {yt.map((v, ki) => <g key={ki}><line x1={l} x2={W - r} y1={Y(v)} y2={Y(v)} class="chart__grid" /><text x={l - 4} y={Y(v) + 3} text-anchor="end" class="chart__tick">{fmt(v, 1)}</text></g>)}
+      {xt.map((f, ki) => <text key={ki} x={X(f)} y={H - 8} text-anchor="middle" class="chart__tick">{f}</text>)}
       <path d={lim.join(' ')} class="decay-chart__limit" />
-      {decays.map((d) => (
-        <circle cx={X(d.f)} cy={Y(d.t60)} r={d.kind === 'axial' ? 4 : 3} class={`decay-chart__pt is-${d.kind}${d.t60 > d.limit ? ' is-over' : ''}`}>
+      {decays.map((d, ki) => (
+        <circle key={ki} cx={X(d.f)} cy={Y(d.t60)} r={d.kind === 'axial' ? 4 : 3} class={`decay-chart__pt is-${d.kind}${d.t60 > d.limit ? ' is-over' : ''}`}>
           <title>{`${fmt(d.f, 1)} Гц (${d.n.join(' ')}): ${fmt(d.t60, 2)} с`}</title>
         </circle>
       ))}

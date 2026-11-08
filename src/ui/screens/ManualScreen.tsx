@@ -58,6 +58,8 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
         .catch((e) => { if (job.current === j) { setError(e.message); setBusy(false); } });
     }, 350);
     return () => clearTimeout(t);
+    // только то, что меняет карту (переименование варианта пересчёта не требует)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room, sources, c, current.positions, current.listener, current.subSettings, current.crossoverHz, effMode, effSub]);
   useEffect(() => () => job.current?.cancel(), []);
   useEffect(() => setProbe(null), [effMode, effSub]);
@@ -172,7 +174,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
           {(heat?.best ?? []).map((b, i) => {
             const d = heat!.current - b.score;
             return (
-              <li>
+              <li key={i}>
                 <span class="best-list__n">{i + 1}</span>
                 <span class="best-list__text">
                   <strong>{fmt(b.score, 1)} дБ</strong>
@@ -220,7 +222,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
               {compareEval && <span class="legend__item legend__item--compare">{S.manual.legendCompare}</span>}
               <span class="legend__item legend__item--target">{S.placement.legendTarget}</span>
             </div>
-            {evalCur.penalties.length > 0 && <ul class="plain-list small">{evalCur.penalties.map((p) => <li>{p.name}</li>)}</ul>}
+            {evalCur.penalties.length > 0 && <ul class="plain-list small">{evalCur.penalties.map((p, ki) => <li key={ki}>{p.name}</li>)}</ul>}
           </>
         ) : (
           <p class="progress-text small">{evalBusy && <span class="spinner" aria-hidden="true" />} {S.model.computing}</p>

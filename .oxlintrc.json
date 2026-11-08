@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "react",
+    "unicorn",
+    "oxc"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "env": {
+    "browser": true,
+    "es2024": true,
+    "worker": true
+  },
+  "settings": {
+    "react": {
+      "version": "18.3"
+    }
+  },
+  "rules": {
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    "react/react-in-jsx-scope": "off",
+    "react/no-unknown-property": "off",
+    "no-unused-vars": "warn",
+    "unicorn/no-array-for-each": "off",
+    "react/immutability": "off",
+    "unicorn/require-post-message-target-origin": "off",
+    "no-underscore-dangle": [
+      "warn",
+      {
+        "allow": [
+          "__APP_BUILD_TIME__",
+          "__APP_BUILD_SHA__"
+        ]
+      }
+    ],
+    "unicorn/no-array-sort": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-add-event-listener": "off"
+  },
+  "ignorePatterns": [
+    "dist/**",
+    "dev-dist/**",
+    "node_modules/**",
+    "test-results/**",
+    "playwright-report/**"
+  ]
+}

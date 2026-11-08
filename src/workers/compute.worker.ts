@@ -38,7 +38,7 @@ function run(job: Job) {
     const transfer = type === 'field' && fr.energy && fr.mask ? [fr.energy.buffer, fr.mask.buffer] : [];
     self.postMessage({ id, kind: 'done', result }, transfer as any);
   } catch (err) {
-    self.postMessage({ id, kind: 'error', error: (err as Error).message ?? String(err) });
+    self.postMessage({ id, kind: 'error', error: (err as Error).message ?? String(err), stack: (err as Error).stack });
   }
 }
 

@@ -24,10 +24,12 @@ import { ReportScreen } from './screens/ReportScreen';
 import { SyncScreen } from './screens/SyncScreen';
 import { OverviewScreen } from './screens/OverviewScreen';
 import { AboutPanel } from './screens/ProjectsScreen';
+import { ProblemReport } from './components/ProblemReport';
 import { setFieldFocus } from './screens/FieldScreen';
 import { S } from './strings';
 import { fmt } from './format';
 import { consumeJustUpdated, setBeforeReload } from './updates';
+import { activeTreatments } from '../core/treatments';
 
 type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects' | DrawerItem;
 const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects', 'measure', 'report', 'sync', 'help', 'about'];
@@ -187,7 +189,7 @@ export function App() {
 
       <main class="content">
         {wizard && <WizardStrip project={project} onGo={(t) => go(t)} onChange={refreshWizard} />}
-        {r.treatmentsOn && (r.treatments ?? []).some((t) => t.enabled !== false) && (
+        {activeTreatments(r).length > 0 && (
           <div class="whatif-strip" role="status">
             <span>{S.treat.whatIf}</span>
             <span class="whatif-strip__btns">
@@ -237,14 +239,14 @@ export function App() {
         {tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} />}
         {tab === 'sync' && <SyncScreen project={project} onReplace={(p: Project) => setProject(p)} />}
         {tab === 'help' && <HelpScreen project={project} onGo={(t) => go(t)} onWizard={refreshWizard} />}
-        {tab === 'about' && <div class="screen"><AboutPanel /></div>}
+        {tab === 'about' && <div class="screen"><AboutPanel /><ProblemReport project={project} /></div>}
       </main>
 
       <MiniPlayer />
 
       <nav class="tabbar" aria-label="Разделы">
-        {BAR.map((t) => (
-          <button type="button" class={t === tab ? 'is-on' : ''} aria-current={t === tab ? 'page' : undefined} onClick={() => go(t)}>
+        {BAR.map((t, ki) => (
+          <button key={ki} type="button" class={t === tab ? 'is-on' : ''} aria-current={t === tab ? 'page' : undefined} onClick={() => go(t)}>
             <TabIcon tab={t} />
             <span>{S.tabs[t]}</span>
           </button>

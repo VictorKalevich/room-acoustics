@@ -9,7 +9,7 @@ describe('flatnessScore', () => {
 
   it('синусоидальная неровность ±A дБ → A/√2', () => {
     const n = 2000;
-    const target = new Array(n).fill(0);
+    const target = Array.from({ length: n }, () => 0);
     const room = Array.from({ length: n }, (_, i) => 6 * Math.sin((2 * Math.PI * 5 * i) / n));
     expect(flatnessScore(room, target)).toBeCloseTo(6 / Math.SQRT2, 2);
   });

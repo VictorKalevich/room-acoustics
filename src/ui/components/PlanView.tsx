@@ -166,30 +166,30 @@ export function PlanView(p: PlanProps) {
         </pattern>
       </defs>
       {extBoxes.map(({ e, b }) => (
-        <g class="plan__ext">
+        <g key={e.id} class="plan__ext">
           <rect x={X(b.y0)} y={Y(b.x0)} width={(b.y1 - b.y0) * scale} height={(b.x1 - b.x0) * scale} class="plan__ext-floor" />
-          {extEdges(e, b).map((ed) => (
-            <line x1={X(ed[1])} y1={Y(ed[0])} x2={X(ed[3])} y2={Y(ed[2])} class={ed[4] ? 'plan__ext-open' : 'plan__ext-wall'} />
+          {extEdges(e, b).map((ed, ki) => (
+            <line key={ki} x1={X(ed[1])} y1={Y(ed[0])} x2={X(ed[3])} y2={Y(ed[2])} class={ed[4] ? 'plan__ext-open' : 'plan__ext-wall'} />
           ))}
         </g>
       ))}
       <rect x={ox - wall} y={oy - wall} width={rw + 2 * wall} height={rh + 2 * wall} class="plan__wall" fill="url(#hatch)" />
       <rect x={ox} y={oy} width={rw} height={rh} class="plan__floor" />
       <rect x={ox - wall} y={oy - wall} width={rw + 2 * wall} height={wall} class="plan__front" />
-      {[...(p.extensions ?? []).map((e) => ({ wall: e.wall, a0: e.arch.a0, a1: e.arch.a1, cls: 'plan__arch' })), ...(p.openings ?? []).map((o) => ({ wall: o.wall, a0: o.a0, a1: o.a1, cls: 'plan__gap' }))].map((g) => {
+      {[...(p.extensions ?? []).map((e) => ({ wall: e.wall, a0: e.arch.a0, a1: e.arch.a1, cls: 'plan__arch' })), ...(p.openings ?? []).map((o) => ({ wall: o.wall, a0: o.a0, a1: o.a1, cls: 'plan__gap' }))].map((g, ki) => {
         const r =
           g.wall === 'right' ? { x: ox + rw - 1, y: Y(g.a0), w: wall + 2, h: (g.a1 - g.a0) * scale } :
           g.wall === 'left' ? { x: ox - wall - 1, y: Y(g.a0), w: wall + 2, h: (g.a1 - g.a0) * scale } :
           g.wall === 'back' ? { x: X(g.a0), y: oy + rh - 1, w: (g.a1 - g.a0) * scale, h: wall + 2 } :
           { x: X(g.a0), y: oy - wall - 1, w: (g.a1 - g.a0) * scale, h: wall + 2 };
-        return <rect class={g.cls} x={r.x} y={r.y} width={Math.max(1, r.w)} height={Math.max(1, r.h)} />;
+        return <rect key={ki} class={g.cls} x={r.x} y={r.y} width={Math.max(1, r.w)} height={Math.max(1, r.h)} />;
       })}
       {feats.map((f) => {
         const seg = wallRect(f.wall, f.a0, f.a1);
         if (f.kind === 'window') {
           const horiz = f.wall === 'front' || f.wall === 'back';
           return (
-            <g class="plan__window">
+            <g key={f.id} class="plan__window">
               <rect x={seg.x} y={seg.y} width={Math.max(1, seg.w)} height={Math.max(1, seg.h)} />
               {horiz
                 ? <line x1={seg.x} y1={seg.y + seg.h / 2} x2={seg.x + seg.w} y2={seg.y + seg.h / 2} />
@@ -209,7 +209,7 @@ export function PlanView(p: PlanProps) {
         const end = { x: hinge.x + alongV[0] * L, y: hinge.y + alongV[1] * L };
         const sweep = (inward[0] * alongV[1] - inward[1] * alongV[0]) > 0 ? 1 : 0;
         return (
-          <g class="plan__door">
+          <g key={f.id} class="plan__door">
             <rect class="plan__door-gap" x={seg.x} y={seg.y} width={Math.max(1, seg.w)} height={Math.max(1, seg.h)} />
             <line x1={hinge.x} y1={hinge.y} x2={leaf.x} y2={leaf.y} />
             <path d={`M ${leaf.x} ${leaf.y} A ${L} ${L} 0 0 ${sweep} ${end.x} ${end.y}`} class="plan__door-arc" />
@@ -225,7 +225,7 @@ export function PlanView(p: PlanProps) {
             const cx = hm.x0 + Math.floor(i / hm.ny) * hm.step;
             const cy = hm.y0 + (i % hm.ny) * hm.step;
             return (
-              <rect
+              <rect key={i}
                 x={X(cy - hm.step / 2)}
                 y={Y(cx - hm.step / 2)}
                 width={hm.step * scale + 0.4}
@@ -258,7 +258,7 @@ export function PlanView(p: PlanProps) {
       )}
 
       {(p.zones ?? []).map((z) => (
-        <g class={`plan__zone-rect is-${z.kind}`}>
+        <g key={z.id} class={`plan__zone-rect is-${z.kind}`}>
           <rect x={X(z.y0)} y={Y(z.x0)} width={(z.y1 - z.y0) * scale} height={(z.x1 - z.x0) * scale} fill="url(#zonehatch)" />
           <rect x={X(z.y0)} y={Y(z.x0)} width={(z.y1 - z.y0) * scale} height={(z.x1 - z.x0) * scale} class="plan__zone-outline" />
           <text x={X((z.y0 + z.y1) / 2)} y={Y((z.x0 + z.x1) / 2) + 4} text-anchor="middle">{z.name ?? S.zones.short[z.kind]}</text>
@@ -271,10 +271,10 @@ export function PlanView(p: PlanProps) {
           const [fb, lr] = (t.corner ?? 'front-left').split('-');
           const cx = lr === 'left' ? ox : ox + rw, cy = fb === 'front' ? oy : oy + rh;
           const sx = lr === 'left' ? 1 : -1, sy = fb === 'front' ? 1 : -1;
-          return <polygon class="plan__treat is-corner" points={`${cx},${cy} ${cx + sx * leg},${cy} ${cx},${cy + sy * leg}`} />;
+          return <polygon key={t.id} class="plan__treat is-corner" points={`${cx},${cy} ${cx + sx * leg},${cy} ${cx},${cy + sy * leg}`} />;
         }
         if (t.kind === 'cloud') {
-          return <rect class="plan__treat is-cloud" x={X((t.y ?? 0) - t.width / 2)} y={Y((t.x ?? 0) - t.height / 2)} width={t.width * scale} height={t.height * scale} rx="3" />;
+          return <rect key={t.id} class="plan__treat is-cloud" x={X((t.y ?? 0) - t.width / 2)} y={Y((t.x ?? 0) - t.height / 2)} width={t.width * scale} height={t.height * scale} rx="3" />;
         }
         const d = (t.thickness + (t.gap ?? 0)) * scale;
         const a0 = (t.at ?? 0) - t.width / 2, a1 = (t.at ?? 0) + t.width / 2;
@@ -283,7 +283,7 @@ export function PlanView(p: PlanProps) {
           t.wall === 'right' ? { x: ox + rw - d, y: Y(a0), w: d, h: t.width * scale } :
           t.wall === 'front' ? { x: X(a0), y: oy, w: t.width * scale, h: d } :
           { x: X(a0), y: oy + rh - d, w: (a1 - a0) * scale, h: d };
-        return <rect class="plan__treat is-panel" x={r.x} y={r.y} width={r.w} height={r.h} />;
+        return <rect key={t.id} class="plan__treat is-panel" x={r.x} y={r.y} width={r.w} height={r.h} />;
       })}
 
       {p.slope && (() => {
@@ -316,12 +316,12 @@ export function PlanView(p: PlanProps) {
         </g>
       )}
 
-      {(p.wallMarks ?? []).map((m) => {
+      {(p.wallMarks ?? []).map((m, ki) => {
         const pos =
           m.surface === 'left' ? { x: ox - wall / 2, y: Y(m.at) } :
           m.surface === 'right' ? { x: ox + rw + wall / 2, y: Y(m.at) } :
           m.surface === 'front' ? { x: X(m.at), y: oy - wall / 2 } : { x: X(m.at), y: oy + rh + wall / 2 };
-        return <circle class="plan__reflection" cx={pos.x} cy={pos.y} r="4.5" />;
+        return <circle key={ki} class="plan__reflection" cx={pos.x} cy={pos.y} r="4.5" />;
       })}
 
       {listener && spk.length === 2 && (
@@ -334,10 +334,10 @@ export function PlanView(p: PlanProps) {
         <line class="plan__triangle" x1={X(spk[0].pos.y)} y1={Y(spk[0].pos.x)} x2={X(listener.pos.y)} y2={Y(listener.pos.x)} />
       )}
 
-      {seats.length > 1 && seats.map((s) => <circle class="plan__seat" cx={X(s.y)} cy={Y(s.x)} r="5" />)}
+      {seats.length > 1 && seats.map((s, ki) => <circle key={ki} class="plan__seat" cx={X(s.y)} cy={Y(s.x)} r="5" />)}
 
-      {(p.marks ?? []).map((m) => (
-        <g class={`plan__mark is-${m.kind}`}>
+      {(p.marks ?? []).map((m, ki) => (
+        <g key={ki} class={`plan__mark is-${m.kind}`}>
           <circle cx={X(m.y)} cy={Y(m.x)} r={m.kind === 'probe' ? 6 : 9} />
           {m.label && <text x={X(m.y)} y={Y(m.x) + 4} text-anchor="middle">{m.label}</text>}
         </g>
@@ -358,7 +358,7 @@ export function PlanView(p: PlanProps) {
         const common = { onPointerDown: start, 'data-id': it.id };
         if (it.kind === 'sub') {
           return (
-            <g class={`plan__sub${sel}`} {...common}>
+            <g key={it.id} class={`plan__sub${sel}`} {...common}>
               <circle cx={cx} cy={cy} r="18" class="plan__hit" />
               <rect x={cx - 9} y={cy - 9} width="18" height="18" rx="3" />
               <circle cx={cx} cy={cy} r="5" />
@@ -368,7 +368,7 @@ export function PlanView(p: PlanProps) {
         }
         if (it.kind === 'listener') {
           return (
-            <g class={`plan__listener${sel}`} {...common}>
+            <g key={it.id} class={`plan__listener${sel}`} {...common}>
               <circle cx={cx} cy={cy} r="18" class="plan__hit" />
               <circle cx={cx} cy={cy} r="8" />
               <circle cx={cx} cy={cy} r="2.5" class="plan__dot" />
@@ -377,7 +377,7 @@ export function PlanView(p: PlanProps) {
         }
         const ang = listener ? (Math.atan2(Y(listener.pos.x) - cy, X(listener.pos.y) - cx) * 180) / Math.PI - 90 : 0;
         return (
-          <g class={`plan__spk${sel}`} {...common}>
+          <g key={it.id} class={`plan__spk${sel}`} {...common}>
             <circle cx={cx} cy={cy} r="18" class="plan__hit" />
             <g transform={`translate(${cx} ${cy}) rotate(${ang})`}>
               <rect x="-8" y="-6" width="16" height="12" rx="2" />
@@ -479,8 +479,8 @@ export function PlanKey({ keys, notes }: { keys: KeyId[]; notes?: Partial<Record
     >
       <summary>{S.plan.keyTitle}</summary>
       <ul class="plan-key__list">
-        {keys.map((k) => (
-          <li class="plan-key__item">
+        {keys.map((k, ki) => (
+          <li key={ki} class="plan-key__item">
             <KeyIcon id={k} />
             <span class="small">{notes?.[k] ?? S.plan.key[k]}</span>
           </li>

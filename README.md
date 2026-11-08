@@ -59,7 +59,9 @@
 npm install
 npm test            # юнит-тесты ядра и распознавания
 npm run fixtures    # синтетические сканы в tests/fixtures/out/
-npm run e2e         # сквозные тесты в эмуляции iPhone
+npm run lint        # линтер (oxlint, предупреждения = ошибки)
+npm run e2e         # сквозные тесты в эмуляции iPhone (Chromium)
+npm run e2e:safari  # то же в Safari/WebKit (первый раз: npx playwright install webkit)
 npm run dev         # сервер разработки (добавьте -- --host для проверки с телефона)
 npm run build       # статическая сборка в dist/
 ```

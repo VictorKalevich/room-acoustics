@@ -14,6 +14,9 @@ import { Note, Panel, Segmented } from '../components/Fields';
 import { Term } from '../components/Term';
 import { S } from '../strings';
 import { fmt } from '../format';
+import { MeasureCompare } from '../components/MeasureCompare';
+import { withMeasurement } from '../../state/variant';
+import { makeId } from '../../state/project';
 
 type Tool = 'sweep' | 'clap' | 'rta';
 interface Props { project: Project; onSetup: (s: Setup) => void; onRoom: (r: Room) => void; onGo: (t: any) => void }
@@ -80,6 +83,9 @@ export function MeasureScreen({ project, onSetup, onGo }: Props) {
 function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onSetup: (s: Setup) => void; onGo: (t: any) => void; applyCal: (f: number[], db: number[]) => number[] }) {
   const [playHere, setPlayHere] = useState(false);
   const [takes, setTakes] = useState<SweepResult[]>([]);
+  // сеанс записи: повторное сохранение с добавленными точками уточняет замер; все точки убрали — новый сеанс
+  const session = useRef(makeId());
+  useEffect(() => { if (!takes.length) session.current = makeId(); }, [takes.length]);
   const [state, setState] = useState<'idle' | 'rec' | 'busy'>('idle');
   const [msg, setMsg] = useState<{ t: string; tone: 'warn' | 'good' } | null>(null);
   const mic = useRef<Mic | null>(null);
@@ -137,8 +143,8 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
     if (!avg) return;
     setSavedN(takes.length);
     const f = takes[0].f;
-    const m: Measurement = { name: S.measure.measName(takes.length), importedAt: new Date().toISOString(), f, db: avg, points: takes.length };
-    onSetup({ ...project.current, measurement: m });
+    const m: Measurement = { name: S.measure.measName(takes.length), importedAt: new Date().toISOString(), f, db: avg, points: takes.length, session: session.current };
+    onSetup(withMeasurement(project.current, m));
     setMsg({ t: S.measure.saved, tone: 'good' });
   };
   return (
@@ -189,6 +195,7 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
           </div>
         </>
       )}
+      <MeasureCompare setup={project.current} onSetup={onSetup} />
     </Panel>
   );
 }
@@ -246,7 +253,7 @@ function ClapTool({ project }: { project: Project }) {
             <thead><tr><th>{S.report.freq}</th><th>{S.measure.measured}</th><th>{S.measure.model}</th></tr></thead>
             <tbody>
               {RT_BANDS.map((b, k) => (
-                <tr><td>{b >= 1000 ? `${b / 1000} кГц` : `${b} Гц`}</td><td>{avg[k] != null ? `${fmt(avg[k]!, 2)} с` : '—'}</td><td>{model(b) != null ? `${fmt(model(b)!, 2)} с` : '—'}</td></tr>
+                <tr key={k}><td>{b >= 1000 ? `${b / 1000} кГц` : `${b} Гц`}</td><td>{avg[k] != null ? `${fmt(avg[k]!, 2)} с` : '—'}</td><td>{model(b) != null ? `${fmt(model(b)!, 2)} с` : '—'}</td></tr>
               ))}
             </tbody>
           </table>
@@ -276,6 +283,9 @@ function RtaTool({ project, applyCal }: { project: Project; applyCal: (f: number
   useEffect(() => onTone(setTone), []);
   const mic = useRef<Mic | null>(null);
   const freqs = useMemo(() => logGrid(15, 250, 24), []);
+  // калибровку микрофона могут загрузить, пока анализатор работает: цикл берёт актуальную
+  const calRef = useRef(applyCal);
+  useEffect(() => { calRef.current = applyCal; });
   useEffect(() => {
     if (!on) return;
     let raf = 0, stop = false, last = 0;
@@ -299,7 +309,7 @@ function RtaTool({ project, applyCal }: { project: Project; applyCal: (f: number
               const b = Number.isFinite(buf![k0 + 1]) ? buf![k0 + 1] : a;
               return a * (1 - tt) + b * tt;
             });
-            setCurve(applyCal(freqs, smoothOct(freqs, db, 1 / 12)));
+            setCurve(calRef.current(freqs, smoothOct(freqs, db, 1 / 12)));
           }
           raf = requestAnimationFrame(loop);
         };
@@ -317,7 +327,7 @@ function RtaTool({ project, applyCal }: { project: Project; applyCal: (f: number
       mic.current?.close();
       mic.current = null;
     };
-  }, [on]);
+  }, [on, freqs]);
   useEffect(() => () => mic.current?.close(), []);
   // прогноз модели в точке, где стоит телефон
   const probeSetup = useMemo(() => (here ? { ...current, listener: { x: here.x, y: here.y, z: c.earHeight } } : null), [here, current, c.earHeight]);

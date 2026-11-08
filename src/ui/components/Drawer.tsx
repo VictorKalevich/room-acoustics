@@ -15,9 +15,12 @@ const ICONS: Record<DrawerItem, string> = {
 export function Drawer({ open, current, onClose, onPick }: { open: boolean; current: string; onClose: () => void; onPick: (i: DrawerItem) => void }) {
   const x0 = useRef<number | null>(null);
   const panel = useRef<HTMLElement>(null);
+  // свежий обработчик без перезапуска эффекта (иначе фокус прыгал бы на первый пункт при каждой перерисовке)
+  const close = useRef(onClose);
+  useEffect(() => { close.current = onClose; });
   useEffect(() => {
     if (!open) return;
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current(); };
     addEventListener('keydown', k);
     panel.current?.querySelector<HTMLButtonElement>('.drawer__item')?.focus({ preventScroll: true });
     return () => removeEventListener('keydown', k);
@@ -37,8 +40,8 @@ export function Drawer({ open, current, onClose, onPick }: { open: boolean; curr
           <button type="button" class="sheet__close" aria-label="Закрыть меню" onClick={onClose}>×</button>
         </div>
         <ul class="drawer__list">
-          {ITEMS.map((i) => (
-            <li>
+          {ITEMS.map((i, ki) => (
+            <li key={ki}>
               <button type="button" class={`drawer__item${current === i ? ' is-on' : ''}`} tabIndex={open ? 0 : -1} onClick={() => onPick(i)}>
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[i]} /></svg>
                 <span>

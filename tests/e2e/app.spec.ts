@@ -74,6 +74,12 @@ test('002 US3/US5: настройка сабвуфера и эквалайзер
   await expect(page.getByRole('button', { name: 'Применено' })).toBeVisible();
   await page.getByRole('button', { name: 'Рассчитать фильтры' }).click();
   await expect(page.locator('#eq-apo')).toHaveValue(/Filter 1: ON PK/);
+  // экспорт в CamillaDSP: микшер на сабвуфер, эквалайзер, настройки сабвуфера
+  await page.getByRole('radio', { name: 'Camilla' }).click();
+  const yml = page.locator('#eq-camilla');
+  await expect(yml).toHaveValue(/mixers:\n {2}room_acoustics_2to3:/);
+  await expect(yml).toHaveValue(/type: Peaking/);
+  await expect(yml).toHaveValue(/pipeline:\n {2}- type: Mixer/);
 });
 
 test('002 US8: импорт замера REW', async ({ page }) => {
@@ -226,4 +232,56 @@ test('UX: поля выбора не мельче 16 px (иначе Safari ув�
   const sizes = await page.locator('select').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
   expect(sizes.length).toBeGreaterThan(3);
   for (const s of sizes) expect(s).toBeGreaterThanOrEqual(16);
+});
+
+test('Сообщить о проблеме: ошибка попадает в журнал, отчёт сохраняется с версией, ошибками и проектом', async ({ page }) => {
+  await page.goto('/#room');
+  // неподдерживаемый файл скана — запись в журнале с именем файла
+  await page.setInputFiles('#scan-file', { name: 'scan.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+  await expect(page.getByText(/Неизвестный формат/)).toBeVisible();
+  // необработанное исключение страницы
+  await page.evaluate(() => { setTimeout(() => { throw new Error('проверка журнала'); }); });
+  await page.waitForTimeout(100);
+  await page.getByRole('button', { name: 'Открыть меню' }).click();
+  await page.getByRole('button', { name: /О приложении/ }).click();
+  await expect(page.getByTestId('errlog-count')).toHaveText('Записано ошибок: 2.');
+  await page.getByText('Последние ошибки', { exact: true }).click();
+  await expect(page.locator('.errlog__list li').first()).toContainText('проверка журнала');
+  await expect(page.locator('.errlog__list li').nth(1)).toContainText('scan.txt');
+  await page.getByLabel('Что случилось (необязательно)').fill('Странный бас');
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Сохранить отчёт' }).click();
+  const file = await dl;
+  expect(file.suggestedFilename()).toMatch(/^room-acoustics-report-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
+  const rep = JSON.parse(await (await import('node:fs/promises')).readFile((await file.path())!, 'utf8'));
+  expect(rep.kind).toBe('room-acoustics-report');
+  expect(rep.note).toBe('Странный бас');
+  expect(rep.errors.length).toBe(2);
+  expect(rep.device.userAgent).toContain('iPhone');
+  expect(rep.project.project.room.depth).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Очистить журнал' }).click();
+  await expect(page.getByTestId('errlog-count')).toHaveText('Ошибок пока не записано.');
+});
+
+test('До и после: второй замер сравнивается с первым, история переживает перезапуск', async ({ page }) => {
+  const rew = (peak: number) => Buffer.from(['* REW export', ...Array.from({ length: 300 }, (_, i) => {
+    const f = 10 * Math.pow(2, i / 48);
+    const db = 80 + peak * Math.exp(-0.5 * (Math.log2(f / 45) / 0.08) ** 2) - 10 * Math.exp(-0.5 * (Math.log2(f / 90) / 0.06) ** 2);
+    return `${f.toFixed(3)} ${db.toFixed(2)} 0`;
+  })].join('\n'));
+  await page.goto('/#tuning');
+  await page.setInputFiles('#rew-file', { name: 'do.txt', mimeType: 'text/plain', buffer: rew(12) });
+  await expect(page.getByText('do.txt')).toBeVisible();
+  await expect(page.getByTestId('measure-compare')).toHaveCount(0);
+  await page.setInputFiles('#rew-file', { name: 'posle.txt', mimeType: 'text/plain', buffer: rew(3) });
+  const cmp = page.getByTestId('measure-compare');
+  await expect(cmp).toBeVisible();
+  await expect(cmp).toContainText('Сравнение с прошлым замером: do.txt');
+  await expect(cmp).toContainText(/Стало ровнее на \d+,\d дБ/);
+  await expect(cmp.locator('tbody tr')).toHaveCount(3);
+  await page.waitForTimeout(800); // сохранение в IndexedDB
+  await page.reload();
+  await expect(page.getByTestId('measure-compare')).toContainText(/Стало ровнее/);
+  await page.getByRole('button', { name: 'Забыть прошлые замеры' }).click();
+  await expect(page.getByTestId('measure-compare')).toHaveCount(0);
 });

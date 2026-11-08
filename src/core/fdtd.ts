@@ -7,6 +7,7 @@ import { FURNISHING, alphaAt, getMaterial } from './materials';
 import { surfaceAreas } from './reverb';
 import { treatmentKey } from './treatments';
 import { cornerLegs, patchContains, roomPatches, type Patch } from './patches';
+import { branchCoeffs, fitAdmittance, type AdmittanceFit, type Branch } from './admittance';
 
 export const LAMBDA = 0.577; // число Куранта, чуть меньше 1/√3
 const PPW = 10; // узлов на длину волны верхней частоты
@@ -33,14 +34,63 @@ export interface WaveGrid {
   cd: Float32Array;
   /** 0 — комната, 1… — смежное помещение (индекс + 1) */
   region: Uint8Array;
+  /** Быстрый счёт на плотной сетке ячеек: внутренние узлы — отрезками с постоянными смещениями. */
+  fast: FastKernel;
   volumes: number[];
   /** Оценка самого долгого затухания (осевые моды основной комнаты), с — для длительности расчёта. */
   t60: number;
 }
 
 /**
- * Границы в схеме частотно-независимые, поэтому α берётся средним по полосе, где у комнаты моды и
+ * Раскладка для быстрого шага. Давление хранится по ячейкам (плотно, nx·ny·nz + 1; последняя — всегда ноль).
+ * Внутренние узлы (все шесть соседей — воздух и связаны) имеют одинаковые коэффициенты, а соседи у них —
+ * на постоянных смещениях ±1, ±nx, ±nx·ny: их считаем отрезками подряд, без таблиц соседей и коэффициентов.
+ * Граничные узлы — списком со своими соседями (или нулевой ячейкой) и коэффициентами.
+ * Результат совпадает с исходной схемой бит в бит (те же float32-коэффициенты и порядок сложения).
+ */
+export interface FastKernel {
+  size: number;
+  sx: number;
+  sxy: number;
+  /** пары [начальная ячейка, длина] отрезков внутренних узлов */
+  runs: Int32Array;
+  A: number;
+  L: number;
+  bCell: Int32Array;
+  bNbr: Int32Array;
+  bca: Float32Array;
+  bcb: Float32Array;
+  bcd: Float32Array;
+  /** Частотно-зависимые границы: ветви проводимости граничных узлов (нет — граница с постоянной β). */
+  fd?: FdBranches;
+}
+
+/** Ветви граничных узлов: для узла b — индексы off[b]…off[b+1]. */
+export interface FdBranches {
+  k: number;
+  off: Int32Array;
+  /** для каждой ветви: номер граничного узла и его ячейка */
+  node: Int32Array;
+  cell: Int32Array;
+  ia: Float64Array;
+  b: Float64Array;
+  iC: Float64Array;
+  cw: Float64Array;
+  cpsi: Float64Array;
+}
+
+/**
+ * Модель границ волновой схемы:
+ *  'fi' — постоянная β на грань по α, усреднённому в полосе 40–160 Гц (как раньше);
+ *  'fd' — проводимость β(f) из ветвей RLC, подобранная по α(f) материала на каждой частоте.
+ */
+export type BoundaryModel = 'fi' | 'fd';
+export const BOUNDARY_DEFAULT: BoundaryModel = 'fd';
+
+/**
+ * Для модели границ 'fi' (постоянная β) α берётся средним по полосе, где у комнаты моды и
  * где оценивается бас: 40, 63, 100 и 160 Гц (ниже 63 Гц таблица продолжается значением на 63 Гц).
+ * Та же величина задаёт оценку длительности расчёта и в модели 'fd'.
  */
 export function lfAlpha(values: readonly number[]): number {
   return (alphaAt(values, 40) + alphaAt(values, 63) + alphaAt(values, 100) + alphaAt(values, 160)) / 4;
@@ -81,8 +131,8 @@ export function betaFromAlpha(alpha: number): number {
 const BETA_OPEN = 1;
 
 /** Ключ геометрии/материалов для кэша. */
-export function geometryKey(room: Room, fMax: number): string {
-  return JSON.stringify([
+export function geometryKey(room: Room, fMax: number, boundary: BoundaryModel = BOUNDARY_DEFAULT): string {
+  return JSON.stringify([boundary,
     room.depth, room.width, room.height, room.temperatureC, room.materials, room.furnishing,
     room.openings, room.extensions, room.calibration, Math.round(fMax), treatmentKey(room), room.slope ?? null,
     (room.features ?? []).map((f) => [f.kind, f.wall, f.a0, f.a1, f.bottom, f.top]),
@@ -108,7 +158,8 @@ const inside = (b: Box, x: number, y: number, z: number) => x > b.x0 && x < b.x1
 // направления: 0 −x, 1 +x, 2 −y, 3 +y, 4 −z, 5 +z
 const ROOM_FACE: (WallId | 'floor' | 'ceiling')[] = ['front', 'back', 'left', 'right', 'floor', 'ceiling'];
 
-export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): WaveGrid {
+export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000, opts: { boundary?: BoundaryModel } = {}): WaveGrid {
+  const boundary = opts.boundary ?? BOUNDARY_DEFAULT;
   const c = speedOfSound(room.temperatureC);
   let fMax = fMaxWanted;
   const exts = room.extensions ?? [];
@@ -191,10 +242,44 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
   // координаты точки на поверхности: для стен — вдоль стены и высота, для потолка/пола — x и y
   const surfUV = (sf: SurfaceId, x: number, y: number, z: number): [number, number] =>
     sf === 'front' || sf === 'back' ? [y, z] : sf === 'left' || sf === 'right' ? [x, z] : [x, y];
+  // частотно-зависимые границы: α по октавам на каждой грани (та же логика, что faceBeta, но по полосам)
+  const fd = boundary === 'fd';
+  const dt = (LAMBDA * h) / c;
+  const furnVec = FURNISHING[room.furnishing].map((v) => (v * S.floor) / sTotal);
+  const sc = (a: number[]) => a.map((v) => Math.max(0, v) * scale);
+  const matVec = (sf: SurfaceId) => getMaterial(room.materials[sf]).alpha as readonly number[];
+  const roomVec: Record<string, number[]> = {};
+  for (const sf of ROOM_FACE) roomVec[sf] = sc(matVec(sf).map((v, i) => v + furnVec[i]));
+  const plasterVec = sc([...getMaterial('plaster').alpha]);
+  const faceVec = (sf: SurfaceId, u: number, v: number): number[] | null => {
+    const base = matVec(sf);
+    let alpha = base.map((b, i) => b + furnVec[i]);
+    let replaced = false;
+    for (const p of patches) {
+      if (!patchContains(p, sf, u, v)) continue;
+      if (!p.alpha) return null;
+      const ap = p.alpha as readonly number[];
+      if (p.overlay) alpha = alpha.map((x, i) => x + Math.max(0, ap[i] - base[i]));
+      else if (!replaced) { alpha = alpha.map((x, i) => x + ap[i] - base[i]); replaced = true; }
+    }
+    return sc(alpha);
+  };
+  const fits = new Map<string, AdmittanceFit>();
+  const warp = (f: number) => Math.tan(2 * Math.PI * f * dt) / (2 * Math.PI * dt);
+  const fitOf = (vec: number[]): AdmittanceFit => {
+    const key = vec.map((v) => v.toFixed(5)).join(',');
+    let fit = fits.get(key);
+    if (!fit) { fit = fitAdmittance((f) => alphaAt(vec, f), betaFromAlpha, 20, Math.min(300, 1.3 * fMax), warp); fits.set(key, fit); }
+    return fit;
+  };
+  const faces: (number[] | null)[] = [];
+  const fdB = { bca: [] as number[], bcb: [] as number[], bcd: [] as number[], off: [0], ia: [] as number[], b: [] as number[], iC: [] as number[], cw: [] as number[], cpsi: [] as number[] };
+
   // Σ β·dS по поверхностям основной комнаты — для оценки затухания осевых мод
   const betaArea: Record<string, number> = { front: 0, back: 0, left: 0, right: 0, floor: 0, ceiling: 0 };
 
   const nbr = new Int32Array(6 * N).fill(N);
+  const interior = new Uint8Array(N);
   const ca = new Float32Array(N);
   const cb = new Float32Array(N);
   const cd = new Float32Array(N);
@@ -212,6 +297,7 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
     let K = 0;
     let betaSum = 0;
     let blocked = 0;
+    faces.length = 0;
     for (let d = 0; d < 6; d++) {
       const ii = i + di[d], jj = j + dj[d], kk = k + dk[d];
       let m = -1;
@@ -244,6 +330,7 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
         const [u, v] = surfUV(sf, (x + nxp) / 2, (y + nyp) / 2, (z + nzp) / 2);
         beta = underSlope ? betaRoom.ceiling : faceBeta(sf, u, v);
         betaArea[sf] += beta * h * h;
+        if (fd) faces.push(underSlope ? roomVec.ceiling : faceVec(sf, u, v));
       } else {
         const e = exts[r - 1];
         // направление к стене комнаты, от неё, вдоль стены
@@ -258,14 +345,52 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
         else if (d === startDir) beta = e.openStart ? BETA_OPEN : plasterBeta;
         else if (d === endDir) beta = e.openEnd ? BETA_OPEN : plasterBeta;
         else beta = plasterBeta;
+        if (fd) {
+          const open = (d === far && e.openFar) || (d === startDir && e.openStart) || (d === endDir && e.openEnd);
+          faces.push(d === 4 ? roomVec.floor : d === 5 ? roomVec.ceiling : d === toRoom ? roomVec[e.wall] : open ? null : plasterVec);
+        }
       }
       betaSum += beta;
     }
     const beta = blocked ? betaSum / blocked : 0;
+    if (K === 6) interior[n] = 1;
     const cc = (LAMBDA * beta * (6 - K)) / 2;
     ca[n] = (2 - K * l2) / (1 + cc);
     cb[n] = l2 / (1 + cc);
     cd[n] = (1 - cc) / (1 + cc);
+    if (fd && K < 6) {
+      // одинаковые грани узла — одна ветвь с проводимостью × число граней
+      let sInf = 0;
+      const groups = new Map<number[], number>();
+      for (const v of faces) {
+        if (!v) { sInf += BETA_OPEN; continue; }
+        groups.set(v, (groups.get(v) ?? 0) + 1);
+      }
+      // у всех подборов одни и те же центры и добротность: ветви с одним центром на разных гранях
+      // складываются в одну (параллельные RLC с общим резонансом = один RLC с суммой проводимостей)
+      const byCenter = new Map<number, Branch>();
+      for (const [v, cnt] of groups) {
+        const fit = fitOf(v);
+        sInf += fit.binf * cnt;
+        for (const br of fit.branches) {
+          const prev = byCenter.get(br.f0);
+          byCenter.set(br.f0, prev ? { ...prev, g: prev.g + br.g * cnt } : { ...br, g: br.g * cnt });
+        }
+      }
+      const brs = [...byCenter.values()].map((br) => branchCoeffs(br, dt));
+      let s4a = 0;
+      for (const q of brs) s4a += 1 / (4 * q.a);
+      const D = 1 + (LAMBDA * sInf) / 2 + LAMBDA * s4a;
+      fdB.bca.push((2 - K * l2) / D);
+      fdB.bcb.push(l2 / D);
+      fdB.bcd.push((1 - (LAMBDA * sInf) / 2 + LAMBDA * s4a) / D);
+      for (const q of brs) {
+        fdB.ia.push(1 / q.a); fdB.b.push(q.b); fdB.iC.push(q.iC);
+        fdB.cw.push((LAMBDA * (q.b / (2 * q.a) + 0.5)) / D);
+        fdB.cpsi.push((LAMBDA * q.iC) / (2 * q.a) / D);
+      }
+      fdB.off.push(fdB.ia.length);
+    }
   }
 
   // затухание осевых мод основной комнаты: δ = (c/2V)·(2·ΣβS⊥ + ΣβS∥) — самое долгое задаёт длительность расчёта
@@ -275,13 +400,124 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
   const axial = [B.front + B.back, B.left + B.right, B.floor + B.ceiling].map((par) => (c / (2 * V0)) * (all + par));
   const t60 = 6.91 / Math.max(1e-3, Math.min(...axial));
 
+  const fast = buildFast(N, total, nx, ny, nodeCell, nbr, interior, ca, cb, cd, l2);
+  if (fd) {
+    fast.bca = Float32Array.from(fdB.bca);
+    fast.bcb = Float32Array.from(fdB.bcb);
+    fast.bcd = Float32Array.from(fdB.bcd);
+    const off = Int32Array.from(fdB.off);
+    const node = new Int32Array(fdB.ia.length), brCell = new Int32Array(fdB.ia.length);
+    for (let b = 0; b < fast.bCell.length; b++) for (let m = off[b]; m < off[b + 1]; m++) { node[m] = b; brCell[m] = fast.bCell[b]; }
+    fast.fd = {
+      k: dt, off, node, cell: brCell, ia: Float64Array.from(fdB.ia), b: Float64Array.from(fdB.b),
+      iC: Float64Array.from(fdB.iC), cw: Float64Array.from(fdB.cw), cpsi: Float64Array.from(fdB.cpsi),
+    };
+  }
+
   return {
-    key: geometryKey(room, fMaxWanted),
-    h, dt: (LAMBDA * h) / c, c, fMax, nx, ny, nz, x0: cx(0), y0: cy(0), z0: cz(0), N,
-    cellNode, nodeCell, nbr, ca, cb, cd, region,
+    key: geometryKey(room, fMaxWanted, boundary),
+    h, dt, c, fMax, nx, ny, nz, x0: cx(0), y0: cy(0), z0: cz(0), N,
+    cellNode, nodeCell, nbr, ca, cb, cd, region, fast,
     volumes: boxes.map((b) => (b.x1 - b.x0) * (b.y1 - b.y0) * (b.z1 - b.z0)),
     t60,
   };
+}
+
+function buildFast(N: number, total: number, nx: number, ny: number, nodeCell: Int32Array, nbr: Int32Array, interior: Uint8Array, ca: Float32Array, cb: Float32Array, cd: Float32Array, l2: number): FastKernel {
+  const runs: number[] = [];
+  let nb = 0;
+  let last = -2;
+  for (let n = 0; n < N; n++) {
+    if (!interior[n]) { nb++; continue; }
+    const c = nodeCell[n];
+    if (c === last + 1 && runs.length) runs[runs.length - 1]++;
+    else runs.push(c, 1);
+    last = c;
+  }
+  const ZERO = total;
+  const bCell = new Int32Array(nb);
+  const bNbr = new Int32Array(6 * nb);
+  const bca = new Float32Array(nb), bcb = new Float32Array(nb), bcd = new Float32Array(nb);
+  let b = 0;
+  for (let n = 0; n < N; n++) {
+    if (interior[n]) continue;
+    bCell[b] = nodeCell[n];
+    for (let d = 0; d < 6; d++) {
+      const m = nbr[6 * n + d];
+      bNbr[6 * b + d] = m === N ? ZERO : nodeCell[m];
+    }
+    bca[b] = ca[n]; bcb[b] = cb[n]; bcd[b] = cd[n];
+    b++;
+  }
+  // те же выражения, что для узла с K = 6 и β = 0 (cc = 0), округлённые до float32 как в массивах ca/cb
+  return { size: total + 1, sx: nx, sxy: nx * ny, runs: Int32Array.from(runs), A: Math.fround((2 - 6 * l2) / (1 + 0)), L: Math.fround(l2 / (1 + 0)), bCell, bNbr, bca, bcb, bcd };
+}
+
+/**
+ * Состояние ветвей границ на время одного расчёта. Ветвь обновляется «через шаг» (w⁺ из w⁻), поэтому
+ * чётные и нечётные шаги живут в разных массивах и обновляются на месте — без перекладывания.
+ */
+export interface FdState { w: [Float64Array, Float64Array]; psi: [Float64Array, Float64Array]; parity: number; acc: Float64Array }
+
+function fdState(k: FastKernel): FdState | undefined {
+  if (!k.fd) return undefined;
+  const n = k.fd.ia.length;
+  return { w: [new Float64Array(n), new Float64Array(n)], psi: [new Float64Array(n), new Float64Array(n)], parity: 0, acc: new Float64Array(k.bCell.length) };
+}
+
+/** Один шаг схемы на плотной сетке: p2 ← f(p1, p0). */
+function stepFast(k: FastKernel, p0: Float32Array, p1: Float32Array, p2: Float32Array, st?: FdState) {
+  const { runs, sx, sxy, A, L, bCell, bNbr, bca, bcb, bcd } = k;
+  if (k.fd && st) { stepFd(k, k.fd, st, p0, p1, p2); return; }
+  for (let r = 0; r < runs.length; r += 2) {
+    const end = runs[r] + runs[r + 1];
+    for (let c = runs[r]; c < end; c++) {
+      const sum = p1[c - 1] + p1[c + 1] + p1[c - sx] + p1[c + sx] + p1[c - sxy] + p1[c + sxy];
+      p2[c] = A * p1[c] + L * sum - p0[c];
+    }
+  }
+  for (let b = 0; b < bCell.length; b++) {
+    const c = bCell[b];
+    const o = 6 * b;
+    const sum = p1[bNbr[o]] + p1[bNbr[o + 1]] + p1[bNbr[o + 2]] + p1[bNbr[o + 3]] + p1[bNbr[o + 4]] + p1[bNbr[o + 5]];
+    p2[c] = bca[b] * p1[c] + bcb[b] * sum - bcd[b] * p0[c];
+  }
+}
+
+/** Шаг с частотно-зависимыми границами: внутренние узлы — как обычно, граничные — с ветвями проводимости. */
+function stepFd(k: FastKernel, fd: FdBranches, st: FdState, p0: Float32Array, p1: Float32Array, p2: Float32Array) {
+  const { runs, sx, sxy, A, L, bCell, bNbr, bca, bcb, bcd } = k;
+  for (let r = 0; r < runs.length; r += 2) {
+    const end = runs[r] + runs[r + 1];
+    for (let c = runs[r]; c < end; c++) {
+      const sum = p1[c - 1] + p1[c + 1] + p1[c - sx] + p1[c + sx] + p1[c - sxy] + p1[c + sxy];
+      p2[c] = A * p1[c] + L * sum - p0[c];
+    }
+  }
+  const { ia, b: bb, iC, cw, cpsi, node, cell } = fd;
+  const kk = fd.k;
+  const nBr = ia.length;
+  // w⁻, ψ⁻ (шаг n−1) лежат в массивах той же чётности, что и новые w⁺, ψ⁺ (шаг n+1)
+  const w = st.w[st.parity], ps = st.psi[st.parity];
+  st.parity ^= 1;
+  // длинные плоские циклы по ветвям быстрее коротких вложенных по узлам
+  const acc = st.acc;
+  acc.fill(0);
+  for (let m = 0; m < nBr; m++) acc[node[m]] += cw[m] * w[m] + cpsi[m] * ps[m];
+  for (let b = 0; b < bCell.length; b++) {
+    const c = bCell[b];
+    const o = 6 * b;
+    const sum = p1[bNbr[o]] + p1[bNbr[o + 1]] + p1[bNbr[o + 2]] + p1[bNbr[o + 3]] + p1[bNbr[o + 4]] + p1[bNbr[o + 5]];
+    p2[c] = bca[b] * p1[c] + bcb[b] * sum - bcd[b] * p0[c] + acc[b];
+  }
+  for (let m = 0; m < nBr; m++) {
+    const c = cell[m];
+    const half = (p2[c] + p0[c]) / 2;
+    const wm = w[m];
+    const wn = (half - bb[m] * wm - iC[m] * ps[m]) * ia[m];
+    ps[m] += kk * (wn + wm);
+    w[m] = wn;
+  }
 }
 
 /**
@@ -357,26 +593,23 @@ export function simulate(g: WaveGrid, srcPos: Vec3, opts: { layers?: number[]; e
   const T = Math.floor(steps / decim);
   const series = new Float32Array(rec.length * T);
   const src = new Float32Array(T);
-  const s = nearestNode(g, srcPos);
-  const N = g.N;
-  let p0 = new Float32Array(N + 1);
-  let p1 = new Float32Array(N + 1);
-  let p2 = new Float32Array(N + 1);
-  const { nbr, ca, cb, cd } = g;
+  const k = g.fast;
+  const s = g.nodeCell[nearestNode(g, srcPos)];
+  let p0 = new Float32Array(k.size);
+  let p1 = new Float32Array(k.size);
+  let p2 = new Float32Array(k.size);
   const R = rec.length;
+  const recCell = rec.map((n) => g.nodeCell[n]);
+  const st = fdState(k);
   let t = 0;
   for (let step = 0; step < steps; step++) {
-    for (let n = 0; n < N; n++) {
-      const o = 6 * n;
-      const sum = p1[nbr[o]] + p1[nbr[o + 1]] + p1[nbr[o + 2]] + p1[nbr[o + 3]] + p1[nbr[o + 4]] + p1[nbr[o + 5]];
-      p2[n] = ca[n] * p1[n] + cb[n] * sum - cd[n] * p0[n];
-    }
+    stepFast(k, p0, p1, p2, st);
     const sv = sourceSignal(step * g.dt, g.fMax);
     p2[s] += sv;
     const tmp = p0; p0 = p1; p1 = p2; p2 = tmp;
     if (step % decim === 0 && t < T) {
       src[t] = sv;
-      for (let r = 0; r < R; r++) series[r * T + t] = p1[rec[r]];
+      for (let r = 0; r < R; r++) series[r * T + t] = p1[recCell[r]];
       t++;
     }
     if (opts.onProgress && step % 500 === 0) opts.onProgress(step / steps);
@@ -384,9 +617,14 @@ export function simulate(g: WaveGrid, srcPos: Vec3, opts: { layers?: number[]; e
   return { grid: g, rec, recIndex, layers, T, dtd: g.dt * decim, series, src };
 }
 
+/** Сколько прореженных отсчётов копится перед добавлением в ДПФ (одно обновление сумм вместо восьми). */
+const DFT_BLOCK = 8;
+
 /**
  * Поле во всех узлах на заданных частотах: ДПФ накапливается во время счёта (на прореженных шагах,
  * с полуокном Ханна на последних 20 %), без хранения временных рядов. Результат — H = P/S, [узел·nF + f].
+ * Отсчёты копятся блоками по 8: суммы по блоку считаются в double и добавляются к накопителям разом —
+ * вдвое меньше обращений к памяти и точнее, чем прибавлять каждый отсчёт к float32.
  */
 export function simulateField(
   g: WaveGrid,
@@ -402,24 +640,49 @@ export function simulateField(
   const N = g.N;
   const tail = Math.floor(T * 0.2);
   const dtd = g.dt * decim;
-  const cosT = new Float32Array(nF);
-  const sinT = new Float32Array(nF);
+  const B = DFT_BLOCK;
+  const cB = new Float64Array(nF * B);
+  const sB = new Float64Array(nF * B);
+  const buf = new Float32Array(N * B);
   const aRe = new Float32Array(N * nF);
   const aIm = new Float32Array(N * nF);
   const sRe = new Float64Array(nF);
   const sIm = new Float64Array(nF);
-  const s = nearestNode(g, srcPos);
-  let p0 = new Float32Array(N + 1);
-  let p1 = new Float32Array(N + 1);
-  let p2 = new Float32Array(N + 1);
-  const { nbr, ca, cb, cd } = g;
-  let t = 0;
-  for (let step = 0; step < steps; step++) {
+  const k = g.fast;
+  const cell = g.nodeCell;
+  const s = cell[nearestNode(g, srcPos)];
+  let p0 = new Float32Array(k.size);
+  let p1 = new Float32Array(k.size);
+  let p2 = new Float32Array(k.size);
+  // добавляет накопленные J отсчётов блока к суммам ДПФ
+  const flush = (J: number) => {
     for (let n = 0; n < N; n++) {
-      const o = 6 * n;
-      const sum = p1[nbr[o]] + p1[nbr[o + 1]] + p1[nbr[o + 2]] + p1[nbr[o + 3]] + p1[nbr[o + 4]] + p1[nbr[o + 5]];
-      p2[n] = ca[n] * p1[n] + cb[n] * sum - cd[n] * p0[n];
+      const o = n * B;
+      const a = n * nF;
+      if (J === B) {
+        const v0 = buf[o], v1 = buf[o + 1], v2 = buf[o + 2], v3 = buf[o + 3], v4 = buf[o + 4], v5 = buf[o + 5], v6 = buf[o + 6], v7 = buf[o + 7];
+        if (v0 === 0 && v1 === 0 && v2 === 0 && v3 === 0 && v4 === 0 && v5 === 0 && v6 === 0 && v7 === 0) continue;
+        for (let f = 0; f < nF; f++) {
+          const q = f * B;
+          aRe[a + f] += v0 * cB[q] + v1 * cB[q + 1] + v2 * cB[q + 2] + v3 * cB[q + 3] + v4 * cB[q + 4] + v5 * cB[q + 5] + v6 * cB[q + 6] + v7 * cB[q + 7];
+          aIm[a + f] += v0 * sB[q] + v1 * sB[q + 1] + v2 * sB[q + 2] + v3 * sB[q + 3] + v4 * sB[q + 4] + v5 * sB[q + 5] + v6 * sB[q + 6] + v7 * sB[q + 7];
+        }
+      } else {
+        for (let f = 0; f < nF; f++) {
+          const q = f * B;
+          let re = 0, im = 0;
+          for (let j = 0; j < J; j++) { re += buf[o + j] * cB[q + j]; im += buf[o + j] * sB[q + j]; }
+          aRe[a + f] += re;
+          aIm[a + f] += im;
+        }
+      }
     }
+  };
+  const st = fdState(k);
+  let t = 0;
+  let j = 0;
+  for (let step = 0; step < steps; step++) {
+    stepFast(k, p0, p1, p2, st);
     const sv = sourceSignal(step * g.dt, g.fMax);
     p2[s] += sv;
     const tmp = p0; p0 = p1; p1 = p2; p2 = tmp;
@@ -427,24 +690,20 @@ export function simulateField(
       const win = t >= T - tail ? 0.5 * (1 + Math.cos((Math.PI * (t - (T - tail))) / tail)) : 1;
       for (let f = 0; f < nF; f++) {
         const w = 2 * Math.PI * freqs[f] * dtd * t;
-        cosT[f] = Math.cos(w) * win;
-        sinT[f] = -Math.sin(w) * win;
-        sRe[f] += sv * Math.cos(w);
-        sIm[f] -= sv * Math.sin(w);
+        const cw = Math.cos(w), sw = Math.sin(w);
+        cB[f * B + j] = cw * win;
+        sB[f * B + j] = -sw * win;
+        sRe[f] += sv * cw;
+        sIm[f] -= sv * sw;
       }
-      for (let n = 0; n < N; n++) {
-        const v = p1[n];
-        if (v === 0) continue;
-        const o = n * nF;
-        for (let f = 0; f < nF; f++) {
-          aRe[o + f] += v * cosT[f];
-          aIm[o + f] += v * sinT[f];
-        }
-      }
+      for (let n = 0; n < N; n++) buf[n * B + j] = p1[cell[n]];
+      j++;
       t++;
+      if (j === B) { flush(B); j = 0; }
     }
     if (opts.onProgress && step % 500 === 0) opts.onProgress(step / steps);
   }
+  if (j > 0) flush(j);
   // H = A / S
   for (let f = 0; f < nF; f++) {
     const d = sRe[f] * sRe[f] + sIm[f] * sIm[f] || 1e-30;

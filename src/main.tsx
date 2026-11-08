@@ -8,7 +8,9 @@ import '@fontsource/golos-text/latin-600.css';
 import './styles.css';
 import { App } from './ui/App';
 import { startUpdates } from './ui/updates';
+import { installErrorLog } from './state/errlog';
 
+installErrorLog();
 render(<App />, document.getElementById('app')!);
 
 // Офлайн-режим и автообновление: service worker регистрируется только в собранной версии по HTTPS

@@ -10,11 +10,20 @@ export default defineConfig({
     reuseExistingServer: true,
     timeout: 180_000,
   },
+  // на сервере GitHub — повтор упавшего теста и отчёт с видео/трассой только для упавших
+  retries: process.env.CI ? 1 : 0,
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   projects: [
     {
       name: 'iphone',
-      // Эмуляция iPhone (WebKit-движок недоступен в CI-контейнере, используется Chromium)
-      use: { ...devices['iPhone 15 Pro'], browserName: 'chromium' },
+      // Эмуляция iPhone в Chromium (работает везде, в том числе в контейнере и на сервере GitHub)
+      use: { ...devices['iPhone 15 Pro'], browserName: 'chromium', trace: 'retain-on-failure' },
+    },
+    {
+      name: 'iphone-safari',
+      // Тот же iPhone на движке Safari (WebKit): npm run e2e:safari на компьютере.
+      // Первый раз: npx playwright install webkit
+      use: { ...devices['iPhone 15 Pro'], trace: 'retain-on-failure' },
     },
   ],
 });

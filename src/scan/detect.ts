@@ -57,6 +57,10 @@ function triangles(t: Float32Array): Tri {
   const a = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     const o = i * 9;
+    // треугольник с NaN/бесконечностью не участвует ни в чём (площадь 0, центр NaN — сравнения его пропускают)
+    let finite = true;
+    for (let k = 0; k < 9; k++) if (!Number.isFinite(t[o + k])) { finite = false; break; }
+    if (!finite) { c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = NaN; continue; }
     const ux = t[o + 3] - t[o], uy = t[o + 4] - t[o + 1], uz = t[o + 5] - t[o + 2];
     const vx = t[o + 6] - t[o], vy = t[o + 7] - t[o + 1], vz = t[o + 8] - t[o + 2];
     const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
@@ -78,8 +82,14 @@ interface Hist {
   w: Float64Array;
 }
 
+/** Больше — значит габарит скана нереален (выбросы или неверные единицы); не тратим гигабайты памяти. */
+const MAX_BINS = 4_000_000;
+
 function makeHist(lo: number, hi: number, bin: number): Hist {
   const nb = Math.max(1, Math.ceil((hi - lo) / bin) + 1);
+  if (!Number.isFinite(nb) || nb > MAX_BINS) {
+    throw new DetectError('Размеры скана нереальны (десятки километров): в файле посторонние точки или неверные единицы. Обрежьте скан и экспортируйте заново.');
+  }
   return { lo, bin, w: new Float64Array(nb) };
 }
 

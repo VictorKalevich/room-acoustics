@@ -178,3 +178,73 @@ export function calibrate(room: Room, sources: SourceSpec[], c: Constraints, set
   }
   return { dampingScale: Math.round(bestK * 1000) / 1000, leakage: best.leakage, rmsBefore, rmsAfter: best.rms };
 }
+
+// ---------- До и после: сравнение двух замеров ----------
+
+export interface TakeStats {
+  /** Неровность: СКО отклонения от цели после выравнивания уровня, дБ. */
+  rms: number;
+  /** Самый сильный пик над целью. */
+  peak: { f: number; db: number };
+  /** Самый глубокий провал под целью. */
+  dip: { f: number; db: number };
+}
+
+export interface TakesComparison {
+  f: number[];
+  /** Сглаженные 1/12 октавы кривые, выровненные по среднему уровню в полосе (0 дБ — средний уровень). */
+  before: number[];
+  after: number[];
+  statsBefore: TakeStats;
+  statsAfter: TakeStats;
+  fLo: number;
+  fHi: number;
+}
+
+function takeStats(f: number[], dev: number[]): TakeStats {
+  let pk = 0, dp = 0;
+  for (let i = 1; i < dev.length; i++) {
+    if (dev[i] > dev[pk]) pk = i;
+    if (dev[i] < dev[dp]) dp = i;
+  }
+  return { rms: flatness(dev), peak: { f: f[pk], db: dev[pk] }, dip: { f: f[dp], db: dev[dp] } };
+}
+
+function flatness(dev: number[]): number {
+  const n = dev.length;
+  if (!n) return 0;
+  const mean = dev.reduce((a, b) => a + b, 0) / n;
+  return Math.sqrt(dev.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+}
+
+function smooth12(f: number[], db: number[]): number[] {
+  const half = Math.pow(2, 1 / 24);
+  return f.map((fc) => {
+    let s = 0, c = 0;
+    for (let i = 0; i < f.length; i++) if (f[i] >= fc / half && f[i] <= fc * half) { s += Math.pow(10, db[i] / 10); c++; }
+    return 10 * Math.log10(s / c);
+  });
+}
+
+/**
+ * Сравнение двух замеров одной точки «до» и «после» (переставили колонки, поставили ловушки, включили EQ).
+ * Уровни выравниваются по среднему в полосе: громкость и усиление микрофона между замерами могли отличаться.
+ * Цель — плоская или заданная (например, «домашняя» кривая модели).
+ */
+export function compareTakes(before: Measurement, after: Measurement, o: { fLo?: number; fHi?: number; target?: (f: number) => number } = {}): TakesComparison {
+  const fLo = Math.max(o.fLo ?? 20, before.f[0], after.f[0]);
+  const fHi = Math.min(o.fHi ?? 200, before.f[before.f.length - 1], after.f[after.f.length - 1]);
+  if (!(fHi > fLo * 1.5)) throw new MeasureError('У замеров слишком мало общих частот для сравнения.');
+  const f = logFreqs(fLo, fHi, 48);
+  const tgt = f.map((x) => o.target?.(x) ?? 0);
+  const tMean = tgt.reduce((a, b) => a + b, 0) / tgt.length;
+  const prep = (m: Measurement) => {
+    const raw = measurementAt(m, f).map((v) => v ?? NaN);
+    const s = smooth12(f, raw);
+    const mean = s.reduce((a, b) => a + b, 0) / s.length;
+    return s.map((v) => v - mean);
+  };
+  const b = prep(before), a = prep(after);
+  const dev = (c: number[]) => c.map((v, i) => Math.max(-25, Math.min(25, v - (tgt[i] - tMean))));
+  return { f, before: b, after: a, statsBefore: takeStats(f, dev(b)), statsAfter: takeStats(f, dev(a)), fLo, fHi };
+}

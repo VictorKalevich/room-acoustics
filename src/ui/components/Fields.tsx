@@ -89,8 +89,8 @@ export function Segmented<T extends string | number>(p: {
     <div class="field">
       <span class="field__label" id={`seg-${p.label}`}>{p.label}</span>
       <div class="segmented" role="radiogroup" aria-labelledby={`seg-${p.label}`}>
-        {p.options.map((o) => (
-          <button
+        {p.options.map((o, ki) => (
+          <button key={ki}
             type="button"
             role="radio"
             aria-checked={o.value === p.value}
@@ -117,8 +117,8 @@ export function SelectField(p: {
       <label for={id}>{p.label}</label>
       <div class="field__box field__box--select">
         <select id={id} value={p.value} onChange={(e) => p.onChange((e.target as HTMLSelectElement).value)}>
-          {p.options.map((o) => (
-            <option value={o.value}>{o.label}</option>
+          {p.options.map((o, ki) => (
+            <option key={ki} value={o.value}>{o.label}</option>
           ))}
         </select>
       </div>

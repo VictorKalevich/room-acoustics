@@ -51,7 +51,7 @@ export function SyncScreen({ project, onReplace }: { project: Project; onReplace
     <div class="screen">
       <Panel title={S.sync.title}>
         <p class="small">{S.sync.intro}</p>
-        <ol class="small steps-list">{S.sync.steps.map((s) => <li>{s}</li>)}</ol>
+        <ol class="small steps-list">{S.sync.steps.map((s, ki) => <li key={ki}>{s}</li>)}</ol>
         <div class="btn-row">
           <button type="button" class="btn btn--primary" onClick={save}>{S.sync.save}</button>
           <button type="button" class="btn" onClick={() => input.current?.click()}>{S.sync.open}</button>

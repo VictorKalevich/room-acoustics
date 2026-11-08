@@ -1,4 +1,5 @@
 // Помощник по шагам и словарь терминов.
+import { Fragment } from 'preact';
 import { useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { STEPS, manualDone, setManualDone, setWizardOn, stepDone, wizardOn, type WizardTab } from '../wizard';
@@ -29,7 +30,7 @@ export function HelpScreen({ project, onGo, onWizard }: { project: Project; onGo
             const done = stepDone(project, s, manual);
             const auto = !!s.auto?.(project);
             return (
-              <li class={done ? 'is-done' : ''}>
+              <li key={s.id} class={done ? 'is-done' : ''}>
                 <label class="check">
                   <input type="checkbox" checked={done} disabled={auto} onChange={(e) => toggle(s.id, (e.target as HTMLInputElement).checked)} />
                   <span><strong>{s.title}.</strong> {s.hint}</span>
@@ -48,10 +49,10 @@ export function HelpScreen({ project, onGo, onWizard }: { project: Project; onGo
         </div>
         <dl class="glossary">
           {terms.map((t) => (
-            <>
+            <Fragment key={t.id}>
               <dt>{t.title}</dt>
               <dd class="small">{t.text}</dd>
-            </>
+            </Fragment>
           ))}
         </dl>
       </Panel>

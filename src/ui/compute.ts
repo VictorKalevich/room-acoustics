@@ -1,4 +1,6 @@
 // Расчёты в постоянном воркере (очередь, отмена ещё не начатых задач, кэш волновой модели).
+import { logError } from '../state/errlog';
+
 export type ComputeType = 'optimize' | 'listenerMap' | 'subMap' | 'integrate' | 'calibrate' | 'compare' | 'evaluate' | 'modes' | 'field' | 'subFilters';
 
 export interface ComputeJob<T> {
@@ -7,6 +9,7 @@ export interface ComputeJob<T> {
 }
 
 interface Pending {
+  type: ComputeType;
   resolve: (v: any) => void;
   reject: (e: Error) => void;
   progress?: (v: number) => void;
@@ -25,11 +28,16 @@ function getWorker(): Worker {
     if (!p) return;
     if (m.kind === 'progress') { p.progress?.(m.value); return; }
     pending.delete(m.id);
-    if (m.kind === 'done') p.resolve(m.result);
-    else p.reject(new Error(m.error));
+    if (m.kind === 'done') { p.resolve(m.result); return; }
+    const err = new Error(m.error);
+    if (m.stack) err.stack = m.stack;
+    logError('worker', err, p.type);
+    p.reject(err);
   };
   w.onerror = (e) => {
     // воркер упал: отклоняем все задачи и создаём новый при следующем вызове
+    const types = [...new Set([...pending.values()].map((p) => p.type))].join(', ');
+    logError('worker', `${e.message || 'Воркер расчётов упал'}${e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : ''}`, types || undefined);
     for (const p of pending.values()) p.reject(new Error(e.message || 'Ошибка расчёта'));
     pending.clear();
     worker = null;
@@ -44,6 +52,7 @@ export function compute<T>(type: ComputeType, payload: unknown, onProgress?: (v:
   let settled = false;
   const promise = new Promise<T>((resolve, reject) => {
     pending.set(id, {
+      type,
       resolve: (v) => { settled = true; resolve(v); },
       reject: (e) => { settled = true; reject(e); },
       progress: onProgress,

@@ -50,8 +50,8 @@ export function HeightRange({ max, value, onChange, step = 0.05 }: Props) {
       <span class="hrange__cap">{fmt(max, 1)} м</span>
       <div class="hrange__track" ref={track} onPointerDown={tapTrack}>
         <div class="hrange__fill" style={{ top: pct(hi), bottom: `${(lo / max) * 100}%` }} />
-        {([0, 1] as const).map((w) => (
-          <button
+        {([0, 1] as const).map((w, ki) => (
+          <button key={ki}
             type="button"
             class="hrange__thumb"
             style={{ top: pct(w ? hi : lo) }}
