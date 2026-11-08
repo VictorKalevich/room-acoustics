@@ -53,3 +53,22 @@ describe('биквады и экспорт', () => {
     expect(a1).toBeCloseTo(-biquad(fl[0], 96000).a1, 12);
   });
 });
+
+import { newProject } from '../../src/state/project';
+import { evaluateSetup } from '../../src/core/system';
+describe('эквалайзер по модели комнаты', () => {
+  it('не ставит два фильтра на одну частоту, не режет больше maxCut и не уже maxQ, не ставит фильтр на край полосы', () => {
+    const p = newProject();
+    const e = evaluateSetup(p.room, p.sources, p.constraints, p.current, { ppo: 48 });
+    const eq = designEq(e.response.f, e.response.db, e.response.target, { maxQ: 8 });
+    expect(eq.filters.length).toBeGreaterThan(0);
+    expect(eq.stdAfter).toBeLessThan(eq.stdBefore);
+    for (let i = 0; i < eq.filters.length; i++) {
+      const a = eq.filters[i];
+      expect(a.q).toBeLessThanOrEqual(8);
+      expect(a.gainDb).toBeGreaterThanOrEqual(-12);
+      expect(a.f).toBeGreaterThan(e.response.f[0] * 1.01);
+      for (let j = i + 1; j < eq.filters.length; j++) expect(Math.abs(Math.log2(a.f / eq.filters[j].f))).toBeGreaterThanOrEqual(1 / 6);
+    }
+  });
+});

@@ -2,7 +2,7 @@
 import type { Project } from './project';
 import { defaultConstraints, defaultRoom, defaultSetup, defaultSources, defaultSub, makeId, syncSetup, validateRoom, validateSources } from './project';
 import type { Setup, SourceSpec } from '../core/types';
-import { SURFACES } from '../core/types';
+import { DAMPING_MODEL, SURFACES } from '../core/types';
 import { MATERIAL_BY_ID } from '../core/materials';
 
 export const FILE_FORMAT = 'room-acoustics-project';
@@ -35,6 +35,8 @@ export function normalizeProject(raw: any): Project {
   if (!Array.isArray(room.zones)) room.zones = [];
   if (!['sealed', 'typical', 'door', 'open'].includes(room.leakage)) room.leakage = 'typical';
   if (room.calibration && !(room.calibration.dampingScale > 0)) room.calibration = null;
+  // множитель, подобранный для прежней модели затухания, к новой не подходит — подстройку нужно повторить
+  if (room.calibration && room.calibration.model !== DAMPING_MODEL) room.calibration = null;
   if (!Array.isArray(room.openings)) room.openings = [];
   if (!Array.isArray(room.extensions)) room.extensions = [];
   room.treatments = Array.isArray(room.treatments)

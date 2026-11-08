@@ -38,7 +38,7 @@ export interface Opening {
   height: number;
 }
 
-/** Окно или закрытая дверь: только для ориентира на плане, в расчёт не входят (считаются стеной). */
+/** Окно или закрытая дверь: участок стены, который поглощает бас как мембрана (стекло, дверное полотно). */
 export interface WallFeature {
   id: string;
   kind: 'window' | 'door';
@@ -92,7 +92,12 @@ export interface Treatment {
 export interface Calibration {
   /** Множитель затухания мод (подстройка по замеру). */
   dampingScale: number;
+  /** Версия модели затухания, для которой подобран множитель (при смене модели подстройка сбрасывается). */
+  model?: number;
 }
+
+/** Текущая версия модели затухания: 2 — обстановка по замерам жилых комнат, окна и двери, участки по форме мод. */
+export const DAMPING_MODEL = 2;
 
 export interface Room {
   depth: number;
@@ -108,7 +113,7 @@ export interface Room {
   openings: Opening[];
   extensions: Extension[];
   model: AcousticModel;
-  /** Окна и закрытые двери (для ориентира на плане). */
+  /** Окна и закрытые двери: на плане и в расчёте затухания. */
   features: WallFeature[];
   /** Скос потолка у стены wall: у стены высота low, на расстоянии run от неё — полная высота. */
   slope?: { wall: WallId; low: number; run: number } | null;
@@ -227,6 +232,8 @@ export interface Measurement {
   importedAt: string;
   f: number[];
   db: number[];
+  /** Сколько точек усреднено (замер свипом в приложении); у импорта из REW — одна. */
+  points?: number;
 }
 
 /** Вариант расстановки: положения, основное место слушателя, настройки сабвуферов. */

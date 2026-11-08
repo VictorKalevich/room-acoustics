@@ -42,7 +42,7 @@ export function makeCtx(room: Room, sources: SourceSpec[]): EvalCtx {
     );
     fLo = Math.max(20, fHi / 2);
   }
-  const fModes = Math.max(fHi * 1.3, fHi + 40);
+  const fModes = Math.max(fHi * 2, fHi + 60);
   return { room, sources, rev, c: speedOfSound(room.temperatureC), fLo, fHi, pm: prepareModes(room, fModes, rev), notes };
 }
 

@@ -10,6 +10,7 @@ import { ResponseChart } from '../components/Charts';
 import { S } from '../strings';
 import { Term } from '../components/Term';
 import { fmt, fmtInt } from '../format';
+import { ROBUST_GOOD, ROBUST_MID } from '../../core/metric';
 
 interface Props {
   project: Project;
@@ -295,8 +296,8 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             <ScoreLine p={current} baseline={result.baseline} isBaseline={sel === variants.length - 1} />
             {current.robust != null && (
               <p class="small">
-                <span class={`robust-tag ${current.robust <= 0.5 ? 'is-good' : current.robust <= 1.5 ? 'is-mid' : 'is-bad'}`}>
-                  {current.robust <= 0.5 ? S.robust.good : current.robust <= 1.5 ? S.robust.mid : S.robust.bad}
+                <span class={`robust-tag ${current.robust <= ROBUST_GOOD ? 'is-good' : current.robust <= ROBUST_MID ? 'is-mid' : 'is-bad'}`}>
+                  {current.robust <= ROBUST_GOOD ? S.robust.good : current.robust <= ROBUST_MID ? S.robust.mid : S.robust.bad}
                 </span>{' '}
                 <span class="muted">{S.robust.detail(fmt(current.robust, 1))} <Term id="robust">?</Term></span>
               </p>

@@ -3,6 +3,7 @@ import type { Project } from '../../state/project';
 import { makeId } from '../../state/project';
 import type { Setup, Vec3 } from '../../core/types';
 import { robustnessMap, type Heatmap } from '../../core/field';
+import { ROBUST_LISTENER_SHIFT, ROBUST_SOURCE_SHIFT } from '../../core/metric';
 import { evaluateSetup } from '../../core/system';
 import { isWave } from '../../core/geometry';
 import { useSetupEval } from '../useEval';
@@ -34,7 +35,7 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
   const [probe, setProbe] = useState<{ x: number; y: number } | null>(null);
   const [compareId, setCompareId] = useState<string | null>(null);
   const [layer, setLayer] = useState<'flat' | 'robust'>('flat');
-  const robustHeat = useMemo(() => (heat ? robustnessMap(heat) : null), [heat]);
+  const robustHeat = useMemo(() => (heat ? robustnessMap(heat, heat.kind === 'listener' ? ROBUST_LISTENER_SHIFT : ROBUST_SOURCE_SHIFT) : null), [heat]);
   const [name, setName] = useState('');
   const job = useRef<ComputeJob<Heatmap> | null>(null);
 

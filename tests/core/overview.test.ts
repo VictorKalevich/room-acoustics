@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newProject } from '../../src/state/project';
-import { buildOverview, decayLimit, ebuTm, modeDecays } from '../../src/core/overview';
+import { audibleDecay, buildOverview, decayLimit, ebuLimit, ebuTm, modeDecays, rtBand } from '../../src/core/overview';
 import { computeModes } from '../../src/core/modes';
 import { computeReverb } from '../../src/core/reverb';
 import { evaluateSetup } from '../../src/core/system';
@@ -12,9 +12,26 @@ describe('обзор комнаты', () => {
 
   it('допуск EBU: Tm и подъём к низким частотам', () => {
     expect(ebuTm(100)).toBeCloseTo(0.3, 5);
-    expect(decayLimit(250, 100)).toBeCloseTo(0.35, 5);
-    expect(decayLimit(40, 100)).toBeCloseTo(0.6, 5);
-    expect(decayLimit(110, 100)).toBeLessThan(decayLimit(70, 100));
+    expect(ebuLimit(250, 100)).toBeCloseTo(0.35, 5);
+    expect(ebuLimit(40, 100)).toBeCloseTo(0.6, 5);
+    expect(ebuLimit(110, 100)).toBeLessThan(ebuLimit(70, 100));
+  });
+
+  it('допуск для мод: не строже порога заметности Q ≈ 16 (≈ 0,5 с на 63 Гц, ≈ 0,3 с на 125 Гц)', () => {
+    expect(audibleDecay(63)).toBeCloseTo(0.56, 2);
+    expect(audibleDecay(125)).toBeCloseTo(0.28, 2);
+    // на 30–40 Гц слух прощает долгий звон: допуск больше, чем EBU
+    expect(decayLimit(32, 50)).toBeCloseTo(audibleDecay(32), 6);
+    expect(decayLimit(32, 50)).toBeGreaterThan(ebuLimit(32, 50));
+    // выше ~80 Гц действует допуск EBU
+    expect(decayLimit(150, 50)).toBeCloseTo(ebuLimit(150, 50), 6);
+  });
+
+  it('комфортная полоса RT60 для дома: от Tm до 0,45 с', () => {
+    const [lo, hi] = rtBand(50);
+    expect(lo).toBeCloseTo(ebuTm(50), 6);
+    expect(hi).toBeCloseTo(0.45, 6);
+    expect(rtBand(400)[1]).toBeCloseTo(ebuTm(400) + 0.2, 6);
   });
 
   it('время затухания мод положительно и короче для косых мод при равных условиях', () => {

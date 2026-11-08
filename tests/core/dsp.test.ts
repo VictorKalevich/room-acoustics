@@ -58,8 +58,16 @@ describe('ДСП', () => {
     expect(calAt(cal, 15)).toBeGreaterThan(-3.5);
     expect(calAt(cal, 15)).toBeLessThan(-1);
     const w = new DataView(wavFloat32([new Float32Array(10), new Float32Array(10)], fs));
+    const tag = (o: number) => String.fromCharCode(...[0, 1, 2, 3].map((i) => w.getUint8(o + i)));
     expect(w.getUint16(22, true)).toBe(2);
-    expect(w.getUint32(40, true)).toBe(80);
+    // float-WAV по спецификации: fmt 18 байт (cbSize = 0) + блок fact с числом отсчётов
+    expect(w.getUint32(16, true)).toBe(18);
+    expect(w.getUint16(20, true)).toBe(3);
+    expect(tag(38)).toBe('fact');
+    expect(w.getUint32(46, true)).toBe(10);
+    expect(tag(50)).toBe('data');
+    expect(w.getUint32(54, true)).toBe(80);
+    expect(w.getUint32(4, true)).toBe(w.byteLength - 8);
     expect(new DataView(wav16(new Float32Array(5), fs)).getUint16(34, true)).toBe(16);
   });
 });
@@ -91,4 +99,76 @@ describe('участок свипа в длинной записи', () => {
     cut.set(sw.subarray(0, fs * 1.5), fs * 2.5);
     expect(sweepSegment(cut, sw.length, fs)).toBeNull();
   });
+});
+
+import { firMinPhaseFromCurve, iirDecayLength, octaveBand } from '../../src/core/dsp';
+describe('FIR для узких фильтров на низах', () => {
+  const filters = [{ f: 30, gainDb: -10, q: 10 }, { f: 45, gainDb: -6, q: 6 }, { f: 90, gainDb: -4, q: 3 }];
+  const freqs = [25, 28, 30, 32, 38, 45, 52, 70, 90, 120, 200];
+  const want = freqs.map((f) => filters.reduce((s, p) => s + peqGainDb(p, f), 0));
+  for (const rate of [48000, 96000]) {
+    it(`длина по затуханию фильтров: мин. и лин. фаза повторяют модуль PEQ (±0,3 дБ), ${rate / 1000} кГц`, () => {
+      const mp = firMinPhase(filters, rate);
+      const lp = firLinearPhase(filters, rate);
+      expect(mp.length).toBeGreaterThanOrEqual(iirDecayLength(filters, rate));
+      const nfft = 1 << 20;
+      const gm = spectrumDb(mp, rate, freqs, nfft), gl = spectrumDb(lp, rate, freqs, nfft);
+      freqs.forEach((_, i) => {
+        expect(Math.abs(gm[i] - want[i])).toBeLessThan(0.3);
+        expect(Math.abs(gl[i] - want[i])).toBeLessThan(0.3);
+      });
+    });
+  }
+  it('прежняя фиксированная длина (16384 при 96 кГц) срезала пик на 30 Гц не до конца', () => {
+    const short = firMinPhase(filters, 96000, 16384);
+    const got = spectrumDb(short, 96000, [30], 1 << 20)[0];
+    expect(Math.abs(got - want[2])).toBeGreaterThan(1);
+  });
+});
+
+describe('минимально-фазовый FIR по кривой (прослушивание комнаты)', () => {
+  it('повторяет АЧХ и звенит только после удара — без «предзвона»', () => {
+    const f = [20, 30, 40, 43, 46, 60, 80, 120, 200];
+    const db = [0, 2, 6, 14, 5, -3, 0, -5, 0];
+    const ir = firMinPhaseFromCurve(f, db, fs);
+    const got = spectrumDb(ir, fs, [30, 43, 60, 120, 1000], 1 << 18);
+    expect(got[0]).toBeCloseTo(2, 0);
+    expect(got[1]).toBeCloseTo(14, 0);
+    expect(got[2]).toBeCloseTo(-3, 0);
+    expect(got[3]).toBeCloseTo(-5, 0);
+    expect(got[4]).toBeCloseTo(0, 0);
+    // энергия сосредоточена в начале: за первую секунду — почти вся
+    let e1 = 0, eAll = 0;
+    for (let i = 0; i < ir.length; i++) { eAll += ir[i] ** 2; if (i < fs) e1 += ir[i] ** 2; }
+    expect(e1 / eAll).toBeGreaterThan(0.999);
+  });
+});
+
+describe('RT60 по хлопку при шуме', () => {
+  let seed = 11;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+  // одиночное затухание шума в октаве — случайно: по ISO 3382-2 разброс T20 ≈ 0,88·T·√(2,9/(B·T)) — на 125 Гц
+  // это ~15 %. Поэтому, как в приложении, усредняются три хлопка
+  for (const [band, T, tol] of [[125, 0.9, 0.12], [500, 0.55, 0.08], [2000, 0.4, 0.08]] as const) {
+    it(`${band} Гц, T = ${T} с, шум в октаве на −45 дБ от пика, три хлопка: ошибка < ${tol * 100} %`, () => {
+      let sum = 0;
+      for (let k = 0; k < 3; k++) {
+        const n = 3 * fs, pre = Math.round(0.2 * fs);
+        const w = new Float32Array(n);
+        for (let i = pre; i < n; i++) w[i] = gauss() * Math.exp((-6.91 * (i - pre)) / fs / T);
+        const x = octaveBand(w, band, fs);
+        let pk = 0;
+        for (const v of x) pk = Math.max(pk, Math.abs(v));
+        // шум в той же октаве на 45 дБ ниже пикового отсчёта (≈ 35 дБ ниже начального уровня огибающей)
+        const nz = octaveBand(Float32Array.from({ length: n }, () => gauss()), band, fs);
+        let nr = 0;
+        for (const v of nz) nr += v * v;
+        const g = (pk * Math.pow(10, -45 / 20)) / Math.sqrt(nr / n);
+        for (let i = 0; i < n; i++) x[i] += g * nz[i];
+        sum += clapRT60(x, fs).find((b) => b.band === band)!.t60!;
+      }
+      expect(Math.abs(sum / 3 / T - 1)).toBeLessThan(tol);
+    });
+  }
 });

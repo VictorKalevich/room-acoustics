@@ -137,7 +137,7 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
     if (!avg) return;
     setSavedN(takes.length);
     const f = takes[0].f;
-    const m: Measurement = { name: S.measure.measName(takes.length), importedAt: new Date().toISOString(), f, db: avg };
+    const m: Measurement = { name: S.measure.measName(takes.length), importedAt: new Date().toISOString(), f, db: avg, points: takes.length };
     onSetup({ ...project.current, measurement: m });
     setMsg({ t: S.measure.saved, tone: 'good' });
   };

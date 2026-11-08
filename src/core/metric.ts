@@ -19,3 +19,10 @@ export function flatnessScore(roomDb: ArrayLike<number>, targetDb: ArrayLike<num
   m1 /= n;
   return Math.sqrt(Math.max(0, m2 / n - m1 * m1));
 }
+
+/** Сдвиги для оценки устойчивости: место слушателя (кресло, наклон головы) и источники (точность расстановки), м. */
+export const ROBUST_LISTENER_SHIFT = 0.25;
+export const ROBUST_SOURCE_SHIFT = 0.1;
+/** Границы оценки устойчивости, дБ: до 0,35 — устойчивый вариант, до 0,7 — средний, дальше — чувствительный. */
+export const ROBUST_GOOD = 0.35;
+export const ROBUST_MID = 0.7;

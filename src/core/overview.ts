@@ -3,6 +3,7 @@ import type { Mode, ReverbResult, Room, Setup, SourceSpec } from './types';
 import type { SetupEval } from './system';
 import { modeDamping } from './response';
 import { bonelloCheck, proportionsNotes } from './modes';
+import { roomPatches } from './patches';
 
 export interface ModeDecay { f: number; n: [number, number, number]; kind: Mode['kind']; t60: number; limit: number }
 
@@ -12,10 +13,10 @@ export function ebuTm(volume: number): number {
 }
 
 /**
- * Верхняя граница допуска для времени затухания на частоте f (ориентир по EBU Tech 3276):
+ * Верхняя граница допуска EBU Tech 3276 для времени реверберации на частоте f:
  * Tm + 0,05 с от 200 Гц и выше, плавно (по логарифму частоты) до Tm + 0,3 с на 63 Гц; ниже 63 Гц — как на 63 Гц.
  */
-export function decayLimit(f: number, volume: number): number {
+export function ebuLimit(f: number, volume: number): number {
   const tm = ebuTm(volume);
   if (f >= 200) return tm + 0.05;
   if (f <= 63) return tm + 0.3;
@@ -23,15 +24,36 @@ export function decayLimit(f: number, volume: number): number {
   return tm + 0.3 - 0.25 * t;
 }
 
+/**
+ * Порог заметности затянутой моды: добротность Q ≈ 16, т. е. T60 = 2,2·Q/f ≈ 35/f
+ * (Avis, Fazenda, Davies; Fazenda, Stephenson, Goldberg, JASA 137, 2015: на музыке ≈ 0,5 с на 63 Гц,
+ * ≈ 0,3 с на 125 Гц). На самых низких частотах слух прощает долгий «звон» — там этот порог выше допуска EBU.
+ */
+export function audibleDecay(f: number): number {
+  return (2.2 * 16) / Math.max(f, 1);
+}
+
+/** Допуск для времени затухания моды: больше из допуска EBU для комнаты и порога заметности. */
+export function decayLimit(f: number, volume: number): number {
+  return Math.max(ebuLimit(f, volume), audibleDecay(f));
+}
+
 /** Время затухания каждой моды (T60 = 6,91/δ) ниже fMax. */
 export function modeDecays(room: Room, modes: Mode[], rev: ReverbResult, fMax: number): ModeDecay[] {
   const scale = room.calibration?.dampingScale ?? 1;
+  const patches = roomPatches(room);
   return modes
     .filter((m) => m.f > 0 && m.f <= fMax)
     .map((m) => {
-      const delta = modeDamping(m, room, rev) * scale;
+      const delta = modeDamping(m, room, rev, patches) * scale;
       return { f: m.f, n: m.n, kind: m.kind, t60: 6.91 / delta, limit: decayLimit(m.f, rev.volume) };
     });
+}
+
+/** Комфортная полоса времени реверберации (500–1000 Гц) для домашнего прослушивания, с. */
+export function rtBand(volume: number): [number, number] {
+  const tm = ebuTm(volume);
+  return [Math.max(0.2, tm), Math.max(0.45, tm + 0.2)];
 }
 
 export type Severity = 'high' | 'medium' | 'low';
@@ -106,10 +128,11 @@ export function buildOverview(
     }
   }
 
-  // 2. Затухание мод
+  // 2. Затухание мод: среднее превышение допуска по осевым и касательным модам. Шкала: в обычной комнате без
+  // обработки ≈ 0,4 с (оценка ≈ 50), с ловушками в углах и мягкой мебелью < 0,1 с (≈ 90), в пустой — секунды (0)
   const strong = decays.filter((d) => d.kind !== 'oblique');
   const excess = strong.length ? strong.reduce((a, d) => a + Math.max(0, d.t60 - d.limit), 0) / strong.length : 0;
-  const decay = clamp01(1 - excess / 0.4);
+  const decay = clamp01(1 - excess / 0.8);
   const worst = [...strong].filter((d) => d.t60 > d.limit + 0.15).sort((a, b) => (b.t60 - b.limit) - (a.t60 - a.limit)).slice(0, 3);
   for (const d of worst) {
     problems.push({
@@ -139,11 +162,12 @@ export function buildOverview(
     });
   }
 
-  // 4. Реверберация
-  const tm = ebuTm(rev.volume);
-  const rtDev = Math.abs(rev.tMid - Math.max(0.25, tm));
-  const reverb = clamp01(1 - rtDev / 0.4);
-  if (rev.tMid > 0.6) problems.push({ id: 'rt-high', severity: rev.tMid > 0.8 ? 'high' : 'medium', title: `Гулкая комната: RT60 ≈ ${fmt1(rev.tMid)} с`, detail: 'Добавьте ковёр, шторы, мягкую мебель или панели на точки первых отражений.', actions: ['room', 'tuning'] });
+  // 4. Реверберация: комфортная полоса для домашнего прослушивания — от Tm (EBU) до 0,45 с (или Tm + 0,2 с
+  // в больших комнатах); вне полосы оценка снижается на треть за каждые 0,1 с
+  const [rtLo, rtHi] = rtBand(rev.volume);
+  const rtDev = rev.tMid < rtLo ? rtLo - rev.tMid : rev.tMid > rtHi ? rev.tMid - rtHi : 0;
+  const reverb = clamp01(1 - rtDev / 0.3);
+  if (rev.tMid > Math.max(0.6, rtHi + 0.1)) problems.push({ id: 'rt-high', severity: rev.tMid > rtHi + 0.3 ? 'high' : 'medium', title: `Гулкая комната: RT60 ≈ ${fmt1(rev.tMid)} с`, detail: 'Добавьте ковёр, шторы, мягкую мебель или панели на точки первых отражений.', actions: ['room', 'tuning'] });
   if (rev.tMid < 0.15) problems.push({ id: 'rt-low', severity: 'low', title: `Очень заглушённая комната: RT60 ≈ ${fmt1(rev.tMid)} с`, detail: 'Звук может казаться «ватным». Часть поглотителей можно заменить диффузорами.', actions: ['room'] });
 
   // 5. Пропорции
@@ -156,7 +180,7 @@ export function buildOverview(
     { id: 'bass', value: Math.round(bass * 100), weight: 0.4, note: Number.isFinite(s) ? `неровность ${fmt1(s)} дБ` : 'нет оценки' },
     { id: 'decay', value: Math.round(decay * 100), weight: 0.2, note: worst.length ? `долгих мод: ${worst.length}` : 'в допуске' },
     { id: 'symmetry', value: Math.round(symmetry * 100), weight: 0.15, note: `смещение ${fmt1(asymAll * 100)} см` },
-    { id: 'reverb', value: Math.round(reverb * 100), weight: 0.15, note: `RT60 ${fmt1(rev.tMid)} с` },
+    { id: 'reverb', value: Math.round(reverb * 100), weight: 0.15, note: `RT60 ${fmt1(rev.tMid)} с (норма ${rtLo.toFixed(2).replace('.', ',')}–${rtHi.toFixed(2).replace('.', ',')})` },
     { id: 'proportions', value: Math.round(proportions * 100), weight: 0.1, note: bon.ok && !notes.length ? 'хорошие' : 'есть замечания' },
   ];
   const score = Math.round(subs.reduce((a, x) => a + x.value * x.weight, 0));

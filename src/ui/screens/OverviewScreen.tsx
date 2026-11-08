@@ -112,7 +112,8 @@ function DecayChart({ decays, volume }: { decays: ModeDecay[]; volume: number })
     lim.push(`${i ? 'L' : 'M'}${X(f).toFixed(1)},${Y(decayLimit(f, volume)).toFixed(1)}`);
   }
   const yt = [0, 0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.5, 2].filter((v) => v <= tMax);
-  const xt = [20, 30, 40, 50, 70, 100, 150, 200].filter((f) => f <= f1);
+  // подписи частот не заходят на подпись единиц «Гц» у правого края
+  const xt = [20, 30, 40, 50, 70, 100, 150, 200].filter((f) => f <= f1 && X(f) < W - r - 24);
   return (
     <svg class="chart decay-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Время затухания мод">
       {yt.map((v) => <g><line x1={l} x2={W - r} y1={Y(v)} y2={Y(v)} class="chart__grid" /><text x={l - 4} y={Y(v) + 3} text-anchor="end" class="chart__tick">{fmt(v, 1)}</text></g>)}

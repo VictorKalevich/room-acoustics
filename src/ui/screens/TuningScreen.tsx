@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import type { Leakage, Mode, Room, Setup, SubSetting, Treatment } from '../../core/types';
+import { DAMPING_MODEL } from '../../core/types';
 import { makeId } from '../../state/project';
 import { computeReverb } from '../../core/reverb';
 import { modeDecays, type ModeDecay } from '../../core/overview';
@@ -23,7 +24,7 @@ import { S } from '../strings';
 import { Term } from '../components/Term';
 import { Auralize } from '../components/Auralize';
 import { shareFile } from '../audio/mic';
-import { firLinearPhase, firMinPhase, wavFloat32 } from '../../core/dsp';
+import { firLinearPhase, firMinPhase, linearPhaseLength, wavFloat32 } from '../../core/dsp';
 import { fmt } from '../format';
 
 interface Props {
@@ -217,7 +218,8 @@ function EqPanel({ project }: { project: Project }) {
       const mean = raw.reduce((a, b) => a + b, 0) / raw.length - target.reduce((a, b) => a + b, 0) / target.length;
       db = raw.map((v) => v - mean);
     }
-    setRes({ eq: designEq(f, db, target), f, before: db, target });
+    // по замеру частоты пиков точные — фильтры могут быть уже; по модели — не уже Q = 8
+    setRes({ eq: designEq(f, db, target, { maxQ: source === 'measured' ? 12 : 8 }), f, before: db, target });
   };
 
   return (
@@ -264,7 +266,7 @@ function EqPanel({ project }: { project: Project }) {
             <button type="button" class="btn btn--small" onClick={() => shareFile(wavFloat32([firMinPhase(res.eq.filters, fs)], fs), `eq-fir-minphase-${fs / 1000}k.wav`, 'audio/wav')}>{S.fir.min(fs / 1000)}</button>
             <button type="button" class="btn btn--small" onClick={() => shareFile(wavFloat32([firLinearPhase(res.eq.filters, fs)], fs), `eq-fir-linphase-${fs / 1000}k.wav`, 'audio/wav')}>{S.fir.lin(fs / 1000)}</button>
           </div>
-          <p class="muted small">{S.fir.note(fs / 1000)}</p>
+          <p class="muted small">{S.fir.note(fs / 1000, fmt(linearPhaseLength(res.eq.filters, fs) / 2 / fs, 2))}</p>
           <Details summary={S.aural.title}>
             <Auralize response={{ f: res.f, db: res.before, target: res.target }} filters={res.eq.filters} />
           </Details>
@@ -349,7 +351,7 @@ function MeasurePanel({ project, onRoom, onSetup }: { project: Project; onRoom: 
     if (!m) return;
     setBusy(true);
     compute<CalibrationResult>('calibrate', { room, sources, constraints: c, setup: current, measurement: m }).promise
-      .then((r) => { setCal(r); setBusy(false); onRoom({ ...room, leakage: r.leakage, calibration: { dampingScale: r.dampingScale } }); })
+      .then((r) => { setCal(r); setBusy(false); onRoom({ ...room, leakage: r.leakage, calibration: { dampingScale: r.dampingScale, model: DAMPING_MODEL } }); })
       .catch((e) => { setError(e.message); setBusy(false); });
   };
 
@@ -387,9 +389,10 @@ function MeasurePanel({ project, onRoom, onSetup }: { project: Project; onRoom: 
           />
           <div class="legend">
             <span class="legend__item legend__item--measured">{S.tuning.legendMeasured}</span>
-            <span class="legend__item legend__item--baseline">{S.tuning.legendModel}</span>
+            <span class="legend__item legend__item--baseline">{cmp.averaged ? S.tuning.legendModelAvg : S.tuning.legendModel}</span>
           </div>
           <p class="small"><strong>{S.tuning.measureRms(fmt(cmp.rms, 1))}</strong></p>
+          <p class="muted small">{S.tuning.measureHow}</p>
           <div class="btn-row">
             <button type="button" class="btn btn--primary" onClick={runCal} disabled={busy}>{busy ? S.tuning.calibrating : S.tuning.calibrate}</button>
             {room.calibration && (

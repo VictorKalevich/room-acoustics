@@ -24,11 +24,13 @@ export function porousAlpha(d: number, gap = 0): OctaveValues {
   return a.map((v, k) => v + (b[k] - v) * t) as OctaveValues;
 }
 
-/** α элемента обработки: угловая ловушка на низах работает сильнее (давление в углу максимально). */
+/**
+ * α элемента обработки (поглощение одинаковое для любого места). Насколько элемент гасит конкретную моду,
+ * зависит от того, где он стоит: это учитывается в затухании мод по форме моды (patches.ts) —
+ * поэтому угловая ловушка, стоящая в пучности всех мод, работает на басу сильнее панели посреди стены.
+ */
 export function treatmentAlpha(t: Treatment): OctaveValues {
-  const a = porousAlpha(t.thickness, t.gap ?? 0);
-  if (t.kind !== 'corner') return a;
-  return a.map((v, k) => (k <= 1 ? Math.min(1.25, v * 1.3) : v)) as OctaveValues;
+  return porousAlpha(t.thickness, t.gap ?? 0);
 }
 
 export function treatmentArea(t: Treatment): number {
@@ -47,9 +49,9 @@ export function activeTreatments(room: Room): Treatment[] {
   return room.treatmentsOn ? (room.treatments ?? []).filter((t) => t.enabled !== false) : [];
 }
 
-/** Короткое описание для списка и отчёта. */
+/** Ключ для кэшей расчёта: состав, размеры и места элементов. */
 export function treatmentKey(room: Room): string {
-  return JSON.stringify(activeTreatments(room).map((t) => [t.kind, t.thickness, t.gap ?? 0, t.width, t.height, t.corner, t.wall]));
+  return JSON.stringify(activeTreatments(room).map((t) => [t.kind, t.thickness, t.gap ?? 0, t.width, t.height, t.corner, t.wall, t.at, t.z, t.x, t.y]));
 }
 
 /** План по умолчанию: ловушки в четырёх вертикальных углах, панели на точках боковых отражений, облако над слушателем. */

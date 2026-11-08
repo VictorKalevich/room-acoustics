@@ -96,6 +96,7 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
           options={(Object.keys(FURNISHING_LABEL) as Furnishing[]).map((k) => ({ value: k, label: FURNISHING_LABEL[k] }))}
           onChange={(v) => set({ furnishing: v as Furnishing })}
         />
+        <p class="muted small">{S.room.furnishingHint}</p>
       </Panel>
 
       <Panel title={S.room.reverb}>

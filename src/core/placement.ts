@@ -2,7 +2,7 @@ import type { Constraints, Placement, PlacementResult, Room, SourceSpec, SubSett
 import { PlacementError } from './types';
 import { logFreqs, db20 } from './frequency';
 import { receiverKernel, applyKernel, modeShapes, type Kernel } from './response';
-import { flatnessScore } from './metric';
+import { flatnessScore, ROBUST_LISTENER_SHIFT, ROBUST_SOURCE_SHIFT } from './metric';
 import {
   MIN_LISTEN_DIST, clampToRoom, evaluateSetup, filterSet, makeCtx, receiverSet, seatAllowed, sourceAllowed,
   speakerPenalties, sumPenalties, type EvalCtx, type Spectrum,
@@ -479,7 +479,12 @@ function dbaVariant(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, base: P
   return { ...p, subSettings: settings, scheme: 'dba', notes };
 }
 
-/** Среднее ухудшение оценки (дБ) при сдвиге каждого источника и слушателя на ±10 см по осям. В волновой модели — только слушатель. */
+/**
+ * Устойчивость: на сколько дБ в среднем ухудшается оценка, если место слушателя сдвинуть на ±25 см,
+ * а колонки и сабвуферы — на ±10 см (по осям). Половина веса — слушатель, половина — источники.
+ * На басу 10 см — малая доля длины волны, поэтому слушатель смещается сильнее: так видно, у какого варианта
+ * хорошая оценка держится только в одной точке. В волновой модели — только слушатель.
+ */
 export function robustness(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, p: Placement): number {
   const positions: Record<string, Vec3> = {};
   for (const s of p.sources) if (s.pos) positions[s.id] = s.pos;
@@ -487,17 +492,22 @@ export function robustness(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, 
   const ev = (listener: Vec3, pos: Record<string, Vec3>) =>
     evaluateSetup(ctx.room, sources, c, { listener, positions: pos, subSettings: settings, crossoverHz: null }, { ctx, ppo: 12 }).score;
   const base = ev(p.listener, positions);
-  const shifts = [[0.1, 0], [-0.1, 0], [0, 0.1], [0, -0.1]];
-  const ids = isWave(ctx.room) ? [] : Object.keys(positions);
-  let sum = 0, n = 0;
-  for (const [dx, dy] of shifts) {
-    const l = clampToRoom(ctx.room, { ...p.listener, x: p.listener.x + dx, y: p.listener.y + dy }, 0.1);
-    sum += Math.max(0, ev(l, positions) - base); n++;
-    for (const id of ids) {
-      const q = positions[id];
-      const moved = { ...positions, [id]: clampToRoom(ctx.room, { ...q, x: q.x + dx, y: q.y + dy }) };
-      sum += Math.max(0, ev(p.listener, moved) - base); n++;
-    }
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  let lSum = 0;
+  for (const [dx, dy] of dirs) {
+    const l = clampToRoom(ctx.room, { ...p.listener, x: p.listener.x + dx * ROBUST_LISTENER_SHIFT, y: p.listener.y + dy * ROBUST_LISTENER_SHIFT }, 0.1);
+    lSum += Math.max(0, ev(l, positions) - base);
   }
-  return n ? Math.round((sum / n) * 100) / 100 : 0;
+  const ids = isWave(ctx.room) ? [] : Object.keys(positions);
+  let sSum = 0, sN = 0;
+  for (const id of ids)
+    for (const [dx, dy] of dirs) {
+      const q = positions[id];
+      const moved = { ...positions, [id]: clampToRoom(ctx.room, { ...q, x: q.x + dx * ROBUST_SOURCE_SHIFT, y: q.y + dy * ROBUST_SOURCE_SHIFT }) };
+      sSum += Math.max(0, ev(p.listener, moved) - base);
+      sN++;
+    }
+  const lMean = lSum / dirs.length;
+  const v = sN ? 0.5 * lMean + 0.5 * (sSum / sN) : lMean;
+  return Math.round(v * 100) / 100;
 }

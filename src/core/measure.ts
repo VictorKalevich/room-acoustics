@@ -1,7 +1,7 @@
 // Замеры REW (research R16): импорт, сравнение с моделью, подстройка модели.
 import type { Constraints, Leakage, Measurement, Room, Setup, SourceSpec } from './types';
 import { logFreqs } from './frequency';
-import { evaluateSetup } from './system';
+import { clampToRoom, filterSet, makeCtx, rawResponses, sumDb } from './system';
 import { isWave } from './geometry';
 
 export class MeasureError extends Error {
@@ -62,27 +62,78 @@ export interface Comparison {
   model: number[];
   measured: number[];
   rms: number;
+  /** Модель усреднена по точкам вокруг места (как замер из нескольких точек). */
+  averaged: boolean;
 }
 
-/** Сравнение замера с моделью в основной точке прослушивания (оба выровнены по среднему). */
-export function compareMeasurement(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, m: Measurement): Comparison {
-  const single = { ...c, seats: { ...c.seats, count: 1 } };
-  const e = evaluateSetup(room, sources, single, setup, { ppo: 24 });
-  const meas = measurementAt(m, e.response.f);
+/** Сглаживание кривых перед сравнением (доля октавы, усреднение мощности). */
+const COMPARE_SMOOTH = 1 / 12;
+/** Отклонения больше этого (дБ) — обычно узкие провалы, чувствительные к сантиметрам, — не перевешивают остальное. */
+const COMPARE_CLIP = 10;
+/** Точки вокруг места, по которым усредняется модель для замера из нескольких точек (как в подсказке: 30–50 см). */
+const CLOUD = [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]];
+
+/** Сглаживание в долях октавы с усреднением мощности (сетка — логарифмическая). */
+function smoothPow(freqs: number[], db: number[], frac: number): number[] {
+  const k = Math.pow(2, frac / 2);
+  return freqs.map((f) => {
+    let s = 0, n = 0;
+    for (let j = 0; j < freqs.length; j++) if (freqs[j] >= f / k && freqs[j] <= f * k) { s += Math.pow(10, db[j] / 10); n++; }
+    return 10 * Math.log10(s / n);
+  });
+}
+
+/** Число точек замера; у старых замеров свипом — из названия «… точек: N». */
+export function measuredPoints(m: Measurement): number {
+  if (m.points) return m.points;
+  const k = /точек:\s*(\d+)/.exec(m.name);
+  return k ? Number(k[1]) : 1;
+}
+
+/**
+ * Модель в той же форме, что замер: в точке слушателя или, если замер — среднее по нескольким точкам,
+ * среднее по мощности в 5 точках вокруг места (±30 см). Сетка 48 точек на октаву.
+ */
+export function modelForMeasurement(room: Room, sources: SourceSpec[], setup: SetupLike, m: Measurement, freqsIn?: number[]): { f: number[]; db: number[]; averaged: boolean } {
+  const ctx = makeCtx(room, sources);
+  const f = freqsIn ?? logFreqs(ctx.fLo, ctx.fHi, 48);
+  const averaged = measuredPoints(m) > 1;
+  const L = setup.listener;
+  const pts = averaged
+    ? CLOUD.map(([dx, dy]) => clampToRoom(room, { x: L.x + dx, y: L.y + dy, z: L.z }, 0.15))
+    : [L];
+  const { filt } = filterSet(sources, f, setup.crossoverHz, setup.subSettings);
+  const raw = rawResponses(ctx, pts, f, setup.positions);
+  const ids = sources.map((s) => s.id).filter((id) => setup.positions[id]);
+  const pow = new Float64Array(f.length);
+  pts.forEach((_, r) => {
+    const d = sumDb(raw, filt, r, f.length, ids);
+    for (let j = 0; j < f.length; j++) pow[j] += Math.pow(10, d[j] / 10) / pts.length;
+  });
+  return { f, db: Array.from(pow, (p) => 10 * Math.log10(Math.max(p, 1e-30))), averaged };
+}
+
+/**
+ * Сравнение замера с моделью: модель берётся в той же форме, что замер (одна точка или среднее по точкам),
+ * обе кривые одинаково сглажены (1/12 октавы) и выровнены по среднему уровню; расхождение — СКО,
+ * отклонения ограничены ±10 дБ.
+ */
+export function compareMeasurement(room: Room, sources: SourceSpec[], _c: Constraints, setup: SetupLike, m: Measurement): Comparison {
+  const mod = modelForMeasurement(room, sources, setup, m);
+  const meas = measurementAt(m, mod.f);
   const idx = meas.map((v, i) => (v == null ? -1 : i)).filter((i) => i >= 0);
-  if (idx.length < 8) throw new MeasureError('Замер не перекрывает расчётную полосу частот — нужен замер от 20 Гц до частоты Шрёдера.');
-  const f = idx.map((i) => e.response.f[i]);
-  const model = idx.map((i) => e.response.db[i]);
-  const measured = idx.map((i) => meas[i] as number);
+  if (idx.length < 16) throw new MeasureError('Замер не перекрывает расчётную полосу частот — нужен замер от 20 Гц до частоты Шрёдера.');
+  const f = idx.map((i) => mod.f[i]);
+  const model = smoothPow(f, idx.map((i) => mod.db[i]), COMPARE_SMOOTH);
+  const measured = smoothPow(f, idx.map((i) => meas[i] as number), COMPARE_SMOOTH);
   const mm = model.reduce((a, b) => a + b, 0) / model.length;
   const ms = measured.reduce((a, b) => a + b, 0) / measured.length;
   const mN = model.map((v) => v - mm);
   const sN = measured.map((v) => v - ms);
-  const rms = Math.sqrt(mN.reduce((a, v, i) => a + (v - sN[i]) ** 2, 0) / mN.length);
-  return { f, model: mN, measured: sN, rms };
+  const rms = Math.sqrt(mN.reduce((a, v, i) => a + Math.min(COMPARE_CLIP, Math.abs(v - sN[i])) ** 2, 0) / mN.length);
+  return { f, model: mN, measured: sN, rms, averaged: mod.averaged };
 }
 
-export const DAMPING_SCALES = [0.5, 0.75, 1, 1.5, 2, 3, 4];
 export const LEAKAGES: Leakage[] = ['sealed', 'typical', 'door', 'open'];
 
 export interface CalibrationResult {
@@ -92,17 +143,38 @@ export interface CalibrationResult {
   rmsAfter: number;
 }
 
-/** Подстройка модели под замер: перебор множителя затухания мод и герметичности. */
+/**
+ * Подстройка модели под замер: множитель затухания мод (0,4…2,5, по логарифмической сетке с уточнением
+ * до шага ≈ 12 %) и, в прямоугольной модели, герметичность.
+ */
 export function calibrate(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, m: Measurement): CalibrationResult {
   const rmsBefore = compareMeasurement(room, sources, c, setup, m).rms;
-  let best = { dampingScale: room.calibration?.dampingScale ?? 1, leakage: room.leakage, rms: rmsBefore };
   // в волновой модели утечки заданы проёмами и коридорами явно — подбирается только затухание
   const leaks = isWave(room) ? [room.leakage] : LEAKAGES;
-  for (const k of DAMPING_SCALES)
-    for (const leakage of leaks) {
-      const r = { ...room, leakage, calibration: { dampingScale: k } };
-      const rms = compareMeasurement(r, sources, c, setup, m).rms;
-      if (rms < best.rms - 1e-9) best = { dampingScale: k, leakage, rms };
+  const seen = new Map<number, { leakage: Leakage; rms: number }>();
+  const tryScale = (k: number) => {
+    const key = Math.round(k * 1000) / 1000;
+    let r = seen.get(key);
+    if (!r) {
+      r = { leakage: room.leakage, rms: Infinity };
+      for (const leakage of leaks) {
+        const rms = compareMeasurement({ ...room, leakage, calibration: { dampingScale: key } }, sources, c, setup, m).rms;
+        if (rms < r.rms - 1e-9) r = { leakage, rms };
+      }
+      seen.set(key, r);
     }
-  return { dampingScale: best.dampingScale, leakage: best.leakage, rmsBefore, rmsAfter: best.rms };
+    return r;
+  };
+  const coarse = [0.4, 0.63, 1, 1.6, 2.5];
+  let bestK = 1;
+  for (const k of coarse) if (tryScale(k).rms < tryScale(bestK).rms) bestK = k;
+  for (const step of [1.26, 1.12]) {
+    const center = bestK;
+    for (const k of [center / step, center * step]) if (k >= 0.3 && k <= 3.2 && tryScale(k).rms < tryScale(bestK).rms - 1e-9) bestK = k;
+  }
+  const best = tryScale(bestK);
+  if (best.rms >= rmsBefore - 1e-9) {
+    return { dampingScale: room.calibration?.dampingScale ?? 1, leakage: room.leakage, rmsBefore, rmsAfter: rmsBefore };
+  }
+  return { dampingScale: Math.round(bestK * 1000) / 1000, leakage: best.leakage, rmsBefore, rmsAfter: best.rms };
 }

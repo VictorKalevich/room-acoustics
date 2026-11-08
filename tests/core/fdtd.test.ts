@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alphaToBeta, buildGrid, nearestNode, simulate, nodeSpectrum, systemModes } from '../../src/core/fdtd';
+import { alphaStat, betaFromAlpha, buildGrid, nearestNode, simulate, nodeSpectrum, systemModes } from '../../src/core/fdtd';
 import { computeModes } from '../../src/core/modes';
 import { defaultRoom } from '../../src/state/project';
 import type { Extension, Room } from '../../src/core/types';
@@ -16,9 +16,15 @@ const corridor = (over: Partial<Extension> = {}): Extension => ({
 });
 
 describe('сетка', () => {
-  it('β: α = 0 → 0, α → 1 → 1', () => {
-    expect(alphaToBeta(0)).toBe(0);
-    expect(alphaToBeta(0.999)).toBeGreaterThan(0.9);
+  it('β по табличному (диффузному) α: обращение формулы Пари, при малом α β ≈ α/8', () => {
+    expect(betaFromAlpha(0)).toBe(0);
+    for (const a of [0.005, 0.02, 0.1, 0.3, 0.6, 0.9]) expect(alphaStat(betaFromAlpha(a))).toBeCloseTo(a, 6);
+    expect(betaFromAlpha(0.01) * 8).toBeCloseTo(0.01, 3);
+    // максимум формулы Пари — 0,951 (Kuttruff): большие α ограничены им
+    let mx = 0;
+    for (let z = 1; z < 3; z += 0.001) mx = Math.max(mx, alphaStat(1 / z));
+    expect(mx).toBeCloseTo(0.951, 3);
+    expect(alphaStat(betaFromAlpha(0.999))).toBeCloseTo(mx, 3);
   });
 
   it('шаг ≈ c/(10·fMax), объём комнаты воспроизводится с точностью до ячейки', () => {

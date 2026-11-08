@@ -1,8 +1,8 @@
 import type { ReverbResult, Room, SurfaceId } from './types';
 import { SURFACES } from './types';
 import { FURNISHING, OCTAVES, alphaAt, getMaterial } from './materials';
-import { absorbingOpenings, openingArea, roomVolume } from './geometry';
-import { activeTreatments, treatmentAlpha, treatmentArea, treatmentSurfaces } from './treatments';
+import { roomVolume } from './geometry';
+import { patchDeltaAlpha, patchShares, roomPatches, type Patch } from './patches';
 
 /** Площади поверхностей комнаты, м². */
 export function surfaceAreas(room: Room): Record<SurfaceId, number> {
@@ -28,10 +28,10 @@ export function surfaceAreas(room: Room): Record<SurfaceId, number> {
 const AIR_M = [0, 0, 0, 0, 0.00108, 0.00223, 0.0076];
 
 /**
- * Эквивалентная площадь поглощения каждой поверхности на частоте f, м².
- * Поглощение мебели распределяется пропорционально площадям поверхностей.
+ * Эквивалентная площадь поглощения отделки и обстановки на каждой поверхности на частоте f, м²
+ * (без окон, дверей, проёмов и обработки). Поглощение обстановки распределяется пропорционально площадям.
  */
-export function surfaceAbsorptionAt(room: Room, f: number): Record<SurfaceId, number> {
+export function baseSurfaceAbsorptionAt(room: Room, f: number): Record<SurfaceId, number> {
   const S = surfaceAreas(room);
   const total = SURFACES.reduce((s, k) => s + S[k], 0);
   const furn = alphaAt(FURNISHING[room.furnishing], f) * S.floor;
@@ -39,21 +39,20 @@ export function surfaceAbsorptionAt(room: Room, f: number): Record<SurfaceId, nu
   for (const k of SURFACES) {
     out[k] = alphaAt(getMaterial(room.materials[k]).alpha, f) * S[k] + (furn * S[k]) / total;
   }
-  // Обработка: площадь элемента × (α элемента − α стены под ним)
-  for (const t of activeTreatments(room)) {
-    const at = alphaAt(treatmentAlpha(t), f);
-    const area = treatmentArea(t);
-    for (const { s, share } of treatmentSurfaces(t)) {
-      const aw = alphaAt(getMaterial(room.materials[s]).alpha, f);
-      out[s] += area * share * Math.max(0, at - aw);
-    }
+  return out;
+}
+
+/**
+ * Эквивалентная площадь поглощения каждой поверхности на частоте f, м²: отделка и обстановка,
+ * окна и двери (вместо стены), проёмы (поглощают полностью), обработка (поверх стены).
+ */
+export function surfaceAbsorptionAt(room: Room, f: number, patches: Patch[] = roomPatches(room)): Record<SurfaceId, number> {
+  const out = baseSurfaceAbsorptionAt(room, f);
+  for (const p of patches) {
+    const d = patchDeltaAlpha(room, p, f) * p.area;
+    for (const { s, share } of patchShares(p)) out[s] += d * share;
   }
-  // Проёмы поглощают полностью: добавляем (1 − α стены) × площадь проёма
-  for (const o of absorbingOpenings(room)) {
-    const a = openingArea(room, o);
-    const alpha = alphaAt(getMaterial(room.materials[o.wall]).alpha, f);
-    out[o.wall] += a * (1 - alpha);
-  }
+  for (const k of SURFACES) out[k] = Math.max(0, out[k]);
   return out;
 }
 
@@ -75,8 +74,9 @@ export function computeReverb(room: Room): ReverbResult {
   const formula: ('sabine' | 'eyring')[] = [];
   const meanAlpha: number[] = [];
   const absorptionArea: number[] = [];
+  const patches = roomPatches(room);
   OCTAVES.forEach((f, i) => {
-    const A = Object.values(surfaceAbsorptionAt(room, f)).reduce((a, b) => a + b, 0);
+    const A = Object.values(surfaceAbsorptionAt(room, f, patches)).reduce((a, b) => a + b, 0);
     const air = 4 * AIR_M[i] * V;
     const a = Math.min(A / S, 0.99);
     const ts = (0.161 * V) / (A + air);

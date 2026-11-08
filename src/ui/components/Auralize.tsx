@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { PeqFilter } from '../../core/eq';
 import { peqResponse } from '../../core/eq';
-import { firFromCurve } from '../../core/dsp';
+import { firMinPhaseFromCurve } from '../../core/dsp';
 import { audioContext, playerActive } from '../audio/tone';
 import { setBusy } from '../updates';
 import { S } from '../strings';
@@ -55,8 +55,9 @@ export function Auralize({ response, filters }: Props) {
     const mean = dev.reduce((a, b) => a + b, 0) / dev.length;
     const room = dev.map((v) => v - mean);
     const eq = peqResponse(filters, response.f);
+    // минимально-фазовый фильтр: резонансы комнаты «звенят» после ноты, как в реальности (без предзвона)
     const mk = (db: number[]) => {
-      const ir = firFromCurve(response.f, db, ctx.sampleRate, 32768);
+      const ir = firMinPhaseFromCurve(response.f, db, ctx.sampleRate, 131072);
       const b = ctx.createBuffer(1, ir.length, ctx.sampleRate);
       b.copyToChannel(ir as Float32Array<ArrayBuffer>, 0);
       const c = ctx.createConvolver();

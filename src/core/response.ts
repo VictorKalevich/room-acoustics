@@ -4,22 +4,31 @@ import type { Complex, Leakage, Mode, ReverbResult, Room, Vec3 } from './types';
 export const LEAK_HZ: Record<Leakage, number> = { sealed: 0, typical: 8, door: 25, open: 45 };
 import { speedOfSound } from './physics';
 import { roomVolume } from './geometry';
-import { computeReverb, surfaceAbsorptionAt } from './reverb';
+import { baseSurfaceAbsorptionAt, computeReverb } from './reverb';
+import { patchDeltaAlpha, patchModeIntegral, roomPatches, type Patch } from './patches';
 
 /**
- * Затухание моды δ (1/с) по Куттруфу: δ = (c/8V)·(εx·Ax + εy·Ay + εz·Az)/2,
- * A_i — площадь поглощения пары стен, перпендикулярных оси i, на частоте моды;
- * ε_i = 2 при n_i > 0, иначе 1. Нормировка /2 даёт для косых мод значение Сэбина cA/(8V).
+ * Затухание моды δ (1/с) — теория возмущений для слабо поглощающих стен (Kuttruff, Room Acoustics, § 3.4):
+ * δ_n = (c/2V)·Πε·∮ Re(β)·ψ_n² dS, а для локально реагирующей поверхности α ≈ 8·Re(β) (статистическое поглощение).
+ * Для равномерно поглощающих стен это δ = (c/16V)·(εx·Ax + εy·Ay + εz·Az), A_i — поглощение пары стен,
+ * перпендикулярных оси i; ε_i = 2 при n_i > 0, иначе 1; косые моды затухают по Сэбину: cA/(8V).
+ * Окна, двери, проёмы и обработка добавляют (c/16V)·Πε·Δα·∫ψ² dS по своей площади — их вклад зависит
+ * от того, пучность моды там или узел.
  */
-export function modeDamping(mode: Pick<Mode, 'n' | 'f'>, room: Room, rev?: ReverbResult): number {
+export function modeDamping(mode: Pick<Mode, 'n' | 'f'>, room: Room, rev?: ReverbResult, patches: Patch[] = roomPatches(room)): number {
   const V = rev?.volume ?? roomVolume(room);
   const c = speedOfSound(room.temperatureC);
-  const a = surfaceAbsorptionAt(room, Math.max(mode.f, 20));
-  const Ax = a.front + a.back;
-  const Ay = a.left + a.right;
-  const Az = a.floor + a.ceiling;
+  const f = Math.max(mode.f, 20);
+  const a = baseSurfaceAbsorptionAt(room, f);
   const e = (n: number) => (n > 0 ? 2 : 1);
-  return ((c / (8 * V)) * (e(mode.n[0]) * Ax + e(mode.n[1]) * Ay + e(mode.n[2]) * Az)) / 2;
+  const ex = e(mode.n[0]), ey = e(mode.n[1]), ez = e(mode.n[2]);
+  let sum = ex * (a.front + a.back) + ey * (a.left + a.right) + ez * (a.floor + a.ceiling);
+  if (patches.length) {
+    const kx = (mode.n[0] * Math.PI) / room.depth, ky = (mode.n[1] * Math.PI) / room.width, kz = (mode.n[2] * Math.PI) / room.height;
+    const prod = ex * ey * ez;
+    for (const p of patches) sum += prod * patchDeltaAlpha(room, p, f) * patchModeIntegral(p, kx, ky, kz);
+  }
+  return Math.max(1e-3, (c / (16 * V)) * sum);
 }
 
 export interface PreparedModes {
@@ -62,14 +71,15 @@ export function prepareModes(room: Room, fMax: number, rev?: ReverbResult): Prep
     invLambda: new Float64Array(n),
     freq: new Float64Array(n),
   };
+  const patches = roomPatches(room);
+  const scale = room.calibration?.dampingScale ?? 1;
   list.forEach((m, i) => {
     pm.kx[i] = (m.n[0] * Math.PI) / L[0];
     pm.ky[i] = (m.n[1] * Math.PI) / L[1];
     pm.kz[i] = (m.n[2] * Math.PI) / L[2];
     const w = 2 * Math.PI * m.f;
     pm.omega2[i] = w * w;
-    const scale = room.calibration?.dampingScale ?? 1;
-    let delta = modeDamping(m, room, r) * scale;
+    let delta = modeDamping(m, room, r, patches) * scale;
     if (i === 0) delta = Math.max(delta, Math.PI * LEAK_HZ[room.leakage ?? 'typical']);
     pm.delta[i] = delta;
     pm.invLambda[i] = (m.n[0] > 0 ? 2 : 1) * (m.n[1] > 0 ? 2 : 1) * (m.n[2] > 0 ? 2 : 1);

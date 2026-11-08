@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calibrate, compareMeasurement, parseRew } from '../../src/core/measure';
+import { calibrate, compareMeasurement, modelForMeasurement, parseRew } from '../../src/core/measure';
 import { evaluateSetup } from '../../src/core/system';
 import { defaultConstraints, defaultRoom, defaultSetup, defaultSources } from '../../src/state/project';
 
@@ -34,9 +34,27 @@ describe('подстройка модели', () => {
     const m = parseRew(rewText(e.response.f, e.response.db.map((v) => v + 75)));
     const before = compareMeasurement(room, sources, c, setup, m).rms;
     const r = calibrate(room, sources, c, setup, m);
-    expect(r.dampingScale).toBe(2);
+    expect(Math.abs(r.dampingScale / 2 - 1)).toBeLessThan(0.07);
     expect(r.leakage).toBe('door');
     expect(r.rmsAfter).toBeLessThan(before);
     expect(r.rmsAfter).toBeLessThan(0.6);
+  });
+
+  it('замер из нескольких точек сравнивается со средним модели по тем же точкам — без смещения затухания', () => {
+    const truth = { ...room, calibration: { dampingScale: 1.6 } };
+    const probe = { name: 'x', importedAt: '', f: [20, 500], db: [0, 0], points: 5 };
+    const avg = modelForMeasurement(truth, sources, setup, probe);
+    expect(avg.averaged).toBe(true);
+    const m = { ...parseRew(rewText(avg.f, avg.db.map((v) => v + 70))), points: 5 };
+    const r = calibrate(room, sources, c, setup, m);
+    expect(Math.abs(r.dampingScale / 1.6 - 1)).toBeLessThan(0.13);
+    // если бы среднее по точкам сравнивалось с моделью в одной точке, подобралось бы заметно большее затухание
+    const single = calibrate(room, sources, c, setup, { ...m, points: 1 });
+    expect(single.dampingScale).toBeGreaterThan(r.dampingScale);
+  });
+
+  it('у старых замеров свипом число точек берётся из названия', () => {
+    const m = { name: 'Замер свипом, точек: 4', importedAt: '', f: [20, 500], db: [0, 0] };
+    expect(modelForMeasurement(room, sources, setup, m).averaged).toBe(true);
   });
 });

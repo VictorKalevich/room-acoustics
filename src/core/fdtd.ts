@@ -1,11 +1,12 @@
 // Волновая модель (research R21): FDTD на кубической сетке для комнаты со смежными помещениями.
 // Схема SLF с частотно-независимыми локально реагирующими границами (Kowalczyk & van Walstijn, 2008).
-import type { Room, Vec3, WallId } from './types';
+import type { OctaveValues, Room, SurfaceId, Vec3, WallId } from './types';
 import { ceilingAt, extensionBox, roomBox, type Box } from './geometry';
 import { speedOfSound } from './physics';
 import { FURNISHING, alphaAt, getMaterial } from './materials';
 import { surfaceAreas } from './reverb';
-import { activeTreatments, treatmentAlpha, treatmentArea, treatmentKey, treatmentSurfaces } from './treatments';
+import { treatmentKey } from './treatments';
+import { cornerLegs, patchContains, roomPatches, type Patch } from './patches';
 
 export const LAMBDA = 0.577; // число Куранта, чуть меньше 1/√3
 const PPW = 10; // узлов на длину волны верхней частоты
@@ -33,25 +34,58 @@ export interface WaveGrid {
   /** 0 — комната, 1… — смежное помещение (индекс + 1) */
   region: Uint8Array;
   volumes: number[];
+  /** Оценка самого долгого затухания (осевые моды основной комнаты), с — для длительности расчёта. */
+  t60: number;
 }
 
-/** Средний коэффициент поглощения материала в полосе 63–250 Гц. */
-function lfAlpha(id: string): number {
-  const a = getMaterial(id).alpha;
-  return (alphaAt(a, 63) + alphaAt(a, 125) + alphaAt(a, 250)) / 3;
+/**
+ * Границы в схеме частотно-независимые, поэтому α берётся средним по полосе, где у комнаты моды и
+ * где оценивается бас: 40, 63, 100 и 160 Гц (ниже 63 Гц таблица продолжается значением на 63 Гц).
+ */
+export function lfAlpha(values: readonly number[]): number {
+  return (alphaAt(values, 40) + alphaAt(values, 63) + alphaAt(values, 100) + alphaAt(values, 160)) / 4;
 }
 
-/** β = (1 − √(1−α)) / (1 + √(1−α)) — нормированная проводимость при нормальном падении. */
-export function alphaToBeta(alpha: number): number {
-  const r = Math.sqrt(Math.max(0, 1 - Math.min(alpha, 0.999)));
-  return (1 - r) / (1 + r);
+/**
+ * Статистическое (диффузное) поглощение локально реагирующей поверхности с действительной нормированной
+ * проводимостью β = 1/ζ (формула Пари; Kuttruff, Room Acoustics, § 2.5): α = (8/ζ)·[1 + 1/(1+ζ) − (2/ζ)·ln(1+ζ)].
+ * При малом β: α ≈ 8β. Максимум 0,951 при ζ ≈ 1,567.
+ */
+export function alphaStat(beta: number): number {
+  if (beta <= 0) return 0;
+  const z = 1 / beta;
+  return (8 / z) * (1 + 1 / (1 + z) - (2 / z) * Math.log(1 + z));
 }
+
+const ZETA_OPT = 1.5675;
+const ALPHA_MAX = alphaStat(1 / ZETA_OPT);
+
+/**
+ * β границы схемы по табличному α (коэффициенты в таблицах — диффузные, измеренные в реверберационной камере):
+ * обращение формулы Пари на ветви ζ ≥ ζ_opt. Так поглощение стен в волновой модели совпадает с прямоугольной
+ * моделью и с формулой Сэбина (раньше α принималось за коэффициент при нормальном падении — стены
+ * поглощали вдвое сильнее).
+ */
+export function betaFromAlpha(alpha: number): number {
+  if (!(alpha > 0)) return 0;
+  if (alpha >= ALPHA_MAX) return 1 / ZETA_OPT;
+  let lo = Math.log(ZETA_OPT), hi = Math.log(1e7);
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (alphaStat(Math.exp(-mid)) > alpha) lo = mid; else hi = mid;
+  }
+  return Math.exp(-(lo + hi) / 2);
+}
+
+/** Проём наружу или в большой объём: согласованная граница ρc (волна уходит без отражения). */
+const BETA_OPEN = 1;
 
 /** Ключ геометрии/материалов для кэша. */
 export function geometryKey(room: Room, fMax: number): string {
   return JSON.stringify([
     room.depth, room.width, room.height, room.temperatureC, room.materials, room.furnishing,
     room.openings, room.extensions, room.calibration, Math.round(fMax), treatmentKey(room), room.slope ?? null,
+    (room.features ?? []).map((f) => [f.kind, f.wall, f.a0, f.a1, f.bottom, f.top]),
   ]);
 }
 
@@ -125,31 +159,40 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
     if (n >= 0) { nodeCell[n] = cell; region[n] = regionCell[cell]; }
   }
 
-  // поглощение поверхностей (полоса 63–250 Гц) + мебель + подстройка
+  // поглощение поверхностей (полоса 40–160 Гц) + обстановка + подстройка по замеру
   const S = surfaceAreas(room);
   const sTotal = Object.values(S).reduce((a, b) => a + b, 0);
-  const furnA = (alphaAt(FURNISHING[room.furnishing], 63) + alphaAt(FURNISHING[room.furnishing], 125)) / 2 * S.floor;
-  const furnAlpha = furnA / sTotal;
+  const furnAlpha = (lfAlpha(FURNISHING[room.furnishing]) * S.floor) / sTotal;
   const scale = room.calibration?.dampingScale ?? 1;
-  // обработка: прибавка к среднему поглощению поверхности (размазано по её площади)
-  const treatAlpha: Record<string, number> = {};
-  for (const t of activeTreatments(room)) {
-    const a = treatmentAlpha(t);
-    const at = (alphaAt(a, 63) + alphaAt(a, 125) + alphaAt(a, 250)) / 3;
-    for (const { s, share } of treatmentSurfaces(t)) {
-      const aw = lfAlpha(room.materials[s]);
-      treatAlpha[s] = (treatAlpha[s] ?? 0) + (treatmentArea(t) * share * Math.max(0, at - aw)) / S[s];
-    }
-  }
-  const roomAlpha = (surf: WallId | 'floor' | 'ceiling') => Math.min(0.999, (lfAlpha(room.materials[surf]) + furnAlpha + (treatAlpha[surf] ?? 0)) * scale);
-  const plasterAlpha = Math.min(0.999, lfAlpha('plaster') * scale);
+  const matAlpha = (surf: SurfaceId) => lfAlpha(getMaterial(room.materials[surf]).alpha);
+  const toBeta = (alpha: number) => betaFromAlpha(Math.max(0, alpha) * scale);
   const betaRoom: Record<string, number> = {};
-  for (const sf of ROOM_FACE) betaRoom[sf] = alphaToBeta(roomAlpha(sf));
-  const betaOpen = alphaToBeta(0.999);
-
+  for (const sf of ROOM_FACE) betaRoom[sf] = toBeta(matAlpha(sf) + furnAlpha);
+  // стены коридора — штукатурка без обстановки
+  const plasterBeta = toBeta(lfAlpha(getMaterial('plaster').alpha));
   const along = (wall: WallId, x: number, y: number) => (wall === 'front' || wall === 'back' ? y : x);
-  const inOpening = (wall: WallId, x: number, y: number, z: number) =>
-    (room.openings ?? []).some((o) => o.wall === wall && along(wall, x, y) >= o.a0 && along(wall, x, y) <= o.a1 && z <= o.height);
+  // окна, двери, обработка — на своих гранях; угловая ловушка — катетами на двух стенах; проёмы — граница ρc
+  const patches: Patch[] = roomPatches(room, { withArches: false }).flatMap((p) => (p.diag ? cornerLegs(room, p) : [p]));
+  const patchBand = new Map<Patch, number>();
+  for (const p of patches) if (p.alpha) patchBand.set(p, lfAlpha(p.alpha as OctaveValues));
+  const faceBeta = (sf: SurfaceId, u: number, v: number): number => {
+    const base = matAlpha(sf);
+    let alpha = base + furnAlpha;
+    let replaced = false;
+    for (const p of patches) {
+      if (!patchContains(p, sf, u, v)) continue;
+      if (!p.alpha) return BETA_OPEN;
+      const ap = patchBand.get(p)!;
+      if (p.overlay) alpha += Math.max(0, ap - base);
+      else if (!replaced) { alpha += ap - base; replaced = true; }
+    }
+    return toBeta(alpha);
+  };
+  // координаты точки на поверхности: для стен — вдоль стены и высота, для потолка/пола — x и y
+  const surfUV = (sf: SurfaceId, x: number, y: number, z: number): [number, number] =>
+    sf === 'front' || sf === 'back' ? [y, z] : sf === 'left' || sf === 'right' ? [x, z] : [x, y];
+  // Σ β·dS по поверхностям основной комнаты — для оценки затухания осевых мод
+  const betaArea: Record<string, number> = { front: 0, back: 0, left: 0, right: 0, floor: 0, ceiling: 0 };
 
   const nbr = new Int32Array(6 * N).fill(N);
   const ca = new Float32Array(N);
@@ -194,10 +237,13 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
       blocked++;
       let beta: number;
       if (r === 0) {
-        const sf = ROOM_FACE[d];
         const nxp = cx(ii), nyp = cy(jj), nzp = cz(kk);
         const underSlope = !!room.slope && inside(boxes[0], nxp, nyp, nzp);
-        beta = underSlope ? betaRoom.ceiling : sf !== 'floor' && sf !== 'ceiling' && inOpening(sf, x, y, z) ? betaOpen : betaRoom[sf];
+        const sf: SurfaceId = underSlope ? 'ceiling' : ROOM_FACE[d];
+        // центр грани — посередине между узлом и соседней (заблокированной) ячейкой
+        const [u, v] = surfUV(sf, (x + nxp) / 2, (y + nyp) / 2, (z + nzp) / 2);
+        beta = underSlope ? betaRoom.ceiling : faceBeta(sf, u, v);
+        betaArea[sf] += beta * h * h;
       } else {
         const e = exts[r - 1];
         // направление к стене комнаты, от неё, вдоль стены
@@ -208,10 +254,10 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
         if (d === 4) beta = betaRoom.floor;
         else if (d === 5) beta = betaRoom.ceiling;
         else if (d === toRoom) beta = betaRoom[e.wall];
-        else if (d === far) beta = e.openFar ? betaOpen : alphaToBeta(plasterAlpha);
-        else if (d === startDir) beta = e.openStart ? betaOpen : alphaToBeta(plasterAlpha);
-        else if (d === endDir) beta = e.openEnd ? betaOpen : alphaToBeta(plasterAlpha);
-        else beta = alphaToBeta(plasterAlpha);
+        else if (d === far) beta = e.openFar ? BETA_OPEN : plasterBeta;
+        else if (d === startDir) beta = e.openStart ? BETA_OPEN : plasterBeta;
+        else if (d === endDir) beta = e.openEnd ? BETA_OPEN : plasterBeta;
+        else beta = plasterBeta;
       }
       betaSum += beta;
     }
@@ -222,12 +268,28 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000): W
     cd[n] = (1 - cc) / (1 + cc);
   }
 
+  // затухание осевых мод основной комнаты: δ = (c/2V)·(2·ΣβS⊥ + ΣβS∥) — самое долгое задаёт длительность расчёта
+  const V0 = (boxes[0].x1 - boxes[0].x0) * (boxes[0].y1 - boxes[0].y0) * (boxes[0].z1 - boxes[0].z0);
+  const B = betaArea;
+  const all = B.front + B.back + B.left + B.right + B.floor + B.ceiling;
+  const axial = [B.front + B.back, B.left + B.right, B.floor + B.ceiling].map((par) => (c / (2 * V0)) * (all + par));
+  const t60 = 6.91 / Math.max(1e-3, Math.min(...axial));
+
   return {
     key: geometryKey(room, fMaxWanted),
     h, dt: (LAMBDA * h) / c, c, fMax, nx, ny, nz, x0: cx(0), y0: cy(0), z0: cz(0), N,
     cellNode, nodeCell, nbr, ca, cb, cd, region,
     volumes: boxes.map((b) => (b.x1 - b.x0) * (b.y1 - b.y0) * (b.z1 - b.z0)),
+    t60,
   };
+}
+
+/**
+ * Длительность расчёта по умолчанию: не короче 1,2 с и так, чтобы самые долгие моды успели затухнуть
+ * хотя бы на ~45 дБ (иначе их пики в спектре размываются). Не дольше 3 с.
+ */
+export function defaultDuration(g: WaveGrid): number {
+  return Math.min(3, Math.max(1.2, 0.75 * g.t60));
 }
 
 /** Ближайший воздушный узел к точке. */
@@ -279,7 +341,7 @@ function sourceSignal(t: number, fMax: number): number {
  * (и дополнительные узлы extra) с прореживанием по времени.
  */
 export function simulate(g: WaveGrid, srcPos: Vec3, opts: { layers?: number[]; extra?: number[]; duration?: number; onProgress?: (p: number) => void } = {}): SimResult {
-  const duration = opts.duration ?? 1.2;
+  const duration = opts.duration ?? defaultDuration(g);
   const steps = Math.ceil(duration / g.dt);
   const decim = Math.max(1, Math.floor(1 / (g.dt * 4.3 * g.fMax)));
   const layers = [...new Set(opts.layers ?? [])].sort((a, b) => a - b);
@@ -332,7 +394,7 @@ export function simulateField(
   freqs: number[],
   opts: { duration?: number; onProgress?: (p: number) => void } = {},
 ): { re: Float32Array; im: Float32Array } {
-  const duration = opts.duration ?? 1.2;
+  const duration = opts.duration ?? defaultDuration(g);
   const steps = Math.ceil(duration / g.dt);
   const decim = Math.max(1, Math.floor(1 / (g.dt * 4.3 * g.fMax)));
   const T = Math.floor(steps / decim);
@@ -398,14 +460,16 @@ export function simulateField(
 
 // ---------- Спектры ----------
 
-const twiddleCache = new Map<string, { cos: Float32Array; sin: Float32Array; win: Float32Array; sRe: Float64Array; sIm: Float64Array }>();
+const twiddleCache = new Map<string, { cos: Float32Array; sin: Float32Array; win: Float32Array }>();
+// спектр сигнала источника — свой у каждого расчёта (в поиске мод системы запись умножается на окно)
+const srcSpecCache = new WeakMap<SimResult, Map<string, { sRe: Float64Array; sIm: Float64Array }>>();
 
 function twiddles(sim: SimResult, freqs: number[]) {
-  const key = `${sim.T}|${sim.dtd}|${freqs.length}|${freqs[0]}|${freqs[freqs.length - 1]}|${sim.grid.fMax}`;
+  const key = `${sim.T}|${sim.dtd}|${freqs.length}|${freqs[0]}|${freqs[freqs.length - 1]}`;
   let tw = twiddleCache.get(key);
+  const T = sim.T;
+  const nF = freqs.length;
   if (!tw) {
-    const T = sim.T;
-    const nF = freqs.length;
     const cos = new Float32Array(nF * T);
     const sin = new Float32Array(nF * T);
     for (let f = 0; f < nF; f++) {
@@ -416,18 +480,25 @@ function twiddles(sim: SimResult, freqs: number[]) {
     const win = new Float32Array(T).fill(1);
     const tail = Math.floor(T * 0.2);
     for (let t = 0; t < tail; t++) win[T - tail + t] = 0.5 * (1 + Math.cos((Math.PI * t) / tail));
+    tw = { cos, sin, win };
+    if (twiddleCache.size > 8) twiddleCache.clear();
+    twiddleCache.set(key, tw);
+  }
+  let bySim = srcSpecCache.get(sim);
+  if (!bySim) { bySim = new Map(); srcSpecCache.set(sim, bySim); }
+  let sp = bySim.get(key);
+  if (!sp) {
     const sRe = new Float64Array(nF);
     const sIm = new Float64Array(nF);
     for (let f = 0; f < nF; f++) {
       let re = 0, im = 0;
-      for (let t = 0; t < T; t++) { re += sim.src[t] * cos[f * T + t]; im += sim.src[t] * sin[f * T + t]; }
+      for (let t = 0; t < T; t++) { re += sim.src[t] * tw.cos[f * T + t]; im += sim.src[t] * tw.sin[f * T + t]; }
       sRe[f] = re; sIm[f] = im;
     }
-    tw = { cos, sin, win, sRe, sIm };
-    if (twiddleCache.size > 8) twiddleCache.clear();
-    twiddleCache.set(key, tw);
+    sp = { sRe, sIm };
+    bySim.set(key, sp);
   }
-  return tw;
+  return { ...tw, ...sp };
 }
 
 /** Передаточная функция H = P/S в записанном узле на частотах freqs. */
@@ -528,7 +599,19 @@ export function systemModes(room: Room, fMax = 200, opts: { duration?: number; o
   for (const x of [0.1, room.depth - 0.1]) for (const y of [0.1, room.width - 0.1]) for (const z of [0.1, room.height - 0.1]) corners.push(nearestNode(g, { x, y, z }));
   const rN = [...new Set([...corners, ...pick(roomNodes, 32)])];
   const eN = pick(extNodes, 20);
-  const sim = simulate(g, { x: 0.12, y: 0.12, z: 0.12 }, { extra: [...rN, ...eN], duration: opts.duration ?? 2.5, onProgress: opts.onProgress });
+  const duration = opts.duration ?? Math.max(2.5, defaultDuration(g));
+  const sim = simulate(g, { x: 0.12, y: 0.12, z: 0.12 }, { extra: [...rN, ...eN], duration, onProgress: opts.onProgress });
+  // в гулкой комнате звук не успевает затухнуть за время расчёта: обрыв даёт ложные пики-«лепестки».
+  // Экспоненциальное окно добавляет всем модам одинаковое затухание так, чтобы к концу записи было −60 дБ;
+  // частоты пиков от этого не меняются
+  const dW = Math.max(0, 6.91 / duration - 6.91 / g.t60);
+  if (dW > 0) {
+    for (let t = 0; t < sim.T; t++) {
+      const w = Math.exp(-dW * t * sim.dtd);
+      sim.src[t] *= w;
+      for (let r = 0; r < sim.rec.length; r++) sim.series[r * sim.T + t] *= w;
+    }
+  }
   const df = 0.25;
   const freqs: number[] = [];
   for (let f = 15; f <= g.fMax; f += df) freqs.push(f);

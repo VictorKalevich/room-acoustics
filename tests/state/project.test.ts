@@ -110,3 +110,14 @@ describe('окна и двери на плане', () => {
     expect(back.room.features).toEqual(p.room.features);
   });
 });
+
+import { DAMPING_MODEL } from '../../src/core/types';
+describe('подстройка модели при обновлении', () => {
+  it('множитель затухания, подобранный для прежней модели, сбрасывается; для текущей — сохраняется', () => {
+    const p = newProject();
+    const old = parseProjectFile(serializeProject({ ...p, room: { ...p.room, calibration: { dampingScale: 2.5 } } }));
+    expect(old.room.calibration).toBeNull();
+    const cur = parseProjectFile(serializeProject({ ...p, room: { ...p.room, calibration: { dampingScale: 1.3, model: DAMPING_MODEL } } }));
+    expect(cur.room.calibration?.dampingScale).toBe(1.3);
+  });
+});

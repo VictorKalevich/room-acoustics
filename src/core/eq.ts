@@ -42,18 +42,22 @@ function std(a: number[]): number {
 
 /**
  * Жадный подбор фильтров: наибольшее превышение над целью (относительно медианы) → срез с усилением
- * −0,9·превышение и добротностью по ширине пика на уровне половины превышения.
+ * −0,9·превышение и добротностью по ширине пика на уровне половины превышения. Если пик остался там, где
+ * фильтр уже стоит (ближе 1/6 октавы), углубляется этот фильтр, а не ставится второй на ту же частоту;
+ * суммарный срез на одной частоте — не больше maxCut. maxQ ограничивает добротность: по модели частоты мод
+ * известны с точностью до процентов, поэтому для расчётной кривой фильтры шире, чем для замера.
  */
 export function designEq(
   freqs: number[],
   db: number[],
   target: number[],
-  opts: { maxFilters?: number; threshold?: number; maxCut?: number; smoothOct?: number } = {},
+  opts: { maxFilters?: number; threshold?: number; maxCut?: number; smoothOct?: number; maxQ?: number } = {},
 ): EqResult {
   const maxFilters = opts.maxFilters ?? 8;
   const threshold = opts.threshold ?? 2;
   const maxCut = opts.maxCut ?? 12;
   const smoothOct = opts.smoothOct ?? 1 / 12;
+  const maxQ = opts.maxQ ?? 8;
   const n = freqs.length;
   const base = db.map((v, i) => v - target[i]);
   const stdBefore = std(base);
@@ -61,28 +65,49 @@ export function designEq(
   // Подбор ведётся по сглаженной кривой (как в REW): узкие пики одной точки не «вырезаются» до дна
   const raw = base.slice();
   let cur = smoothLog(freqs, raw, smoothOct);
-  let actual = raw.slice();
-  for (let k = 0; k < maxFilters; k++) {
+  // частоты, где срез уже предельный: пики там больше не ищем
+  const blocked: [number, number][] = [];
+  const isBlocked = (f: number) => blocked.some(([a, b]) => f >= a && f <= b);
+  const resp = (p: PeqFilter) => freqs.map((f) => peqGainDb(p, f));
+  for (let k = 0; k < maxFilters * 2 && filters.length <= maxFilters; k++) {
     const ref = median(cur);
-    let im = 0;
-    for (let i = 1; i < n; i++) if (cur[i] - ref > cur[im] - ref) im = i;
+    // пик — локальный максимум внутри полосы (край полосы — не пик: там просто начинается спад)
+    let im = -1;
+    for (let i = 1; i < n - 1; i++) {
+      if (isBlocked(freqs[i]) || cur[i] < cur[i - 1] || cur[i] < cur[i + 1]) continue;
+      if (im < 0 || cur[i] > cur[im]) im = i;
+    }
+    if (im < 0) break;
     const peak = cur[im] - ref;
     if (peak < threshold) break;
-    const half = ref + peak / 2;
-    let lo = im, hi = im;
-    while (lo > 0 && cur[lo] > half) lo--;
-    while (hi < n - 1 && cur[hi] > half) hi++;
-    const bw = Math.max(Math.log2(freqs[hi] / freqs[lo]), 1 / 24);
-    const p = Math.pow(2, bw);
-    const q = Math.min(12, Math.max(0.7, Math.sqrt(p) / (p - 1)));
-    const filter = { f: round(freqs[im], 1), gainDb: round(-Math.min(maxCut, 0.9 * peak), 1), q: round(q, 2) };
-    // фильтр, не дающий улучшения, не добавляем
-    const trial = cur.map((v, i) => v + peqGainDb(filter, freqs[i]));
-    if (std(trial) >= std(cur) - 1e-6) break;
-    filters.push(filter);
+    const near = filters.findIndex((p) => Math.abs(Math.log2(p.f / freqs[im])) < 1 / 6);
+    let next: PeqFilter;
+    let old: PeqFilter | null = null;
+    if (near >= 0) {
+      old = filters[near];
+      const g = round(Math.max(-maxCut, old.gainDb - 0.9 * peak), 1);
+      if (g > old.gainDb - 0.25) { blocked.push([freqs[im] / Math.pow(2, 1 / 12), freqs[im] * Math.pow(2, 1 / 12)]); continue; }
+      next = { ...old, gainDb: g };
+    } else {
+      if (filters.length >= maxFilters) break;
+      const half = ref + peak / 2;
+      let lo = im, hi = im;
+      while (lo > 0 && cur[lo] > half) lo--;
+      while (hi < n - 1 && cur[hi] > half) hi++;
+      const bw = Math.max(Math.log2(freqs[hi] / freqs[lo]), 1 / 24);
+      const p = Math.pow(2, bw);
+      const q = Math.min(maxQ, Math.max(0.7, Math.sqrt(p) / (p - 1)));
+      next = { f: round(freqs[im], 1), gainDb: round(-Math.min(maxCut, 0.9 * peak), 1), q: round(q, 2) };
+    }
+    const rNext = resp(next), rOld = old ? resp(old) : null;
+    const trial = cur.map((v, i) => v + rNext[i] - (rOld ? rOld[i] : 0));
+    // фильтр, не дающий улучшения, не добавляем; эту частоту больше не трогаем
+    if (std(trial) >= std(cur) - 1e-6) { blocked.push([freqs[im] / Math.pow(2, 1 / 12), freqs[im] * Math.pow(2, 1 / 12)]); continue; }
+    if (old) filters[near] = next; else filters.push(next);
     cur = trial;
-    actual = actual.map((v, i) => v + peqGainDb(filter, freqs[i]));
   }
+  let actual = raw.slice();
+  for (const p of filters) { const r = resp(p); actual = actual.map((v, i) => v + r[i]); }
   const dips: EqResult['dips'] = [];
   const refEnd = median(cur);
   for (let i = 1; i < n - 1; i++) {

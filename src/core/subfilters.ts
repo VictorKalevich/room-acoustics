@@ -116,11 +116,15 @@ export function optimizeSubFilters(room: Room, sources: SourceSpec[], c: Constra
     let best: { s: number; k: number; p: { f: number; gainDb: number; q: number }; c: Complex[] } | null = null;
     subs.forEach((s, k) => {
       if (chosen[k].peq.length >= (s.peqBands ?? 0)) return;
-      for (const f of pqF) for (const g of gains) for (const q of qs) {
-        const p = { f, gainDb: g, q };
-        const cand = freqs.map((fq) => peqComplex(p, fq));
-        const sc = score(k, cand);
-        if (!best || sc < best.s) best = { s: sc, k, p, c: cand };
+      for (const f of pqF) {
+        // второй фильтр на ту же частоту (ближе 1/6 октавы) не ставим — суммарный срез не превысит 12 дБ
+        if (chosen[k].peq.some((p) => Math.abs(Math.log2(f / p.f)) < 1 / 6)) continue;
+        for (const g of gains) for (const q of qs) {
+          const p = { f, gainDb: g, q };
+          const cand = freqs.map((fq) => peqComplex(p, fq));
+          const sc = score(k, cand);
+          if (!best || sc < best.s) best = { s: sc, k, p, c: cand };
+        }
       }
     });
     if (!best || (best as { s: number }).s > cur - 0.05) break;
