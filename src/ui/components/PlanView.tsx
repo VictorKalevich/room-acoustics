@@ -2,6 +2,8 @@ import { useRef } from 'preact/hooks';
 import type { Extension, Opening, Placement, Room, Vec3, WallFeature, WallId, Zone } from '../../core/types';
 import { extensionBox } from '../../core/geometry';
 import type { Heatmap } from '../../core/field';
+import type { FieldSlice } from '../../core/field3d';
+import { fieldCss } from '../fieldColors';
 import { fmt } from '../format';
 import { S } from '../strings';
 
@@ -25,7 +27,7 @@ export interface WallMark {
   at: number;
 }
 
-interface Props {
+export interface PlanProps {
   depth: number;
   width: number;
   placement?: Placement | null;
@@ -38,6 +40,8 @@ interface Props {
   features?: WallFeature[];
   listenerZone?: [number, number] | null;
   heatmap?: Heatmap | null;
+  /** Срез звукового поля на выбранных частотах (экран 3D). */
+  field?: { slice: FieldSlice; threshold: number } | null;
   marks?: PlanMark[];
   wallMarks?: WallMark[];
   selectedId?: string | null;
@@ -59,7 +63,7 @@ const snap = (v: number) => Math.round(v / SNAP) * SNAP;
  * План комнаты сверху, как архитектурный чертёж: передняя стена (с колонками) — сверху.
  * x комнаты (глубина) идёт вниз, y (ширина) — вправо. Элементы можно перетаскивать пальцем.
  */
-export function PlanView(p: Props) {
+export function PlanView(p: PlanProps) {
   const { depth, width, showDims = true } = p;
   const W = 320;
   const pad = 30;
@@ -124,24 +128,7 @@ export function PlanView(p: Props) {
   };
 
   const interactive = !!(p.onMove || p.onTap);
-  // какие обозначения есть на этом плане
-  const keys: KeyId[] = ['front'];
-  if (spk.length) keys.push('spk');
-  if (items.some((i) => i.kind === 'sub')) keys.push('sub');
-  if (listener) keys.push('listener');
-  if (listener && spk.length) keys.push('triangle');
-  if (seats.length > 1) keys.push('seats');
-  if (hm) keys.push('heat');
-  if ((p.marks ?? []).some((m) => m.kind === 'best')) keys.push('best');
-  if ((p.marks ?? []).some((m) => m.kind === 'probe')) keys.push('probe');
-  if ((p.wallMarks ?? []).length) keys.push('reflection');
-  if ((p.marks ?? []).some((m) => m.kind === 'trap')) keys.push('trap');
-  if (p.listenerZone) keys.push('listenerZone');
-  if ((p.zones ?? []).length) keys.push('zone');
-  if (feats.some((f) => f.kind === 'window')) keys.push('window');
-  if (feats.some((f) => f.kind === 'door')) keys.push('door');
-  if ((p.openings ?? []).length) keys.push('opening');
-  if ((p.extensions ?? []).length) keys.push('arch', 'corridor');
+  const keys = keysFor(p, items, seats);
   const { showKey = true } = p;
   return (
     <>
@@ -247,6 +234,25 @@ export function PlanView(p: Props) {
         </g>
       )}
 
+      {p.field && (
+        <g class="plan__field" shape-rendering="crispEdges">
+          {(() => {
+            const fs = p.field!.slice;
+            const out = [];
+            for (let i = 0; i < fs.nx; i++) {
+              const cx = fs.x0 + i * fs.sx;
+              for (let j = 0; j < fs.ny; j++) {
+                const cy = fs.y0 + j * fs.sy;
+                const fill = fieldCss(fs.db[i * fs.ny + j], p.field!.threshold);
+                if (!fill) continue;
+                out.push(<rect x={X(cy - fs.sy / 2)} y={Y(cx - fs.sx / 2)} width={fs.sy * scale} height={fs.sx * scale} fill={fill} />);
+              }
+            }
+            return out;
+          })()}
+        </g>
+      )}
+
       {(p.zones ?? []).map((z) => (
         <g class={`plan__zone-rect is-${z.kind}`}>
           <rect x={X(z.y0)} y={Y(z.x0)} width={(z.y1 - z.y0) * scale} height={(z.x1 - z.x0) * scale} fill="url(#zonehatch)" />
@@ -346,9 +352,37 @@ export function PlanView(p: Props) {
   );
 }
 
+
+/** Обозначения, которые есть на плане с такими свойствами (для пояснения «Что на плане»). */
+export function keysFor(p: PlanProps, items: PlanItem[] = p.items ?? [], seats: Vec3[] = p.seats ?? []): KeyId[] {
+  const feats = p.features ?? [];
+  const listener = items.find((i) => i.kind === 'listener');
+  const spk = items.filter((i) => i.kind === 'spk');
+  const hm = p.heatmap;
+  const keys: KeyId[] = ['front'];
+  if (spk.length) keys.push('spk');
+  if (items.some((i) => i.kind === 'sub')) keys.push('sub');
+  if (listener) keys.push('listener');
+  if (listener && spk.length) keys.push('triangle');
+  if (seats.length > 1) keys.push('seats');
+  if (hm) keys.push('heat');
+  if (p.field) keys.push('field');
+  if ((p.marks ?? []).some((m) => m.kind === 'best')) keys.push('best');
+  if ((p.marks ?? []).some((m) => m.kind === 'probe')) keys.push('probe');
+  if ((p.wallMarks ?? []).length) keys.push('reflection');
+  if ((p.marks ?? []).some((m) => m.kind === 'trap')) keys.push('trap');
+  if (p.listenerZone) keys.push('listenerZone');
+  if ((p.zones ?? []).length) keys.push('zone');
+  if (feats.some((f) => f.kind === 'window')) keys.push('window');
+  if (feats.some((f) => f.kind === 'door')) keys.push('door');
+  if ((p.openings ?? []).length) keys.push('opening');
+  if ((p.extensions ?? []).length) keys.push('arch', 'corridor');
+  return keys;
+}
+
 export type KeyId =
   | 'front' | 'spk' | 'sub' | 'listener' | 'triangle' | 'seats' | 'heat' | 'best' | 'probe'
-  | 'reflection' | 'trap' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor';
+  | 'reflection' | 'trap' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor' | 'field';
 
 /** Маленький значок обозначения — теми же стилями, что и на плане. */
 function KeyIcon({ id }: { id: KeyId }) {
@@ -360,6 +394,7 @@ function KeyIcon({ id }: { id: KeyId }) {
       case 'listener': return <g class="plan__listener"><circle cx="14" cy="10" r="8" /><circle cx="14" cy="10" r="2.5" class="plan__dot" /></g>;
       case 'triangle': return <polygon class="plan__triangle" points="3,3 25,3 14,18" />;
       case 'seats': return <circle class="plan__seat" cx="14" cy="10" r="5" />;
+      case 'field': return <g><rect x="2" y="4" width="8" height="12" fill="rgba(26,71,230,0.8)" /><rect x="10" y="4" width="8" height="12" fill="none" stroke="currentColor" stroke-width="0.6" stroke-dasharray="2 2" /><rect x="18" y="4" width="8" height="12" fill="rgba(214,31,20,0.8)" /></g>;
       case 'heat': return <g><rect x="2" y="4" width="8" height="12" fill="hsl(160 62% 48%)" /><rect x="10" y="4" width="8" height="12" fill="hsl(88 62% 48%)" /><rect x="18" y="4" width="8" height="12" fill="hsl(15 62% 48%)" /></g>;
       case 'best': return <g class="plan__mark is-best"><circle cx="14" cy="10" r="9" /><text x="14" y="14" text-anchor="middle">1</text></g>;
       case 'probe': return <g class="plan__mark is-probe"><circle cx="14" cy="10" r="6" /></g>;

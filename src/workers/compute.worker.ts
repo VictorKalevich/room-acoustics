@@ -5,6 +5,7 @@ import { optimizeSubs } from '../core/integration';
 import { calibrate, compareMeasurement } from '../core/measure';
 import { evaluateSetup } from '../core/system';
 import { systemModes } from '../core/fdtd';
+import { computeField } from '../core/field3d';
 
 interface Job { id: number; type: string; payload: any }
 const queue: Job[] = [];
@@ -28,9 +29,12 @@ function run(job: Job) {
       case 'compare': result = compareMeasurement(p.room, p.sources, p.constraints, p.setup, p.measurement); break;
       case 'evaluate': result = evaluateSetup(p.room, p.sources, p.constraints, p.setup, { ppo: p.ppo, onProgress: progress }); break;
       case 'modes': result = systemModes(p.room, p.fMax, { onProgress: progress }).modes; break;
+      case 'field': result = computeField(p, progress); break;
       default: throw new Error(`Неизвестная задача ${type}`);
     }
-    self.postMessage({ id, kind: 'done', result });
+    const fr = result as { energy?: Float32Array; mask?: Uint8Array };
+    const transfer = type === 'field' && fr.energy && fr.mask ? [fr.energy.buffer, fr.mask.buffer] : [];
+    self.postMessage({ id, kind: 'done', result }, transfer as any);
   } catch (err) {
     self.postMessage({ id, kind: 'error', error: (err as Error).message ?? String(err) });
   }

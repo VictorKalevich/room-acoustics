@@ -308,6 +308,80 @@ export function simulate(g: WaveGrid, srcPos: Vec3, opts: { layers?: number[]; e
   return { grid: g, rec, recIndex, layers, T, dtd: g.dt * decim, series, src };
 }
 
+/**
+ * Поле во всех узлах на заданных частотах: ДПФ накапливается во время счёта (на прореженных шагах,
+ * с полуокном Ханна на последних 20 %), без хранения временных рядов. Результат — H = P/S, [узел·nF + f].
+ */
+export function simulateField(
+  g: WaveGrid,
+  srcPos: Vec3,
+  freqs: number[],
+  opts: { duration?: number; onProgress?: (p: number) => void } = {},
+): { re: Float32Array; im: Float32Array } {
+  const duration = opts.duration ?? 1.2;
+  const steps = Math.ceil(duration / g.dt);
+  const decim = Math.max(1, Math.floor(1 / (g.dt * 4.3 * g.fMax)));
+  const T = Math.floor(steps / decim);
+  const nF = freqs.length;
+  const N = g.N;
+  const tail = Math.floor(T * 0.2);
+  const dtd = g.dt * decim;
+  const cosT = new Float32Array(nF);
+  const sinT = new Float32Array(nF);
+  const aRe = new Float32Array(N * nF);
+  const aIm = new Float32Array(N * nF);
+  const sRe = new Float64Array(nF);
+  const sIm = new Float64Array(nF);
+  const s = nearestNode(g, srcPos);
+  let p0 = new Float32Array(N + 1);
+  let p1 = new Float32Array(N + 1);
+  let p2 = new Float32Array(N + 1);
+  const { nbr, ca, cb, cd } = g;
+  let t = 0;
+  for (let step = 0; step < steps; step++) {
+    for (let n = 0; n < N; n++) {
+      const o = 6 * n;
+      const sum = p1[nbr[o]] + p1[nbr[o + 1]] + p1[nbr[o + 2]] + p1[nbr[o + 3]] + p1[nbr[o + 4]] + p1[nbr[o + 5]];
+      p2[n] = ca[n] * p1[n] + cb[n] * sum - cd[n] * p0[n];
+    }
+    const sv = sourceSignal(step * g.dt, g.fMax);
+    p2[s] += sv;
+    const tmp = p0; p0 = p1; p1 = p2; p2 = tmp;
+    if (step % decim === 0 && t < T) {
+      const win = t >= T - tail ? 0.5 * (1 + Math.cos((Math.PI * (t - (T - tail))) / tail)) : 1;
+      for (let f = 0; f < nF; f++) {
+        const w = 2 * Math.PI * freqs[f] * dtd * t;
+        cosT[f] = Math.cos(w) * win;
+        sinT[f] = -Math.sin(w) * win;
+        sRe[f] += sv * Math.cos(w);
+        sIm[f] -= sv * Math.sin(w);
+      }
+      for (let n = 0; n < N; n++) {
+        const v = p1[n];
+        if (v === 0) continue;
+        const o = n * nF;
+        for (let f = 0; f < nF; f++) {
+          aRe[o + f] += v * cosT[f];
+          aIm[o + f] += v * sinT[f];
+        }
+      }
+      t++;
+    }
+    if (opts.onProgress && step % 500 === 0) opts.onProgress(step / steps);
+  }
+  // H = A / S
+  for (let f = 0; f < nF; f++) {
+    const d = sRe[f] * sRe[f] + sIm[f] * sIm[f] || 1e-30;
+    for (let n = 0; n < N; n++) {
+      const o = n * nF + f;
+      const xr = aRe[o], xi = aIm[o];
+      aRe[o] = (xr * sRe[f] + xi * sIm[f]) / d;
+      aIm[o] = (xi * sRe[f] - xr * sIm[f]) / d;
+    }
+  }
+  return { re: aRe, im: aIm };
+}
+
 // ---------- Спектры ----------
 
 const twiddleCache = new Map<string, { cos: Float32Array; sin: Float32Array; win: Float32Array; sRe: Float64Array; sIm: Float64Array }>();

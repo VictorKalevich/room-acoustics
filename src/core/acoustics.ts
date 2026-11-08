@@ -1,7 +1,7 @@
 // Провайдер откликов волновой модели с кэшем расчётов (используется в воркере).
 // По взаимности H(A→B) = H(B→A): один расчёт из точки даёт отклики «из всех точек слоя в неё».
 import type { Room, Vec3 } from './types';
-import { buildGrid, geometryKey, layerOf, nearestNode, pointSpectrum, simulate, type SimResult, type WaveGrid } from './fdtd';
+import { buildGrid, geometryKey, layerOf, nearestNode, pointSpectrum, simulate, simulateField, type SimResult, type WaveGrid } from './fdtd';
 
 const GRID_LIMIT = 2;
 const SIM_LIMIT = 8;
@@ -62,7 +62,34 @@ export function waveSpectra(room: Room, fMax: number, src: Vec3, pts: Vec3[], fr
   return pts.map((p) => pointSpectrum(sim, p, freqs, cache!));
 }
 
+const fields = new Map<string, { re: Float32Array; im: Float32Array }>();
+const FIELD_LIMIT = 6;
+const fieldGrids = new Map<string, WaveGrid>();
+
+/** Поле во всех узлах от источника в p на частотах freqs (с кэшем; своя сетка, чтобы не вытеснять расчёты оценки). */
+export function waveField(room: Room, fMax: number, p: Vec3, freqs: number[], onProgress?: (v: number) => void) {
+  const gk = geometryKey(room, fMax);
+  let g = fieldGrids.get(gk);
+  if (!g) {
+    g = buildGrid(room, fMax);
+    if (fieldGrids.size >= 2) fieldGrids.clear();
+    fieldGrids.set(gk, g);
+  }
+  const key = `${g.key}|${nearestNode(g, p)}|${freqs.map((f) => f.toFixed(3)).join(',')}`;
+  let r = fields.get(key);
+  if (!r) {
+    r = simulateField(g, p, freqs, { onProgress });
+    if (fields.size >= FIELD_LIMIT) fields.delete(fields.keys().next().value!);
+    fields.set(key, r);
+  } else {
+    fields.delete(key);
+    fields.set(key, r);
+  }
+  return { grid: g, ...r };
+}
+
 export function clearWaveCache() {
+  fields.clear();
   grids.clear();
   sims.clear();
 }

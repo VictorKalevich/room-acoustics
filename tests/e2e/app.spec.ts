@@ -110,3 +110,19 @@ test('версия приложения видна на экране «Прое�
   await page.goto('/#projects');
   await expect(page.locator('.app-version')).toContainText(/Версия от .*\(\w+\)/);
 });
+
+test('004: экран 3D — поле, способы показа, порог и срез', async ({ page }) => {
+  await page.goto('/#field');
+  await expect(page.locator('.field3d')).toBeVisible();
+  await expect(page.locator('.chip.is-on').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.field3d__busy')).toHaveCount(0, { timeout: 30_000 });
+  await page.getByRole('radio', { name: 'Средняя энергия' }).click();
+  await page.getByRole('radio', { name: 'Полоса' }).click();
+  await page.getByRole('radio', { name: '±3' }).click();
+  await expect(page.locator('.field3d__busy')).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.locator('.plan__field rect').first()).toBeVisible();
+  await page.getByRole('radio', { name: 'Список' }).click();
+  await expect(page.locator('.modes-table')).toBeVisible();
+  await page.getByRole('button', { name: 'Проекты' }).click();
+  await expect(page.locator('.app-version')).toBeVisible();
+});

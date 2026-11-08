@@ -1,5 +1,5 @@
 // Расчёты в постоянном воркере (очередь, отмена ещё не начатых задач, кэш волновой модели).
-export type ComputeType = 'optimize' | 'listenerMap' | 'subMap' | 'integrate' | 'calibrate' | 'compare' | 'evaluate' | 'modes';
+export type ComputeType = 'optimize' | 'listenerMap' | 'subMap' | 'integrate' | 'calibrate' | 'compare' | 'evaluate' | 'modes' | 'field';
 
 export interface ComputeJob<T> {
   promise: Promise<T>;

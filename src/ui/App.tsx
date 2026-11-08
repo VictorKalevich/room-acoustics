@@ -11,12 +11,16 @@ import { ModesScreen } from './screens/ModesScreen';
 import { PlacementScreen } from './screens/PlacementScreen';
 import { ProjectsScreen } from './screens/ProjectsScreen';
 import { TuningScreen } from './screens/TuningScreen';
+import { FieldScreen } from './screens/FieldScreen';
+import { Segmented } from './components/Fields';
 import { S } from './strings';
 import { fmt } from './format';
 import { consumeJustUpdated, setBeforeReload } from './updates';
 
 type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects';
 const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects'];
+/** Вкладки нижней панели; «Проекты» — кнопка в верхней панели. */
+const BAR: Tab[] = ['room', 'modes', 'placement', 'tuning'];
 const TITLES: Record<Tab, string> = {
   room: S.room.title,
   modes: S.modes.title,
@@ -28,6 +32,7 @@ const TITLES: Record<Tab, string> = {
 function readTab(): Tab {
   const h = location.hash.replace('#', '');
   if (h === 'manual') return 'placement';
+  if (h === 'field') return 'modes';
   return TABS.includes(h as Tab) ? (h as Tab) : 'room';
 }
 
@@ -51,6 +56,7 @@ function fitConstraints(c: Constraints, room: Room): Constraints {
 export function App() {
   const [tab, setTab] = useState<Tab>(readTab);
   const [placementMode, setPlacementMode] = useState<'auto' | 'manual'>(location.hash === '#manual' ? 'manual' : 'auto');
+  const [modesView, setModesView] = useState<'list' | 'field'>(location.hash === '#field' ? 'field' : 'list');
   const [project, setProject] = useState<Project>(() => newProject());
   const [ready, setReady] = useState(false);
   const [justUpdated, setJustUpdated] = useState(consumeJustUpdated);
@@ -60,7 +66,11 @@ export function App() {
       .then((d) => d && setProject(d))
       .catch(() => undefined)
       .finally(() => setReady(true));
-    const onHash = () => { setTab(readTab()); if (location.hash === '#manual') setPlacementMode('manual'); };
+    const onHash = () => {
+      setTab(readTab());
+      if (location.hash === '#manual') setPlacementMode('manual');
+      if (location.hash === '#field') setModesView('field');
+    };
     addEventListener('hashchange', onHash);
     return () => removeEventListener('hashchange', onHash);
   }, []);
@@ -102,6 +112,10 @@ export function App() {
   const onConstraints = (constraints: Constraints) => touch({ constraints });
   const onSetup = (current: Setup) => touch({ current }, false);
   const onSetups = (setups: Setup[]) => touch({ setups }, false);
+  const setModes = (v: 'list' | 'field') => {
+    setModesView(v);
+    history.replaceState(null, '', v === 'field' ? '#field' : '#modes');
+  };
   const setMode = (m: 'auto' | 'manual') => {
     setPlacementMode(m);
     history.replaceState(null, '', m === 'manual' ? '#manual' : '#placement');
@@ -116,10 +130,21 @@ export function App() {
     <div class="app">
       <header class="topbar">
         <div class="topbar__inner">
-          <h1 class="topbar__title">{TITLES[tab]}</h1>
-          <span class="topbar__room">
-            {project.name}, {fmt(r.depth, 2)} × {fmt(r.width, 2)} × {fmt(r.height, 2)} м
-          </span>
+          <div class="topbar__text">
+            <h1 class="topbar__title">{TITLES[tab]}</h1>
+            <span class="topbar__room">
+              {project.name}, {fmt(r.depth, 2)} × {fmt(r.width, 2)} × {fmt(r.height, 2)} м
+            </span>
+          </div>
+          <button
+            type="button"
+            class={`topbar__projects${tab === 'projects' ? ' is-on' : ''}`}
+            aria-current={tab === 'projects' ? 'page' : undefined}
+            onClick={() => go('projects')}
+          >
+            <TabIcon tab="projects" />
+            <span>{S.tabs.projects}</span>
+          </button>
         </div>
       </header>
 
@@ -134,7 +159,16 @@ export function App() {
         <div hidden={tab !== 'room'}>
           <RoomScreen project={project} reverb={reverb} onRoom={onRoom} />
         </div>
-        {tab === 'modes' && <ModesScreen room={r} modes={modes} fMax={fMax} reverb={reverb} />}
+        {tab === 'modes' && (
+          <>
+            <div class="screen modes-switch">
+              <Segmented label={S.modes.title} value={modesView} options={[{ value: 'list' as const, label: S.modesView.list }, { value: 'field' as const, label: S.modesView.field }]} onChange={setModes} />
+            </div>
+            {modesView === 'list'
+              ? <ModesScreen room={r} modes={modes} fMax={fMax} reverb={reverb} />
+              : <FieldScreen project={project} modes={modes} onSetup={onSetup} />}
+          </>
+        )}
         <div hidden={tab !== 'placement'}>
           <PlacementScreen
             project={project}
@@ -159,7 +193,7 @@ export function App() {
       </main>
 
       <nav class="tabbar" aria-label="Разделы">
-        {TABS.map((t) => (
+        {BAR.map((t) => (
           <button type="button" class={t === tab ? 'is-on' : ''} aria-current={t === tab ? 'page' : undefined} onClick={() => go(t)}>
             <TabIcon tab={t} />
             <span>{S.tabs[t]}</span>
