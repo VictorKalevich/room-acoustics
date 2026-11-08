@@ -37,6 +37,9 @@ export function normalizeProject(raw: any): Project {
   if (room.calibration && !(room.calibration.dampingScale > 0)) room.calibration = null;
   if (!Array.isArray(room.openings)) room.openings = [];
   if (!Array.isArray(room.extensions)) room.extensions = [];
+  room.features = Array.isArray(room.features)
+    ? room.features.filter((f: any) => f && (f.kind === 'window' || f.kind === 'door') && ['front', 'back', 'left', 'right'].includes(f.wall) && f.a1 > f.a0)
+    : [];
   if (!['auto', 'modal', 'wave'].includes(room.model)) room.model = 'auto';
   const roomErr = validateRoom(room);
   if (roomErr.length) throw new Error(`Неверные данные комнаты: ${roomErr.map((e) => e.message).join('; ')}`);

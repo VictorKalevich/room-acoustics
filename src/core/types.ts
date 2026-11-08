@@ -35,6 +35,18 @@ export interface Opening {
   height: number;
 }
 
+/** Окно или закрытая дверь: только для ориентира на плане, в расчёт не входят (считаются стеной). */
+export interface WallFeature {
+  id: string;
+  kind: 'window' | 'door';
+  wall: WallId;
+  a0: number;
+  a1: number;
+  /** Низ и верх над полом, м. */
+  bottom: number;
+  top: number;
+}
+
 /** Смежное помещение (например, коридор), примыкающее к стене комнаты, с аркой между ними. */
 export interface Extension {
   id: string;
@@ -72,6 +84,8 @@ export interface Room {
   openings: Opening[];
   extensions: Extension[];
   model: AcousticModel;
+  /** Окна и закрытые двери (для ориентира на плане). */
+  features: WallFeature[];
 }
 
 /** Коэффициенты поглощения по октавам 63, 125, 250, 500, 1000, 2000, 4000 Гц. */

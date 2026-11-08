@@ -1,5 +1,5 @@
 import { useRef } from 'preact/hooks';
-import type { Extension, Opening, Placement, Room, Vec3, Zone } from '../../core/types';
+import type { Extension, Opening, Placement, Room, Vec3, WallFeature, WallId, Zone } from '../../core/types';
 import { extensionBox } from '../../core/geometry';
 import type { Heatmap } from '../../core/field';
 import { fmt } from '../format';
@@ -34,6 +34,8 @@ interface Props {
   zones?: Zone[];
   extensions?: Extension[];
   openings?: Opening[];
+  /** Окна и закрытые двери — ориентиры на стенах. */
+  features?: WallFeature[];
   listenerZone?: [number, number] | null;
   heatmap?: Heatmap | null;
   marks?: PlanMark[];
@@ -44,6 +46,10 @@ interface Props {
   onTap?: (pos: { x: number; y: number }) => void;
   showDims?: boolean;
   label?: string;
+  /** Показывать под планом пояснение «Что на плане» (по умолчанию — да). */
+  showKey?: boolean;
+  /** Свои пояснения для отдельных обозначений (например, что значат номера в режиме сабвуфера). */
+  keyNotes?: Partial<Record<KeyId, string>>;
 }
 
 const SNAP = 0.05;
@@ -67,12 +73,19 @@ export function PlanView(p: Props) {
   const scale = Math.min((W - 2 * pad) / (by1 - by0), (W * 1.25 - 2 * pad) / (bx1 - bx0));
   const rw = width * scale;
   const rh = depth * scale;
+  const feats = p.features ?? [];
   const H = (bx1 - bx0) * scale + pad + 46;
   const ox = (W - (by1 - by0) * scale) / 2 - by0 * scale;
   const oy = pad - bx0 * scale;
   const wall = 7;
   const X = (y: number) => ox + y * scale;
   const Y = (x: number) => oy + x * scale;
+  /** Участок стены (в толщине стены) в координатах рисунка. */
+  const wallRect = (w: WallId, a0: number, a1: number) =>
+    w === 'right' ? { x: ox + rw - 1, y: Y(a0), w: wall + 2, h: (a1 - a0) * scale } :
+    w === 'left' ? { x: ox - wall - 1, y: Y(a0), w: wall + 2, h: (a1 - a0) * scale } :
+    w === 'back' ? { x: X(a0), y: oy + rh - 1, w: (a1 - a0) * scale, h: wall + 2 } :
+    { x: X(a0), y: oy - wall - 1, w: (a1 - a0) * scale, h: wall + 2 };
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<string | null>(null);
   const moved = useRef(false);
@@ -111,7 +124,27 @@ export function PlanView(p: Props) {
   };
 
   const interactive = !!(p.onMove || p.onTap);
+  // какие обозначения есть на этом плане
+  const keys: KeyId[] = ['front'];
+  if (spk.length) keys.push('spk');
+  if (items.some((i) => i.kind === 'sub')) keys.push('sub');
+  if (listener) keys.push('listener');
+  if (listener && spk.length) keys.push('triangle');
+  if (seats.length > 1) keys.push('seats');
+  if (hm) keys.push('heat');
+  if ((p.marks ?? []).some((m) => m.kind === 'best')) keys.push('best');
+  if ((p.marks ?? []).some((m) => m.kind === 'probe')) keys.push('probe');
+  if ((p.wallMarks ?? []).length) keys.push('reflection');
+  if ((p.marks ?? []).some((m) => m.kind === 'trap')) keys.push('trap');
+  if (p.listenerZone) keys.push('listenerZone');
+  if ((p.zones ?? []).length) keys.push('zone');
+  if (feats.some((f) => f.kind === 'window')) keys.push('window');
+  if (feats.some((f) => f.kind === 'door')) keys.push('door');
+  if ((p.openings ?? []).length) keys.push('opening');
+  if ((p.extensions ?? []).length) keys.push('arch', 'corridor');
+  const { showKey = true } = p;
   return (
+    <>
     <svg
       ref={svgRef}
       class={`plan${interactive ? ' plan--interactive' : ''}`}
@@ -159,6 +192,38 @@ export function PlanView(p: Props) {
           g.wall === 'back' ? { x: X(g.a0), y: oy + rh - 1, w: (g.a1 - g.a0) * scale, h: wall + 2 } :
           { x: X(g.a0), y: oy - wall - 1, w: (g.a1 - g.a0) * scale, h: wall + 2 };
         return <rect class={g.cls} x={r.x} y={r.y} width={Math.max(1, r.w)} height={Math.max(1, r.h)} />;
+      })}
+      {feats.map((f) => {
+        const seg = wallRect(f.wall, f.a0, f.a1);
+        if (f.kind === 'window') {
+          const horiz = f.wall === 'front' || f.wall === 'back';
+          return (
+            <g class="plan__window">
+              <rect x={seg.x} y={seg.y} width={Math.max(1, seg.w)} height={Math.max(1, seg.h)} />
+              {horiz
+                ? <line x1={seg.x} y1={seg.y + seg.h / 2} x2={seg.x + seg.w} y2={seg.y + seg.h / 2} />
+                : <line x1={seg.x + seg.w / 2} y1={seg.y} x2={seg.x + seg.w / 2} y2={seg.y + seg.h} />}
+            </g>
+          );
+        }
+        // дверь: проём в стене, полотно и дуга открывания внутрь комнаты
+        const L = (f.a1 - f.a0) * scale;
+        const hinge =
+          f.wall === 'front' ? { x: X(f.a0), y: oy } :
+          f.wall === 'back' ? { x: X(f.a0), y: oy + rh } :
+          f.wall === 'left' ? { x: ox, y: Y(f.a0) } : { x: ox + rw, y: Y(f.a0) };
+        const inward = f.wall === 'front' ? [0, 1] : f.wall === 'back' ? [0, -1] : f.wall === 'left' ? [1, 0] : [-1, 0];
+        const alongV = f.wall === 'front' || f.wall === 'back' ? [1, 0] : [0, 1];
+        const leaf = { x: hinge.x + inward[0] * L, y: hinge.y + inward[1] * L };
+        const end = { x: hinge.x + alongV[0] * L, y: hinge.y + alongV[1] * L };
+        const sweep = (inward[0] * alongV[1] - inward[1] * alongV[0]) > 0 ? 1 : 0;
+        return (
+          <g class="plan__door">
+            <rect class="plan__door-gap" x={seg.x} y={seg.y} width={Math.max(1, seg.w)} height={Math.max(1, seg.h)} />
+            <line x1={hinge.x} y1={hinge.y} x2={leaf.x} y2={leaf.y} />
+            <path d={`M ${leaf.x} ${leaf.y} A ${L} ${L} 0 0 ${sweep} ${end.x} ${end.y}`} class="plan__door-arc" />
+          </g>
+        );
       })}
       <text x={ox + rw / 2} y={oy - wall - 6} class="plan__label" text-anchor="middle">{S.room.front}</text>
 
@@ -276,6 +341,73 @@ export function PlanView(p: Props) {
         );
       })}
     </svg>
+    {showKey && <PlanKey keys={keys} notes={p.keyNotes} />}
+    </>
+  );
+}
+
+export type KeyId =
+  | 'front' | 'spk' | 'sub' | 'listener' | 'triangle' | 'seats' | 'heat' | 'best' | 'probe'
+  | 'reflection' | 'trap' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor';
+
+/** Маленький значок обозначения — теми же стилями, что и на плане. */
+function KeyIcon({ id }: { id: KeyId }) {
+  const g = (() => {
+    switch (id) {
+      case 'front': return <rect x="2" y="7" width="24" height="6" class="plan__front" />;
+      case 'spk': return <g class="plan__spk"><g transform="translate(14 9)"><rect x="-8" y="-6" width="16" height="12" rx="2" /><path d="M -5 6 L 5 6 L 7 10 L -7 10 Z" /></g></g>;
+      case 'sub': return <g class="plan__sub"><rect x="5" y="1" width="18" height="18" rx="3" /><circle cx="14" cy="10" r="5" /></g>;
+      case 'listener': return <g class="plan__listener"><circle cx="14" cy="10" r="8" /><circle cx="14" cy="10" r="2.5" class="plan__dot" /></g>;
+      case 'triangle': return <polygon class="plan__triangle" points="3,3 25,3 14,18" />;
+      case 'seats': return <circle class="plan__seat" cx="14" cy="10" r="5" />;
+      case 'heat': return <g><rect x="2" y="4" width="8" height="12" fill="hsl(160 62% 48%)" /><rect x="10" y="4" width="8" height="12" fill="hsl(88 62% 48%)" /><rect x="18" y="4" width="8" height="12" fill="hsl(15 62% 48%)" /></g>;
+      case 'best': return <g class="plan__mark is-best"><circle cx="14" cy="10" r="9" /><text x="14" y="14" text-anchor="middle">1</text></g>;
+      case 'probe': return <g class="plan__mark is-probe"><circle cx="14" cy="10" r="6" /></g>;
+      case 'reflection': return <circle class="plan__reflection" cx="14" cy="10" r="4.5" />;
+      case 'trap': return <g class="plan__mark is-trap"><circle cx="14" cy="10" r="7" /></g>;
+      case 'listenerZone': return <rect class="plan__zone" x="2" y="3" width="24" height="14" rx="4" />;
+      case 'zone': return <g class="plan__zone-rect"><rect x="3" y="3" width="22" height="14" fill="url(#keyhatch)" /><rect x="3" y="3" width="22" height="14" class="plan__zone-outline" /></g>;
+      case 'window': return <g class="plan__window"><rect x="2" y="6" width="24" height="8" /><line x1="2" y1="10" x2="26" y2="10" /></g>;
+      case 'door': return <g class="plan__door"><rect class="plan__door-gap" x="2" y="1" width="24" height="5" /><line x1="2" y1="6" x2="2" y2="19" /><path d="M 2 19 A 13 13 0 0 0 15 6" class="plan__door-arc" /></g>;
+      case 'opening': return <rect class="plan__gap" x="2" y="6" width="24" height="8" />;
+      case 'arch': return <rect class="plan__arch" x="2" y="6" width="24" height="8" />;
+      case 'corridor': return <g class="plan__ext"><rect x="2" y="3" width="24" height="14" class="plan__ext-floor" /><line x1="2" y1="3" x2="26" y2="3" class="plan__ext-wall" /><line x1="26" y1="3" x2="26" y2="17" class="plan__ext-open" /></g>;
+    }
+  })();
+  return (
+    <svg class="plan-key__icon" viewBox="0 0 28 20" aria-hidden="true">
+      <defs>
+        <pattern id="keyhatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+          <line x1="0" y1="0" x2="0" y2="5" class="plan__zonehatch" />
+        </pattern>
+      </defs>
+      {g}
+    </svg>
+  );
+}
+
+const KEY_OPEN = 'ra-plankey-open';
+
+/** Пояснение «Что на плане»: только те обозначения, что есть на этом плане. Состояние (открыто/закрыто) запоминается. */
+export function PlanKey({ keys, notes }: { keys: KeyId[]; notes?: Partial<Record<KeyId, string>> }) {
+  let open = true;
+  try { open = localStorage.getItem(KEY_OPEN) !== '0'; } catch { /* без хранилища — открыто */ }
+  return (
+    <details
+      class="details plan-key"
+      open={open}
+      onToggle={(e) => { try { localStorage.setItem(KEY_OPEN, (e.currentTarget as HTMLDetailsElement).open ? '1' : '0'); } catch { /* нет хранилища */ } }}
+    >
+      <summary>{S.plan.keyTitle}</summary>
+      <ul class="plan-key__list">
+        {keys.map((k) => (
+          <li class="plan-key__item">
+            <KeyIcon id={k} />
+            <span class="small">{notes?.[k] ?? S.plan.key[k]}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

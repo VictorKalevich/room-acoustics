@@ -56,7 +56,7 @@ test('002 US1: ручной режим — карта мест слушател�
   await expect(page.locator('.best-list li')).toHaveCount(3, { timeout: 15_000 });
   const before = await page.locator('.topbar__room').textContent();
   await page.locator('.best-list li').first().getByRole('button', { name: 'Сесть сюда' }).click();
-  await expect(page.locator('.plan__listener')).toBeVisible();
+  await expect(page.locator('svg.plan .plan__listener')).toBeVisible();
   expect(before).toContain('5,00');
 });
 

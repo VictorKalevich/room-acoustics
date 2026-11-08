@@ -9,8 +9,8 @@ export interface Rect { x0: number; x1: number; y0: number; y1: number }
 
 interface Props {
   layout: LayoutResult;
-  /** Какие проёмы учитываются (закрытые двери рисуются тонкой линией). */
-  used?: boolean[];
+  /** Элементы стен с выбранным видом (если не заданы — рисуются найденные проёмы и окна). */
+  marks?: { wall: string; a0: number; a1: number; kind: 'arch' | 'door' | 'window' }[];
   rect: Rect;
   height: number;
   onRect: (r: Rect) => void;
@@ -20,7 +20,7 @@ interface Props {
 const W = 320;
 const PAD = 22;
 
-export function LayoutEditor({ layout, used, rect, height, onRect, onRectDone }: Props) {
+export function LayoutEditor({ layout, marks, rect, height, onRect, onRectDone }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<keyof Rect | null>(null);
@@ -108,10 +108,13 @@ export function LayoutEditor({ layout, used, rect, height, onRect, onRectDone }:
         )}
         <rect class="layout-editor__room" x={X(rect.y0)} y={Y(rect.x0)} width={(rect.y1 - rect.y0) * scale} height={(rect.x1 - rect.x0) * scale} />
         <line class="layout-editor__front" x1={X(rect.y0)} y1={Y(rect.x0)} x2={X(rect.y1)} y2={Y(rect.x0)} />
-        {layout.openings.map((o, i) => {
-          const [x1, y1, x2, y2] = wallSeg(o.wall, o.a0, o.a1);
-          const on = used ? used[i] : true;
-          return <line class={on ? 'layout-editor__opening' : 'layout-editor__door'} x1={x1} y1={y1} x2={x2} y2={y2} />;
+        {(marks ?? [
+          ...layout.openings.map((o) => ({ ...o, kind: (o.kind === 'door' ? 'door' : 'arch') as 'arch' | 'door' | 'window' })),
+          ...(layout.windows ?? []).map((w) => ({ ...w, kind: 'window' as const })),
+        ]).map((m) => {
+          const [x1, y1, x2, y2] = wallSeg(m.wall, m.a0, m.a1);
+          const cls = m.kind === 'arch' ? 'layout-editor__opening' : m.kind === 'door' ? 'layout-editor__door' : 'layout-editor__window';
+          return <line class={cls} x1={x1} y1={y1} x2={x2} y2={y2} />;
         })}
         {layout.extension && (() => {
           const e = layout.extension!;

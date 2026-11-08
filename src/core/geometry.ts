@@ -1,5 +1,5 @@
 // Геометрия помещения: основная комната, смежные помещения (прямоугольные блоки за стенами), проёмы.
-import type { Extension, Opening, Room, WallId } from './types';
+import type { Extension, Room, WallId } from './types';
 
 export interface Box {
   x0: number; x1: number; y0: number; y1: number; z0: number; z1: number;
@@ -60,7 +60,7 @@ const ROT: Record<WallId, { wall: WallId; reverse: boolean }> = {
   back: { wall: 'left', reverse: false },
 };
 
-export function rotateOpening(room: Room, o: Opening): Opening {
+export function rotateOpening<T extends { wall: WallId; a0: number; a1: number }>(room: Room, o: T): T {
   const r = ROT[o.wall];
   const L = wallLength(room, o.wall);
   return r.reverse ? { ...o, wall: r.wall, a0: L - o.a1, a1: L - o.a0 } : { ...o, wall: r.wall };

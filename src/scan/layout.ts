@@ -26,6 +26,8 @@ export interface LayoutResult {
   outline: Float32Array;
   bounds: { x0: number; x1: number; y0: number; y1: number };
   openings: LayoutOpening[];
+  /** Окна из разметки скана (для ориентира на плане). */
+  windows: { wall: WallId; a0: number; a1: number; bottom: number; top: number }[];
   extension: Omit<Extension, 'id' | 'name'> | null;
 }
 
@@ -122,11 +124,11 @@ function transformTris(raw: Float32Array, m: number[], labels?: ScanLabels) {
 }
 
 /** Двери и проёмы из разметки скана, стоящие на стенах выбранной комнаты. */
-function labeledOpenings(T: Tris, d: Dims): LayoutOpening[] {
+function labeledOpenings(T: Tris, d: Dims): { openings: LayoutOpening[]; windows: LayoutResult['windows'] } {
   const out: LayoutOpening[] = [];
+  const windows: LayoutResult['windows'] = [];
   for (const b of T.objects) {
-    if (b.kind === 'window') continue;
-    if (b.z0 > 0.4 || b.z1 - b.z0 < 1.2) continue; // не до пола — не проём
+    const isWindow = b.kind === 'window' || b.z0 > 0.4 || b.z1 - b.z0 < 1.2; // не до пола — не проём
     let best: { w: (typeof WALLS)[number]; dist: number } | null = null;
     for (const w of WALLS) {
       const thin = w.axis === 0 ? b.x1 - b.x0 : b.y1 - b.y0;
@@ -140,9 +142,11 @@ function labeledOpenings(T: Tris, d: Dims): LayoutOpening[] {
     const a0 = Math.max(0, best.w.axis === 0 ? b.y0 : b.x0);
     const a1 = Math.min(L, best.w.axis === 0 ? b.y1 : b.x1);
     if (a1 - a0 < 0.3) continue;
-    out.push({ wall: best.w.wall, a0: round(a0), a1: round(a1), height: round(Math.min(d.height, b.z1)), kind: b.kind });
+    const top = round(Math.min(d.height, b.z1));
+    if (isWindow) windows.push({ wall: best.w.wall, a0: round(a0), a1: round(a1), bottom: round(Math.max(0, b.z0)), top });
+    else out.push({ wall: best.w.wall, a0: round(a0), a1: round(a1), height: top, kind: b.kind === 'door' ? 'door' : 'opening' });
   }
-  return out;
+  return { openings: out, windows };
 }
 
 export function analyzeLayout(raw: Float32Array, transform: number[], d: Dims, labels?: ScanLabels): LayoutResult {
@@ -167,7 +171,7 @@ export function analyzeLayout(raw: Float32Array, transform: number[], d: Dims, l
   }
 
   // размеченные двери и проёмы точнее дыр в сетке: дыры, которые с ними совпадают, отбрасываем
-  const marked = labeledOpenings(T, d);
+  const { openings: marked, windows } = labeledOpenings(T, d);
   const overlaps = (p: LayoutOpening, q: LayoutOpening) => p.wall === q.wall && Math.min(p.a1, q.a1) - Math.max(p.a0, q.a0) > 0.1;
   const openings = [...marked, ...findOpenings(T, vertical, d).filter((g) => !marked.some((m) => overlaps(g, m)))];
   let extension: LayoutResult['extension'] = null;
@@ -179,6 +183,7 @@ export function analyzeLayout(raw: Float32Array, transform: number[], d: Dims, l
   return {
     outline: Float32Array.from(outline),
     bounds: { x0: bx0, x1: bx1, y0: by0, y1: by1 },
+    windows,
     openings: openings.filter((o) => !extension || o.wall !== extension.wall || Math.abs(o.a0 - extension.arch.a0) > 0.05),
     extension,
   };

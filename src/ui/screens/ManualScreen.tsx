@@ -126,13 +126,14 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
           width={room.width}
           items={items}
           seats={evalCur?.seats ?? []}
-          zones={room.zones} extensions={room.extensions} openings={room.openings}
+          zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features}
           heatmap={heat}
           marks={marks}
           selectedId={selected}
           onSelect={setSelected}
           onMove={move}
           onTap={(pos) => setProbe(pos)}
+          keyNotes={effMode === 'sub' ? { best: S.manual.keyBestSub, probe: S.manual.keyProbeSub, heat: S.manual.keyHeatSub } : undefined}
           label="План комнаты с картой оценок"
         />
         {heat && <HeatLegend hm={heat} />}
@@ -187,9 +188,12 @@ export function ManualScreen({ project, onSetup, onSetups }: Props) {
             <span>
               <strong>{S.manual.probe}:</strong> {fmt(probe.x, 2)} × {fmt(probe.y, 2)} м — {fmt(probeEval.score, 1)} дБ
             </span>
-            <button type="button" class="btn btn--small" onClick={() => { placeSearched(probe); setProbe(null); }}>
-              {effMode === 'sub' ? S.manual.putHere : S.manual.sitHere}
-            </button>
+            <span class="btn-row">
+              <button type="button" class="btn btn--small" onClick={() => { placeSearched(probe); setProbe(null); }}>
+                {effMode === 'sub' ? S.manual.putHere : S.manual.sitHere}
+              </button>
+              <button type="button" class="btn btn--small btn--ghost" onClick={() => setProbe(null)}>{S.manual.removeProbe}</button>
+            </span>
           </div>
         )}
         <h3 class="subhead">{S.manual.responseHere}</h3>

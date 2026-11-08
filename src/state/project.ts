@@ -39,6 +39,7 @@ export function defaultRoom(): Room {
     leakage: 'typical',
     calibration: null,
     openings: [],
+    features: [],
     extensions: [],
     model: 'auto',
   };
@@ -155,6 +156,7 @@ export function rotateRoom(room: Room): Room {
     materials,
     zones: (room.zones ?? []).map((z) => rotateZone(room, z)),
     openings: (room.openings ?? []).map((o) => rotateOpening(room, o)),
+    features: (room.features ?? []).map((f) => rotateOpening(room, f)),
     extensions: (room.extensions ?? []).map((e) => rotateExtension(room, e)),
   };
 }

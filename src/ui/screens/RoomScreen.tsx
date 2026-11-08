@@ -3,13 +3,14 @@ import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
 import type { Project } from '../../state/project';
 import { defaultConstraints, makeId, rotateRoom, rotateSetup } from '../../state/project';
-import type { Room, SurfaceId, ReverbResult, Furnishing, Zone, ZoneKind, Leakage, Opening, Extension, WallId, AcousticModel } from '../../core/types';
+import type { Room, SurfaceId, ReverbResult, Furnishing, Zone, ZoneKind, Leakage, Opening, Extension, WallId, AcousticModel, WallFeature } from '../../core/types';
 import { validateExtension, wallLength } from '../../core/geometry';
 import { SURFACES } from '../../core/types';
 import { MATERIALS, FURNISHING_LABEL } from '../../core/materials';
 import { speedOfSound } from '../../core/physics';
 import type { DetectResult, Units } from '../../scan/detect';
 import type { LayoutResult, ScanLabels } from '../../scan/layout';
+import { openingAsItem, toRoomItem, type WallItem, type WallItemKind } from '../../core/wallItems';
 import { LayoutEditor, type Rect } from '../components/LayoutEditor';
 import { NumberField, Panel, SelectField, Note, Details, Segmented } from '../components/Fields';
 import { PlanView } from '../components/PlanView';
@@ -45,7 +46,7 @@ export function RoomScreen({ project, reverb, onRoom }: Props) {
   return (
     <div class="screen">
       <Panel class="panel--hero">
-        <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} />
+        <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} />
         <div class="dims">
           <NumberField label={S.room.depth} hint={S.room.depthHint} value={room.depth} unit="м" min={1} max={50} onChange={(v) => set({ depth: v })} />
           <NumberField label={S.room.width} hint={S.room.widthHint} value={room.width} unit="м" min={1} max={50} onChange={(v) => set({ width: v })} />
@@ -144,9 +145,14 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
   const [layout, setLayout] = useState<LayoutResult | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
   const [useLayout, setUseLayout] = useState(true);
-  const [useOpen, setUseOpen] = useState<boolean[]>([]);
-  // закрытые двери по умолчанию не проёмы; найденные дыры и размеченные проёмы — проёмы
-  useEffect(() => { setUseOpen(layout ? layout.openings.map((o) => o.kind !== 'door') : []); }, [layout]);
+  const [initial, setInitial] = useState<{ layout: LayoutResult; rect: Rect } | null>(null);
+  // найденные элементы стен и что пользователь считает каждым из них
+  const found = useMemo(() => (layout ? [
+    ...layout.openings.map((o) => ({ wall: o.wall, a0: o.a0, a1: o.a1, bottom: 0, top: o.height, guess: (o.kind === 'door' ? 'door' : 'arch') as WallItemKind })),
+    ...layout.windows.map((w) => ({ ...w, guess: 'window' as WallItemKind })),
+  ] : []), [layout]);
+  const [kinds, setKinds] = useState<WallItemKind[]>([]);
+  useEffect(() => { setKinds(found.map((f) => f.guess)); }, [found]);
   const input = useRef<HTMLInputElement>(null);
 
   const runWorker = <T,>(msg: Record<string, unknown>, tri: Float32Array) =>
@@ -162,8 +168,10 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
     });
   const detect = async (l: Loaded, u: Units | 'auto') => {
     const r = await runWorker<{ result: DetectResult; layout: LayoutResult }>({ units: u === 'auto' ? undefined : u, labels: l.labels }, l.triangles);
+    const rc0 = { x0: 0, x1: r.result.depth, y0: 0, y1: r.result.width };
     setLayout(r.layout);
-    setRect({ x0: 0, x1: r.result.depth, y0: 0, y1: r.result.width });
+    setRect(rc0);
+    setInitial({ layout: r.layout, rect: rc0 });
     return r.result;
   };
   /** Повторный поиск проёмов и коридора для выбранного прямоугольника (контур скана сохраняется). */
@@ -174,7 +182,7 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
     t[13] -= rc.y0;
     try {
       const r = await runWorker<{ layout: LayoutResult }>({ type: 'layout', labels: loaded.labels, transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: det.height } }, loaded.triangles);
-      setLayout({ ...layout, openings: r.layout.openings, extension: r.layout.extension });
+      setLayout({ ...layout, openings: r.layout.openings, windows: r.layout.windows, extension: r.layout.extension });
     } catch { /* оставляем прежние */ }
   };
 
@@ -218,8 +226,8 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
     const rc = rect ?? { x0: 0, x1: det.depth, y0: 0, y1: det.width };
     const depth = Math.round((rc.x1 - rc.x0) * 1000) / 1000;
     const width = Math.round((rc.y1 - rc.y0) * 1000) / 1000;
-    // найденное в скане заменяет прежнее; если ничего не найдено — ручные проёмы и коридор сохраняются
-    const found = layout ? layout.openings.filter((_, i) => useOpen[i]) : [];
+    // найденное в скане заменяет прежнее; если ничего не найдено — ручные проёмы, окна и коридор сохраняются
+    const parts = found.map((f, i) => toRoomItem(f, kinds[i] ?? f.guess, makeId()));
     const ext = useLayout && layout?.extension ? layout.extension : null;
     const room: Room = {
       ...project.room,
@@ -227,10 +235,10 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
       width,
       height: det.height,
       source: 'scan',
-      openings: layout && layout.openings.length > 0
-        ? found.map(({ kind: _k, ...o }) => ({ ...o, id: makeId() }))
-        : project.room.openings,
+      openings: found.length > 0 ? parts.flatMap((p) => (p.opening ? [p.opening] : [])) : project.room.openings,
       extensions: ext ? [{ ...ext, id: makeId(), name: S.openings.corridor }] : project.room.extensions,
+      // окна и закрытые двери — для ориентира на плане
+      features: found.length > 0 ? parts.flatMap((p) => (p.feature ? [p.feature] : [])) : project.room.features ?? [],
     };
     const { transform: _t, ...rest } = det;
     void _t;
@@ -290,12 +298,22 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
             <>
               <LayoutEditor
                 layout={layout}
-                used={useOpen}
+                marks={found.map((f, i) => ({ wall: f.wall, a0: f.a0, a1: f.a1, kind: kinds[i] ?? f.guess }))}
                 rect={rect}
                 height={det.height}
                 onRect={(r) => { setRect(r); setApplied(false); }}
                 onRectDone={relayout}
               />
+              <div class="btn-row">
+                <button
+                  type="button"
+                  class="btn btn--small btn--ghost"
+                  disabled={!initial || (rect.x0 === initial.rect.x0 && rect.x1 === initial.rect.x1 && rect.y0 === initial.rect.y0 && rect.y1 === initial.rect.y1)}
+                  onClick={() => { if (initial) { setRect(initial.rect); setLayout(initial.layout); setApplied(false); } }}
+                >
+                  {S.layout.reset}
+                </button>
+              </div>
               <p class="muted small">{S.layout.hint}</p>
               {layout.extension && (
                 <>
@@ -313,27 +331,26 @@ function ScanPanel({ project, onRoom }: { project: Project; onRoom: Props['onRoo
                   </label>
                 </>
               )}
-              {layout.openings.length > 0 && (
+              {found.length > 0 && (
                 <div class="found-openings">
                   <h4 class="subhead">{S.layout.foundTitle}</h4>
-                  {layout.openings.map((o, i) => {
-                    const wall = S.openings.wallsShort[o.wall];
-                    const w = fmt(o.a1 - o.a0, 2), h = fmt(o.height, 2);
+                  {found.map((f, i) => {
+                    const wall = S.openings.wallsShort[f.wall];
                     return (
                       <div class="found-opening">
-                        <span class="small">{o.kind === 'door' ? S.layout.doorFound(wall, w, h) : S.layout.openingFound(wall, w, h)}</span>
-                        <label class="check">
-                          <input
-                            type="checkbox"
-                            checked={!!useOpen[i]}
-                            onChange={(e) => { const v = (e.target as HTMLInputElement).checked; setUseOpen((u) => u.map((x, j) => (j === i ? v : x))); setApplied(false); }}
-                          />
-                          <span>{o.kind === 'door' ? S.layout.useDoor : S.layout.useOpening}</span>
-                        </label>
+                        <span class="small">
+                          {S.layout.foundItem(S.layout.guess[f.guess], wall, fmt(f.a1 - f.a0, 2), fmt(f.top, 2), f.bottom > 0.05 ? fmt(f.bottom, 2) : null)}
+                        </span>
+                        <SelectField
+                          label={S.layout.whatIsIt}
+                          value={kinds[i] ?? f.guess}
+                          options={(['arch', 'door', 'window'] as WallItemKind[]).map((k) => ({ value: k, label: S.layout.kinds[k] }))}
+                          onChange={(v) => { setKinds((ks) => ks.map((x, j) => (j === i ? (v as WallItemKind) : x))); setApplied(false); }}
+                        />
                       </div>
                     );
                   })}
-                  {layout.openings.some((o) => o.kind === 'door') && <p class="muted small">{S.layout.doorNote}</p>}
+                  <p class="muted small">{S.layout.kindsNote}</p>
                 </div>
               )}
             </>
@@ -399,6 +416,46 @@ function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void
         openStart: false, openEnd: false, openFar: false,
       }],
     });
+  const feats = room.features ?? [];
+  const setFeature = (id: string, patch: Partial<WallFeature>) => {
+    onRoom({
+      ...room,
+      features: feats.map((f) => {
+        if (f.id !== id) return f;
+        const n = { ...f, ...patch };
+        const L = wallLength(room, n.wall);
+        n.a0 = Math.max(0, Math.min(n.a0, L - 0.1));
+        n.a1 = Math.min(L, Math.max(n.a1, n.a0 + 0.1));
+        n.bottom = Math.max(0, Math.min(n.bottom, room.height - 0.1));
+        n.top = Math.min(room.height, Math.max(n.top, n.bottom + 0.1));
+        return n;
+      }),
+    });
+  };
+  const addFeature = (kind: WallFeature['kind']) => {
+    const L = wallLength(room, 'left');
+    const f: WallFeature = kind === 'window'
+      ? { id: makeId(), kind, wall: 'left', a0: Math.max(0, L / 2 - 0.6), a1: Math.min(L, L / 2 + 0.6), bottom: 0.9, top: Math.min(room.height, 2.3) }
+      : { id: makeId(), kind, wall: 'back', a0: 0.3, a1: Math.min(room.width, 1.2), bottom: 0, top: Math.min(room.height, 2.1) };
+    onRoom({ ...room, features: [...feats, f] });
+  };
+  /** Смена вида элемента стены (если распознан неверно): арка ↔ дверь ↔ окно. */
+  const retype = (id: string, item: WallItem, to: WallItemKind) => {
+    const r = toRoomItem(item, to, id);
+    onRoom({
+      ...room,
+      openings: [...openings.filter((x) => x.id !== id), ...(r.opening ? [r.opening] : [])],
+      features: [...feats.filter((x) => x.id !== id), ...(r.feature ? [r.feature] : [])],
+    });
+  };
+  const kindSelect = (id: string, item: WallItem, cur: WallItemKind) => (
+    <SelectField
+      label={S.openings.kind}
+      value={cur}
+      options={(['arch', 'door', 'window'] as WallItemKind[]).map((k) => ({ value: k, label: S.layout.kinds[k] }))}
+      onChange={(v) => retype(id, item, v as WallItemKind)}
+    />
+  );
   const along = (w: WallId) => S.openings.along(w);
   return (
     <Panel title={S.openings.title}>
@@ -456,11 +513,41 @@ function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void
             <NumberField compact id={`${o.id}-a1`} label={S.openings.to} value={o.a1} unit="м" min={0} max={50} onChange={(v) => setOpening(o.id, { a1: v })} />
             <NumberField compact id={`${o.id}-h`} label={S.openings.height} value={o.height} unit="м" min={0.3} max={20} onChange={(v) => setOpening(o.id, { height: v })} />
           </div>
+          {kindSelect(o.id, openingAsItem(o), 'arch')}
         </div>
       ))}
       <div class="btn-row">
         <button type="button" class="btn" onClick={addCorridor}>{S.openings.addCorridor}</button>
         <button type="button" class="btn" onClick={addOpening}>{S.openings.addOpening}</button>
+      </div>
+
+      <h3 class="subhead">{S.openings.featuresTitle}</h3>
+      <p class="muted small">{S.openings.featuresIntro}</p>
+      {feats.map((f, i) => (
+        <div class="zone-card">
+          <div class="zone-card__head">
+            <SelectField
+              label={`${f.kind === 'window' ? S.openings.window : S.openings.door} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
+              value={f.wall}
+              options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))}
+              onChange={(v) => setFeature(f.id, { wall: v as WallId })}
+            />
+            <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, features: feats.filter((x) => x.id !== f.id) })}>
+              {S.openings.remove}
+            </button>
+          </div>
+          <div class="grid-2">
+            <NumberField compact id={`${f.id}-a0`} label={`${S.openings.from} (${along(f.wall)})`} value={f.a0} unit="м" min={0} max={50} onChange={(v) => setFeature(f.id, { a0: v })} />
+            <NumberField compact id={`${f.id}-a1`} label={S.openings.to} value={f.a1} unit="м" min={0} max={50} onChange={(v) => setFeature(f.id, { a1: v })} />
+            {f.kind === 'window' && <NumberField compact id={`${f.id}-b`} label={S.openings.bottom} value={f.bottom} unit="м" min={0} max={10} onChange={(v) => setFeature(f.id, { bottom: v })} />}
+            <NumberField compact id={`${f.id}-t`} label={f.kind === 'window' ? S.openings.top : S.openings.height} value={f.top} unit="м" min={0.3} max={20} onChange={(v) => setFeature(f.id, { top: v })} />
+          </div>
+          {kindSelect(f.id, f, f.kind)}
+        </div>
+      ))}
+      <div class="btn-row">
+        <button type="button" class="btn" onClick={() => addFeature('window')}>{S.openings.addWindow}</button>
+        <button type="button" class="btn" onClick={() => addFeature('door')}>{S.openings.addDoor}</button>
       </div>
       <SelectField
         label={S.model.title}

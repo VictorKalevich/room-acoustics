@@ -31,7 +31,7 @@ export function TuningScreen({ project, modes, onSetup, onRoom }: Props) {
   return (
     <div class="screen">
       <Panel title={S.tuning.setup}>
-        <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} seats={ev?.seats ?? []} zones={room.zones} extensions={room.extensions} openings={room.openings} showDims={false} />
+        <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} seats={ev?.seats ?? []} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} showDims={false} />
         <div class="score">
           <div class="score__main">
             <span class="score__value">{ev ? fmt(ev.score, 1) : '…'}</span>
@@ -391,7 +391,7 @@ function TreatmentPanel({ project, modes }: { project: Project; modes: Mode[] })
   return (
     <Panel title={S.tuning.treatTitle}>
       <h3 class="subhead">{S.tuning.reflections}</h3>
-      <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} zones={room.zones} extensions={room.extensions} openings={room.openings} wallMarks={wallMarks} marks={ceilMarks} showDims={false} />
+      <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} wallMarks={wallMarks} marks={ceilMarks} showDims={false} />
       <p class="muted small">{S.tuning.reflectionsHint} Кружки на стенах — боковые отражения, кольца внутри — точки на потолке.</p>
       <ul class="plain-list small">
         {refl.map((r) => (

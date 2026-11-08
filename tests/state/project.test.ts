@@ -97,3 +97,16 @@ describe('модель проекта', () => {
     expect(validateRoom({ ...p.room, height: 25 })[0].field).toBe('height');
   });
 });
+
+describe('окна и двери на плане', () => {
+  it('поворачиваются вместе с комнатой и переживают сохранение', () => {
+    const p = newProject();
+    p.room.features = [{ id: 'w', kind: 'window', wall: 'left', a0: 1, a1: 2, bottom: 0.9, top: 2.2 }];
+    const r = rotateRoom(p.room);
+    expect(r.features[0].wall).toBe('front');
+    expect(r.features[0].a1 - r.features[0].a0).toBeCloseTo(1);
+    expect(rotateRoom(rotateRoom(rotateRoom(r)))).toEqual(p.room);
+    const back = parseProjectFile(serializeProject(p));
+    expect(back.room.features).toEqual(p.room.features);
+  });
+});
