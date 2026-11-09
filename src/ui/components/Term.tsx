@@ -1,6 +1,7 @@
 // Термин с пунктирным подчёркиванием: касание открывает короткое объяснение снизу экрана.
 import type { ComponentChildren } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { useSheetLock } from '../sheetLock';
 import { TERM } from '../glossary';
 
 let open: string | null = null;
@@ -26,10 +27,12 @@ export function TermSheet() {
     return () => removeEventListener('keydown', k);
   }, [id]);
   const t = id ? TERM[id] : null;
+  const bd = useRef<HTMLDivElement>(null), sh = useRef<HTMLDivElement>(null);
+  useSheetLock(bd, sh, !!t);
   if (!t) return null;
   return (
-    <div class="sheet-backdrop" onClick={() => showTerm(null)}>
-      <div class="sheet" role="dialog" aria-modal="true" aria-label={t.title} onClick={(e) => e.stopPropagation()}>
+    <div class="sheet-backdrop" ref={bd} onClick={() => showTerm(null)}>
+      <div class="sheet" ref={sh} role="dialog" aria-modal="true" aria-label={t.title} onClick={(e) => e.stopPropagation()}>
         <div class="sheet__head">
           <strong>{t.title}</strong>
           <button type="button" class="sheet__close" aria-label="Закрыть" onClick={() => showTerm(null)}>×</button>

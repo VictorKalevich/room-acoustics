@@ -1,5 +1,6 @@
 // Выдвижное меню слева: новые и редкие разделы. Открывается кнопкой ☰, закрывается касанием мимо или свайпом влево.
 import { useEffect, useRef } from 'preact/hooks';
+import { useSheetLock } from '../sheetLock';
 import { S } from '../strings';
 
 export type DrawerItem = 'measure' | 'report' | 'sync' | 'help' | 'about';
@@ -15,6 +16,9 @@ const ICONS: Record<DrawerItem, string> = {
 export function Drawer({ open, current, onClose, onPick }: { open: boolean; current: string; onClose: () => void; onPick: (i: DrawerItem) => void }) {
   const x0 = useRef<number | null>(null);
   const panel = useRef<HTMLElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // пока меню открыто, страница под ним не прокручивается и не реагирует на касания
+  useSheetLock(root, panel, open);
   // свежий обработчик без перезапуска эффекта (иначе фокус прыгал бы на первый пункт при каждой перерисовке)
   const close = useRef(onClose);
   useEffect(() => { close.current = onClose; });
@@ -26,7 +30,7 @@ export function Drawer({ open, current, onClose, onPick }: { open: boolean; curr
     return () => removeEventListener('keydown', k);
   }, [open]);
   return (
-    <div class={`drawer${open ? ' is-open' : ''}`} aria-hidden={!open}>
+    <div ref={root} class={`drawer${open ? ' is-open' : ''}`} aria-hidden={!open}>
       <div class="drawer__backdrop" onClick={onClose} />
       <nav
         ref={panel}

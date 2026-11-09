@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { shownTreatments } from '../../core/treatments';
+import { MapModeHelp, type MapMode } from '../components/MapModeHelp';
 import type { Project } from '../../state/project';
 import { makeId } from '../../state/project';
 import type { BassObjective, Constraints, Setup, Vec3 } from '../../core/types';
@@ -137,6 +138,7 @@ export function ManualScreen({ project, onSetup, onSetups, onConstraints }: Prop
         {effMode === 'sub' && subs.length > 1 && (
           <Segmented label={S.manual.whichSub} value={effSub} options={subs.map((s) => ({ value: s.id, label: `С${s.id.slice(3)}` }))} onChange={setSubId} />
         )}
+        <MapModeHelp mode={effMode as MapMode} where="manual" sub={effSub ? `С${effSub.slice(3)}` : undefined} />
         <PlanLayers {...layers} />
         <PlanView
           depth={room.depth}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { shownTreatments } from '../../core/treatments';
+import { MapModeHelp } from '../components/MapModeHelp';
 import type { Project } from '../../state/project';
 import { defaultSetup, defaultSources, validateSources } from '../../state/project';
 import type { BassObjective, Constraints, PlacementResult, SourceSpec, SubZone, Placement, Setup, PhaseMode } from '../../core/types';
@@ -369,6 +370,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             {layers.map && effKind === 'sub' && subs.length > 1 && (
               <Segmented label={S.manual.whichSub} value={effSub} options={subs.map((s) => ({ value: s.id, label: `С${s.id.slice(3)}` }))} onChange={setMapSub} />
             )}
+            {layers.map && <MapModeHelp mode={effKind} where="auto" />}
             <PlanView
               depth={room.depth} width={room.width} placement={current}
               zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope}

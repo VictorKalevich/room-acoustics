@@ -366,3 +366,28 @@ test('011: обработка на планах — только когда уч
   await expect(page.getByRole('button', { name: 'Предложить план' })).toBeVisible();
   await expect(page.locator('.treat-score')).toContainText('Без акустической обработки');
 });
+
+test('012: подсказка к карте «Место слушателя / сабвуфера»; шторка не пропускает касания на страницу', async ({ page }) => {
+  await page.goto('/#placement');
+  await page.getByRole('radio', { name: 'Вручную' }).click();
+  await expect(page.locator('.map-help__line')).toContainText('куда сесть');
+  await expect(page.locator('.map-help__line')).toContainText('Двигайте ⊙');
+  await page.getByRole('radio', { name: 'Место сабвуфера' }).click();
+  await expect(page.locator('.map-help__line')).toContainText('Двигайте С1');
+  await page.getByText('Что показывает карта').click();
+  await expect(page.locator('.map-help__mode.is-on')).toContainText('Место сабвуфера');
+  // шторка: страница под ней заблокирована, после закрытия — на прежнем месте
+  await page.getByRole('radio', { name: 'Автоподбор' }).click();
+  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await expect(page.locator('.score__value').first()).toBeVisible({ timeout: 20_000 });
+  await page.evaluate(() => window.scrollTo(0, 600));
+  const y0 = await page.evaluate(() => window.scrollY);
+  await page.locator('button.term').first().evaluate((e) => (e as HTMLButtonElement).click());
+  await expect(page.locator('.sheet')).toBeVisible();
+  expect(await page.evaluate(() => document.body.style.position)).toBe('fixed');
+  await page.mouse.wheel(0, 800);
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await expect(page.locator('.sheet')).toHaveCount(0);
+  expect(await page.evaluate(() => document.body.style.position)).toBe('');
+  expect(await page.evaluate(() => window.scrollY)).toBe(y0);
+});
