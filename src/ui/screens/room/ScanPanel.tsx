@@ -56,6 +56,20 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
   const [furnUse, setFurnUse] = useState<{ on: boolean; sit: boolean }[]>([]);
   useEffect(() => { setFurnUse(furn.map((f) => ({ on: true, sit: SIT.has(f.name) }))); }, [furn]);
   const input = useRef<HTMLInputElement>(null);
+  // модель комнаты по введённым данным — вместо превью, пока файла скана нет; three.js грузится, когда блок близко к экрану
+  const [RoomModel, setRoomModel] = useState<FunctionComponent<{ room: Room }> | null>(null);
+  const modelSlot = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = modelSlot.current;
+    if (loaded || RoomModel || !el) return;
+    const load = () => import('../../components/RoomPreview').then((m) => setRoomModel(() => m.default)).catch(() => undefined);
+    if (typeof IntersectionObserver === 'undefined') { void load(); return; }
+    const io = new IntersectionObserver((es) => {
+      if (es.some((e) => e.isIntersecting)) { io.disconnect(); void load(); }
+    }, { rootMargin: '300px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loaded, RoomModel]);
 
   const runWorker = <T,>(msg: Record<string, unknown>, tri: Float32Array) =>
     new Promise<T>((resolve, reject) => {
@@ -203,6 +217,13 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
         </p>
       )}
       {state.phase === 'error' && <Note tone="warn">{state.message}</Note>}
+
+      {!loaded && (
+        <div class="scan-result" ref={modelSlot}>
+          {RoomModel ? <RoomModel room={project.room} /> : <div class="scan-preview" aria-hidden="true" />}
+          <p class="muted small">{S.room.modelNote}</p>
+        </div>
+      )}
 
       {loaded && Preview && (
         <div class="scan-result">

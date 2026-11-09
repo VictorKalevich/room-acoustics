@@ -13,3 +13,9 @@ export const FileIcon = () => (
     <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
   </svg>
 );
+export const ClearIcon = () => (
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 7h16M10 11v6M14 11v6" />
+    <path d="M6 7l1 13h10l1-13M9 7V4h6v3" />
+  </svg>
+);

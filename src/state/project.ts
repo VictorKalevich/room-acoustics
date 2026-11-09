@@ -48,6 +48,26 @@ export function defaultRoom(): Room {
   };
 }
 
+/** Пустая комната после «Очистить»: 4 × 3 м (глубина от стены с колонками × ширина), потолок 2,7 м — без скана, проёмов, окон, мебели и обработки. */
+export function emptyRoom(): Room {
+  return { ...defaultRoom(), depth: 4, width: 3, height: 2.7 };
+}
+
+/**
+ * «Очистить комнату»: всё, что пришло из скана или введено на экране «Комната» (проёмы, коридоры, окна, двери, скос,
+ * мебель и зоны, обработка, материалы), удаляется; колонки и слушатель встают на места по умолчанию, замер текущей
+ * расстановки и результаты автоподбора сбрасываются. Остаются система (колонки, сабвуферы и их настройки),
+ * цель подбора и сохранённые варианты.
+ */
+export function clearedRoom(p: Project): Partial<Project> & { room: Room } {
+  const room = emptyRoom();
+  const d = defaultConstraints(room);
+  const constraints: Constraints = { ...p.constraints, listenerMinX: d.listenerMinX, listenerMaxX: d.listenerMaxX };
+  const b = baselinePositions(room, p.sources, constraints);
+  const current: Setup = { ...p.current, listener: b.listener, positions: b.positions, measurement: null, history: undefined };
+  return { room, constraints, current, scanInfo: null, result: null, selectedIndex: 0 };
+}
+
 /** Колонки (1 — моно по центру, 2 — стерео-пара) и сабвуферы с диапазонами по умолчанию. */
 export function defaultSources(speakers: number, subs: number): SourceSpec[] {
   const out: SourceSpec[] = [];

@@ -122,7 +122,8 @@ export function App() {
         ...prev,
         ...p,
         updatedAt: new Date().toISOString(),
-        result: invalidate && prev.result ? { ...prev.result, stale: true } : p.result !== undefined ? p.result : prev.result,
+        // явно переданный результат (в том числе null после очистки комнаты) важнее пометки «устарел»
+        result: p.result !== undefined ? p.result : invalidate && prev.result ? { ...prev.result, stale: true } : prev.result,
       };
       if (p.room || p.sources || p.constraints || p.current) {
         next.current = fitSetup(next.current, next);
@@ -132,7 +133,7 @@ export function App() {
     });
 
   const onRoom = (room: Room, extra: Partial<Project> = {}) =>
-    touch({ room, constraints: fitConstraints(extra.constraints ?? project.constraints, room), ...extra });
+    touch({ ...extra, room, constraints: fitConstraints(extra.constraints ?? project.constraints, room) });
   const onSources = (sources: SourceSpec[]) => touch({ sources });
   const onConstraints = (constraints: Constraints) => touch({ constraints });
   const onSetup = (current: Setup) => touch({ current }, false);

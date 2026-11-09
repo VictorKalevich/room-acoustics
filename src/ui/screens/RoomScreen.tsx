@@ -1,6 +1,7 @@
+import { useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { shownTreatments } from '../../core/treatments';
-import { defaultRoom, rotateRoom, rotateSetup } from '../../state/project';
+import { clearedRoom, defaultRoom, emptyRoom, rotateRoom, rotateSetup } from '../../state/project';
 import type { Room, SurfaceId, ReverbResult, Furnishing } from '../../core/types';
 import { SURFACES } from '../../core/types';
 import { MATERIALS, FURNISHING_LABEL } from '../../core/materials';
@@ -12,7 +13,8 @@ import { fmt } from '../format';
 import { ScanPanel } from './room/ScanPanel';
 import { OpeningsPanel } from './room/OpeningsPanel';
 import { ZonesPanel } from './room/ZonesPanel';
-import { FileIcon, RotateIcon } from './room/icons';
+import { ClearIcon, FileIcon, RotateIcon } from './room/icons';
+import { ConfirmSheet } from '../components/ConfirmSheet';
 
 interface Props {
   project: Project;
@@ -25,10 +27,21 @@ interface Props {
 export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
   const room = project.room;
   const set = (patch: Partial<Room>) => onRoom({ ...room, ...patch });
+  const [askClear, setAskClear] = useState(false);
+  // после очистки панель скана начинает заново (без прежнего файла и найденного в нём)
+  const [scanGen, setScanGen] = useState(0);
+  const clear = () => {
+    setAskClear(false);
+    const c = clearedRoom(project);
+    onRoom(c.room, c);
+    setScanGen((g) => g + 1);
+    // после закрытия шторки (она возвращает прежнюю прокрутку) — наверх, к карточке «С чего начать»
+    setTimeout(() => scrollTo({ top: 0, behavior: 'smooth' }), 60);
+  };
 
-  // комната ещё не задана: ни скана, ни своих размеров — подсказываем, с чего начать
-  const d0 = defaultRoom();
-  const fresh = room.source !== 'scan' && !project.scanInfo && room.depth === d0.depth && room.width === d0.width && room.height === d0.height;
+  // комната ещё не задана (новый проект или после очистки): ни скана, ни своих размеров — подсказываем, с чего начать
+  const sameDims = (r: Room) => room.depth === r.depth && room.width === r.width && room.height === r.height;
+  const fresh = room.source !== 'scan' && !project.scanInfo && (sameDims(defaultRoom()) || sameDims(emptyRoom()));
   return (
     <div class="screen">
       {fresh && (
@@ -52,13 +65,27 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
           <NumberField label={S.room.width} hint={S.room.widthHint} value={room.width} unit="м" min={1} max={50} onChange={(v) => set({ width: v })} />
           <NumberField label={S.room.height} value={room.height} unit="м" min={1} max={20} onChange={(v) => set({ height: v })} />
         </div>
-        <button
-          type="button"
-          class="btn btn--ghost"
-          onClick={() => onRoom(rotateRoom(room), { current: rotateSetup(room, project.current), setups: project.setups.map((x) => rotateSetup(room, x)) })}
-        >
-          <RotateIcon /> {S.room.rotate}
-        </button>
+        <div class="btn-row">
+          <button
+            type="button"
+            class="btn btn--ghost"
+            onClick={() => onRoom(rotateRoom(room), { current: rotateSetup(room, project.current), setups: project.setups.map((x) => rotateSetup(room, x)) })}
+          >
+            <RotateIcon /> {S.room.rotate}
+          </button>
+          <button type="button" class="btn btn--ghost" onClick={() => setAskClear(true)}>
+            <ClearIcon /> {S.room.clear}
+          </button>
+        </div>
+        {askClear && (
+          <ConfirmSheet
+            title={S.room.clearTitle}
+            text={S.room.clearText(!!project.current.measurement)}
+            confirm={S.room.clear}
+            onCancel={() => setAskClear(false)}
+            onConfirm={clear}
+          />
+        )}
         <Details summary={S.room.temperature}>
           <NumberField
             label={S.room.temperature}
@@ -73,7 +100,7 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
         </Details>
       </Panel>
 
-      <ScanPanel project={project} onRoom={onRoom} onGo={onGo} />
+      <ScanPanel key={scanGen} project={project} onRoom={onRoom} onGo={onGo} />
 
       <OpeningsPanel room={room} onRoom={(r) => onRoom(r)} />
 

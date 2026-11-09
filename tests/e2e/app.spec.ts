@@ -429,3 +429,40 @@ test('013: общий блок «Система и цель подбора» н�
   await page.reload();
   await expect(page.locator('details.setup-card')).not.toHaveAttribute('open', '');
 });
+
+test('014: «Очистить» на экране комнаты; модель комнаты без скана; окно — отступ и ширина; стрелка списков с отступом', async ({ page }) => {
+  await page.goto('/#room');
+  // без скана — 3D-модель по введённым размерам там, где показывается скан
+  const model = page.locator('#scan-panel .scan-result');
+  await model.scrollIntoViewIfNeeded();
+  await expect(model.locator('canvas')).toBeVisible();
+  // окно: отступ и ширина; при сдвиге ширина сохраняется
+  await page.getByRole('button', { name: 'Добавить окно' }).click();
+  const win = page.locator('.zone-card').filter({ hasText: 'Окно 1' });
+  await expect(win).toContainText('от угла у стены с колонками до ближнего края окна');
+  await win.getByLabel('Ширина', { exact: true }).fill('1,5');
+  await win.getByLabel('Отступ', { exact: true }).fill('0,5');
+  await win.getByLabel('Отступ', { exact: true }).blur();
+  await expect(win.getByLabel('Ширина', { exact: true })).toHaveValue('1,5');
+  // стрелка выпадающего списка: справа такой же отступ, как у текста слева
+  const pad = await win.locator('.field__box--select').first().evaluate((el) => { const s = getComputedStyle(el); return [s.paddingLeft, s.paddingRight]; });
+  expect(pad[1]).toBe(pad[0]);
+  // скос: поля одно под другим
+  await page.getByText('Есть скос потолка (мансарда)').click();
+  const low = await page.getByLabel('Высота у стены').boundingBox();
+  const run = await page.getByLabel('Ширина скоса от стены').boundingBox();
+  expect(run!.y).toBeGreaterThan(low!.y + low!.height);
+  expect(Math.abs(run!.x - low!.x)).toBeLessThan(2);
+  await page.getByLabel('Глубина', { exact: true }).fill('6');
+  // очистить: сначала отмена, потом подтверждение
+  await page.getByRole('button', { name: 'Очистить' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Отмена' }).click();
+  await expect(win).toBeVisible();
+  await page.getByRole('button', { name: 'Очистить' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Очистить' }).click();
+  await expect(page.locator('.topbar__room')).toContainText('4,00 × 3,00 × 2,70 м');
+  await expect(page.locator('.zone-card')).toHaveCount(0);
+  await expect(page.getByLabel('Есть скос потолка (мансарда)')).not.toBeChecked();
+  await expect(page.locator('.start-card')).toBeVisible();
+  await expect(page.locator('.plan__slope')).toHaveCount(0);
+});

@@ -88,7 +88,8 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
       onChange={(v) => retype(id, item, v as WallItemKind)}
     />
   );
-  const along = (w: WallId) => S.openings.along(w);
+  /** Ширина вдоль стены (без хвостов округления). */
+  const span = (a0: number, a1: number) => Math.round((a1 - a0) * 1000) / 1000;
   return (
     <Panel title={S.openings.title}>
       <p class="small">{S.openings.intro}</p>
@@ -108,17 +109,18 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
                 {S.openings.remove}
               </button>
             </div>
+            <p class="muted small">{S.openings.extLine(e.wall)}</p>
             <div class="grid-2">
-              <NumberField compact id={`${e.id}-a0`} label={`${S.openings.from} (${along(e.wall)})`} value={e.a0} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { a0: v })} />
-              <NumberField compact id={`${e.id}-a1`} label={S.openings.to} value={e.a1} unit="м" min={-20} max={70} onChange={(v) => setExt(e.id, { a1: v })} />
+              <NumberField compact id={`${e.id}-a0`} label={S.openings.extStart} value={e.a0} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { a0: v, a1: v + (e.a1 - e.a0) })} />
+              <NumberField compact id={`${e.id}-a1`} label={S.openings.extLength} value={span(e.a0, e.a1)} unit="м" min={0.3} max={70} onChange={(v) => setExt(e.id, { a1: e.a0 + v })} />
               <NumberField compact id={`${e.id}-d`} label={S.openings.depth} value={e.depth} unit="м" min={0.3} max={20} onChange={(v) => setExt(e.id, { depth: v })} />
               <NumberField compact id={`${e.id}-h`} label={S.openings.height} value={e.height} unit="м" min={1} max={20} onChange={(v) => setExt(e.id, { height: v })} />
             </div>
             <span class="range-row__label">{S.openings.arch}</span>
             <div class="grid-3">
-              <NumberField compact id={`${e.id}-aa0`} label={S.openings.archFrom} value={e.arch.a0} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a0: v } })} />
-              <NumberField compact id={`${e.id}-aa1`} label={S.openings.to} value={e.arch.a1} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a1: v } })} />
-              <NumberField compact id={`${e.id}-ah`} label={S.openings.height} value={e.arch.height} unit="м" min={0.5} max={20} onChange={(v) => setExt(e.id, { arch: { ...e.arch, height: v } })} />
+              <NumberField compact id={`${e.id}-aa0`} label={S.openings.archOffset} value={e.arch.a0} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a0: v, a1: v + (e.arch.a1 - e.arch.a0) } })} />
+              <NumberField compact id={`${e.id}-aa1`} label={S.openings.archWidth} value={span(e.arch.a0, e.arch.a1)} unit="м" min={0.1} max={50} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a1: e.arch.a0 + v } })} />
+              <NumberField compact id={`${e.id}-ah`} label={S.openings.archHeight} value={e.arch.height} unit="м" min={0.5} max={20} onChange={(v) => setExt(e.id, { arch: { ...e.arch, height: v } })} />
             </div>
             <label class="check"><input type="checkbox" checked={e.openStart} onChange={(ev) => setExt(e.id, { openStart: (ev.target as HTMLInputElement).checked })} /><span>{S.openings.openStart}</span></label>
             <label class="check"><input type="checkbox" checked={e.openEnd} onChange={(ev) => setExt(e.id, { openEnd: (ev.target as HTMLInputElement).checked })} /><span>{S.openings.openEnd}</span></label>
@@ -140,9 +142,10 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
               {S.openings.remove}
             </button>
           </div>
+          <p class="muted small">{S.openings.offsetLine(o.wall, S.openings.what.opening)}</p>
           <div class="grid-3">
-            <NumberField compact id={`${o.id}-a0`} label={`${S.openings.from} (${along(o.wall)})`} value={o.a0} unit="м" min={0} max={50} onChange={(v) => setOpening(o.id, { a0: v })} />
-            <NumberField compact id={`${o.id}-a1`} label={S.openings.to} value={o.a1} unit="м" min={0} max={50} onChange={(v) => setOpening(o.id, { a1: v })} />
+            <NumberField compact id={`${o.id}-a0`} label={S.openings.offset} value={o.a0} unit="м" min={0} max={50} onChange={(v) => setOpening(o.id, { a0: v, a1: v + (o.a1 - o.a0) })} />
+            <NumberField compact id={`${o.id}-a1`} label={S.openings.widthAlong} value={span(o.a0, o.a1)} unit="м" min={0.1} max={50} onChange={(v) => setOpening(o.id, { a1: o.a0 + v })} />
             <NumberField compact id={`${o.id}-h`} label={S.openings.height} value={o.height} unit="м" min={0.3} max={20} onChange={(v) => setOpening(o.id, { height: v })} />
           </div>
           {kindSelect(o.id, openingAsItem(o), 'arch')}
@@ -163,10 +166,8 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
       {room.slope && (
         <div class="zone-card">
           <SelectField label={S.shape.slopeWall} value={room.slope.wall} options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, wall: v as WallId } })} />
-          <div class="grid-2">
-            <NumberField compact id="slope-low" label={S.shape.slopeLow} value={room.slope.low} unit="м" min={0.5} max={room.height} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, low: v } })} />
-            <NumberField compact id="slope-run" label={S.shape.slopeRun} value={room.slope.run} unit="м" min={0.2} max={50} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, run: v } })} />
-          </div>
+          <NumberField compact id="slope-low" label={S.shape.slopeLow} value={room.slope.low} unit="м" min={0.5} max={room.height} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, low: v } })} />
+          <NumberField compact id="slope-run" label={S.shape.slopeRun} value={room.slope.run} unit="м" min={0.2} max={50} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, run: v } })} />
           {validateSlope(room) && <Note tone="warn">{validateSlope(room)}</Note>}
           <p class="muted small">{S.shape.slopeHint}</p>
         </div>
@@ -187,9 +188,10 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
               {S.openings.remove}
             </button>
           </div>
+          <p class="muted small">{S.openings.offsetLine(f.wall, S.openings.what[f.kind])}</p>
           <div class="grid-2">
-            <NumberField compact id={`${f.id}-a0`} label={`${S.openings.from} (${along(f.wall)})`} value={f.a0} unit="м" min={0} max={50} onChange={(v) => setFeature(f.id, { a0: v })} />
-            <NumberField compact id={`${f.id}-a1`} label={S.openings.to} value={f.a1} unit="м" min={0} max={50} onChange={(v) => setFeature(f.id, { a1: v })} />
+            <NumberField compact id={`${f.id}-a0`} label={S.openings.offset} value={f.a0} unit="м" min={0} max={50} onChange={(v) => setFeature(f.id, { a0: v, a1: v + (f.a1 - f.a0) })} />
+            <NumberField compact id={`${f.id}-a1`} label={S.openings.widthAlong} value={span(f.a0, f.a1)} unit="м" min={0.1} max={50} onChange={(v) => setFeature(f.id, { a1: f.a0 + v })} />
             {f.kind === 'window' && <NumberField compact id={`${f.id}-b`} label={S.openings.bottom} value={f.bottom} unit="м" min={0} max={10} onChange={(v) => setFeature(f.id, { bottom: v })} />}
             <NumberField compact id={`${f.id}-t`} label={f.kind === 'window' ? S.openings.top : S.openings.height} value={f.top} unit="м" min={0.3} max={20} onChange={(v) => setFeature(f.id, { top: v })} />
           </div>
