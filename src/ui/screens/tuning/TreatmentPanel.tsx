@@ -8,6 +8,7 @@ import { modeDecays, type ModeDecay } from '../../../core/overview';
 import { THICKNESSES, suggestTreatments } from '../../../core/treatments';
 import { useSetupEval } from '../../useEval';
 import { bassAdvice, porousLowLimit, reflectionPoints } from '../../../core/treatment';
+import { porousAlpha } from '../../../core/treatments';
 import { speedOfSound } from '../../../core/physics';
 import { PlanView, type PlanMark, type WallMark } from '../../components/PlanView';
 import { NumberField, Panel, SelectField } from '../../components/Fields';
@@ -53,7 +54,7 @@ export function TreatmentPanel({ project, modes, onRoom }: { project: Project; m
           ))}
         </ul>
       )}
-      <p class="muted small">{S.tuning.porous(fmt(porousLowLimit(0.1, 0.1, speedOfSound(room.temperatureC)), 0))}</p>
+      <p class="muted small">{S.tuning.porous(fmt(porousLowLimit(0.1, 0.1, speedOfSound(room.temperatureC)), 0), fmt(porousAlpha(0.1, 0.1)[1] * 100, 0), fmt(porousAlpha(0.1, 0.1)[0] * 100, 0))}</p>
       <TreatmentPlan project={project} modes={modes} onRoom={onRoom} reflections={refl} />
     </Panel>
   );
