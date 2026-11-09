@@ -23,8 +23,8 @@ interface Pick { f: number; n?: [number, number, number] }
 
 // состояние экрана живёт между переключениями вкладок
 const saved: {
-  kind: FieldKind; pick: Pick | null; view: View; band: [number, number]; threshold: number; slice: [number, number] | null; roomKey?: string;
-} = { kind: 'excited', pick: null, view: 'single', band: [40, 60], threshold: 6, slice: null };
+  kind: FieldKind; pick: Pick | null; view: View; band: [number, number]; threshold: number; sliceZ: number | null; roomKey?: string;
+} = { kind: 'excited', pick: null, view: 'single', band: [40, 60], threshold: 6, sliceZ: null };
 
 /** Открыть экран 3D сразу на этой частоте (переход из «Обзора»). */
 export function setFieldFocus(f: number) {
@@ -73,7 +73,8 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   const [allChips, setAllChips] = useState(false);
   const [band, setBand] = useState<[number, number]>(saved.band);
   const [threshold, setThreshold] = useState(saved.threshold);
-  const [slice, setSlice] = useState<[number, number]>(saved.slice ?? [Math.max(0, c.earHeight - 0.1), Math.min(room.height, c.earHeight + 0.1)]);
+  // высота среза: по умолчанию — высота ушей
+  const [sliceZ, setSliceZ] = useState<number>(saved.sliceZ ?? Math.min(room.height, c.earHeight));
   const [sysModes, setSysModes] = useState<SystemMode[] | null>(null);
   const [field, setField] = useState<FieldResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,12 +84,12 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   const [View3D, setView3D] = useState<FunctionComponent<any> | null>(null);
   const job = useRef<ComputeJob<FieldResult> | null>(null);
 
-  useEffect(() => { Object.assign(saved, { kind, pick, view, band, threshold, slice }); }, [kind, pick, view, band, threshold, slice]);
+  useEffect(() => { Object.assign(saved, { kind, pick, view, band, threshold, sliceZ }); }, [kind, pick, view, band, threshold, sliceZ]);
   useEffect(() => { import('../components/Field3D').then((m) => setView3D(() => m.default)).catch(() => undefined); }, []);
   // срез — в пределах высоты комнаты
   useEffect(() => {
     const h = room.height;
-    setSlice((s) => (s[0] > h || s[1] > h ? [Math.min(s[0], h), Math.min(s[1], h)] : s));
+    setSliceZ((z) => Math.min(z, h));
   }, [room.height]);
 
   // моды для быстрого выбора: прямоугольная модель — расчётные, волновая — моды системы
@@ -176,7 +177,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     ? field.freqs.length === 1 ? S.field.shown(fmt(field.freqs[0], 1)) : S.field.shownBand(fmt(Math.min(...field.freqs), 0), fmt(Math.max(...field.freqs), 0))
     : null;
   const shapeOf = kind === 'shape' && !wave && pick && !pick.n ? nearestOf(modes, pick.f) : null;
-  const sl = useMemo(() => (field && energy ? sliceField(field, energy, slice[0], slice[1]) : null), [field, energy, slice]);
+  const sl = useMemo(() => (field && energy ? sliceField(field, energy, sliceZ) : null), [field, energy, sliceZ]);
 
   const items = useMemo<PlanItem[]>(() => [
     ...sources.filter((s) => current.positions[s.id]).map((s) => ({
@@ -198,7 +199,6 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     const v = sl.db[i * sl.ny + j];
     return Number.isFinite(v) ? v : null;
   })();
-  const thick = Math.round(Math.abs(slice[1] - slice[0]) * 100);
   const planProps: PlanProps = {
     depth: room.depth,
     width: room.width,
@@ -221,7 +221,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
       <Panel class="panel--hero">
         <p class="small">{S.field.intro}</p>
         <div class="field3d-wrap">
-          {View3D ? <View3D room={room} field={field} energy={energy} threshold={threshold} items={items3d} slice={slice} /> : <div class="field3d field3d--loading" />}
+          {View3D ? <View3D room={room} field={field} energy={energy} threshold={threshold} items={items3d} sliceZ={sliceZ} /> : <div class="field3d field3d--loading" />}
           {busy && (
             <div class="field3d__busy" role="status">
               <span class="spinner" aria-hidden="true" /> {S.field.computing} {progress > 0.01 ? `${Math.round(progress * 100)} %` : ''}
@@ -322,13 +322,9 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
           <div class="slice-row__plan">
             <PlanView {...planProps} showKey={false} />
           </div>
-          <HeightRange max={room.height} value={slice} onChange={setSlice} />
+          <HeightRange max={room.height} value={sliceZ} onChange={setSliceZ} />
         </div>
-        <div class="grid-2">
-          <NumberField compact id="slice-lo" label={S.field.sliceFrom} value={slice[0]} unit="м" min={0} max={room.height} digits={2} onChange={(v) => setSlice([Math.min(v, slice[1]), slice[1]])} />
-          <NumberField compact id="slice-hi" label={S.field.sliceTo} value={slice[1]} unit="м" min={0} max={room.height} digits={2} onChange={(v) => setSlice([slice[0], Math.max(v, slice[0])])} />
-        </div>
-        <p class="muted small">{thick > 0 ? S.field.thickness(thick) : S.field.thin}</p>
+        <p class="small"><strong>{S.field.sliceAt(Math.round(sliceZ * 100))}</strong>{Math.abs(sliceZ - c.earHeight) < 0.026 ? ` · ${S.field.sliceEars}` : ''}</p>
         <PlanKey keys={keysFor(planProps)} notes={{ probe: S.field.probeKey }} />
         {probe && (
           <div class="probe">

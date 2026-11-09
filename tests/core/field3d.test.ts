@@ -53,17 +53,19 @@ describe('поле в прямоугольной модели', () => {
     }
   });
 
-  it('срез: средняя энергия по слою и интерполяция тонкого среза', () => {
+  it('срез на одной высоте: пучность у пола, узел посередине, между ярусами — интерполяция', () => {
     const r = computeField({ room: p.room, sources: p.sources, setup: p.current, freqs: [68.6], kind: 'shape', modes: [[0, 0, 1]] });
     const e = combineEnergy(r, [0]);
     // вертикальная мода (0,0,1): у пола и потолка пучность, на середине высоты узел
-    const floor = sliceField(r, e, 0.05, 0.05);
-    const mid = sliceField(r, e, 1.25, 1.25);
-    expect(floor.db[0]).toBeGreaterThan(2);
-    expect(mid.db[0]).toBeLessThan(-15);
-    // толстый слой по всей высоте — среднее = 0 дБ
-    const all = sliceField(r, e, 0, 2.5);
-    expect(all.db[5]).toBeCloseTo(0, 0);
+    expect(sliceField(r, e, 0.05).db[0]).toBeGreaterThan(2);
+    expect(sliceField(r, e, 1.25).db[0]).toBeLessThan(-15);
+    // на ярусе сетки — ровно его значение; между ярусами — между их значениями
+    const zk = r.z0 + 3 * r.sz;
+    const at = (z: number) => sliceField(r, e, z).db[0];
+    expect(at(zk)).toBeCloseTo(toDb(e[3]), 5);
+    const mid = at(zk + r.sz / 2);
+    expect(mid).toBeLessThanOrEqual(Math.max(at(zk), at(zk + r.sz)) + 1e-6);
+    expect(mid).toBeGreaterThanOrEqual(Math.min(at(zk), at(zk + r.sz)) - 1e-6);
   });
 
   it('частоты полосы', () => {

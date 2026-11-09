@@ -17,7 +17,7 @@ interface Props {
   energy: Float32Array | null;
   threshold: number;
   items: Field3DItem[];
-  slice: [number, number];
+  sliceZ: number;
 }
 
 function cssColor(name: string, fallback: string): THREE.Color {
@@ -57,7 +57,7 @@ function boxEdges(x0: number, y0: number, z0: number, x1: number, y1: number, z1
   return line;
 }
 
-export default function Field3D({ room, field, energy, threshold, items, slice }: Props) {
+export default function Field3D({ room, field, energy, threshold, items, sliceZ }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const ctx = useRef<{
     renderer: THREE.WebGLRenderer;
@@ -196,25 +196,21 @@ export default function Field3D({ room, field, energy, threshold, items, slice }
     }
   }, [items]);
 
-  // плоскости среза
-  const [z0, z1] = slice;
+  // плоскость среза
   const { depth: rd, width: rw } = room;
   useEffect(() => {
     const c = ctx.current;
     if (!c) return;
     disposeGroup(c.sliceG);
     const accent = cssColor('--accent', '#2d45c2');
-    const zs = Math.abs(z1 - z0) < 0.01 ? [z0] : [z0, z1];
-    for (const z of zs) {
-      const pl = new THREE.Mesh(
-        new THREE.PlaneGeometry(rd, rw),
-        new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false }),
-      );
-      pl.position.set(rd / 2, rw / 2, z);
-      c.sliceG.add(pl);
-      c.sliceG.add(boxEdges(0, 0, z, rd, rw, z, accent, 0.6));
-    }
-  }, [z0, z1, rd, rw]);
+    const pl = new THREE.Mesh(
+      new THREE.PlaneGeometry(rd, rw),
+      new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    pl.position.set(rd / 2, rw / 2, sliceZ);
+    c.sliceG.add(pl);
+    c.sliceG.add(boxEdges(0, 0, sliceZ, rd, rw, sliceZ, accent, 0.6));
+  }, [sliceZ, rd, rw]);
 
   // облако точек
   useEffect(() => {

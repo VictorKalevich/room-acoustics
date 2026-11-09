@@ -305,35 +305,21 @@ export interface FieldSlice {
 }
 
 /**
- * Горизонтальный срез в слое [z0, z1]: средняя энергия по высоте в каждой точке плана.
- * Если слой тоньше ячейки сетки — линейная интерполяция между соседними ярусами.
+ * Горизонтальный срез на высоте z (плоскость без толщины): энергия линейно интерполируется между двумя
+ * соседними по высоте ярусами сетки (шаг 6–10 см — мельче половины длины волны и на 300 Гц). Вне воздуха — NaN.
  */
-export function sliceField(res: FieldResult, energy: Float32Array, z0: number, z1: number): FieldSlice {
+export function sliceField(res: FieldResult, energy: Float32Array, z: number): FieldSlice {
   const { nx, ny, nz } = res;
-  const lo = Math.min(z0, z1), hi = Math.max(z0, z1);
-  const kAt = (z: number) => (z - res.z0) / res.sz;
-  const ks: { k: number; w: number }[] = [];
-  for (let k = 0; k < nz; k++) {
-    const zc = res.z0 + k * res.sz;
-    if (zc >= lo - 1e-9 && zc <= hi + 1e-9) ks.push({ k, w: 1 });
-  }
-  if (!ks.length) {
-    const kk = Math.min(nz - 1, Math.max(0, kAt((lo + hi) / 2)));
-    const k0 = Math.floor(kk), k1 = Math.min(nz - 1, k0 + 1), t = kk - k0;
-    ks.push({ k: k0, w: 1 - t });
-    if (k1 !== k0 && t > 0) ks.push({ k: k1, w: t });
-  }
+  const kk = Math.min(nz - 1, Math.max(0, (z - res.z0) / res.sz));
+  const k0 = Math.floor(kk), k1 = Math.min(nz - 1, k0 + 1), t = kk - k0;
   const db = new Float32Array(nx * ny);
   for (let i = 0; i < nx; i++)
     for (let j = 0; j < ny; j++) {
-      let s = 0, w = 0;
-      for (const { k, w: wk } of ks) {
-        const p = (i * ny + j) * nz + k;
-        if (!res.mask[p]) continue;
-        s += energy[p] * wk;
-        w += wk;
-      }
-      db[i * ny + j] = w > 0 ? toDb(s / w) : NaN;
+      const p0 = (i * ny + j) * nz + k0, p1 = (i * ny + j) * nz + k1;
+      const m0 = res.mask[p0] ? 1 - t : 0, m1 = res.mask[p1] ? t : 0;
+      // у пола или потолка смежного помещения один из ярусов может быть вне воздуха — берём другой
+      const w = m0 + m1;
+      db[i * ny + j] = w > 0 ? toDb((energy[p0] * m0 + energy[p1] * m1) / w) : NaN;
     }
   return { nx, ny, x0: res.x0, y0: res.y0, sx: res.sx, sy: res.sy, db };
 }
