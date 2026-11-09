@@ -259,6 +259,10 @@ textarea { font-size: 16px; }
 .score__delta { font-size: 14px; font-weight: 500; }
 .score__delta.is-good { color: var(--good); }
 .score__delta.is-bad { color: var(--warn); }
+/* главная оценка экрана — выделена фоном и крупнее */
+.score--key { background: var(--accent-soft); border-radius: 14px; padding: 14px 16px; }
+.score--key .score__value { font-size: 52px; color: var(--accent); }
+.score--key .score__label { font-size: 16.5px; }
 
 .meter { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
 .meter__label { color: var(--muted); }
@@ -542,6 +546,10 @@ td.num { text-align: right; }
 .sheet-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-end; justify-content: center; }
 .sheet { width: 100%; max-width: 640px; background: var(--surface); color: var(--ink); border-radius: 18px 18px 0 0; padding: 16px 18px calc(env(safe-area-inset-bottom) + 18px); box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.25); }
 .sheet__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; }
+.treat-score { margin: 10px 0; }
+.treat-clear { margin-top: 6px; color: var(--warn); }
+.sheet__actions { margin-top: 14px; justify-content: flex-end; }
+.btn--danger { background: var(--warn); color: #fff; border-color: var(--warn); }
 .sheet__close { border: 0; background: none; color: inherit; font-size: 1.6rem; line-height: 1; min-width: 44px; min-height: 44px; cursor: pointer; }
 
 /* Мини-плеер */

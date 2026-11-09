@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { shownTreatments } from '../../core/treatments';
 import type { Project } from '../../state/project';
 import { defaultSetup, defaultSources, validateSources } from '../../state/project';
 import type { BassObjective, Constraints, PlacementResult, SourceSpec, SubZone, Placement, Setup, PhaseMode } from '../../core/types';
@@ -331,7 +332,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
       <div ref={resultRef}>
         {!result && !running && (
           <Panel>
-            <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} listenerZone={[c.listenerMinX, c.listenerMaxX]} />
+            <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} listenerZone={[c.listenerMinX, c.listenerMaxX]} />
             <p class="small">{S.placement.empty}</p>
           </Panel>
         )}
@@ -370,7 +371,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             )}
             <PlanView
               depth={room.depth} width={room.width} placement={current}
-              zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope}
+              zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope}
               heatmap={layers.map ? heat : null}
               axes={layers.axes}
               keyNotes={effKind === 'sub' ? { heat: S.manual.keyHeatSub } : undefined}
@@ -444,7 +445,7 @@ function ScoreLine({ p, baseline, isBaseline, objective }: { p: Placement; basel
   const val = (q: Placement) => (flat ? q.score : q.objScore ?? q.score);
   const d = val(baseline) - val(p);
   return (
-    <div class="score">
+    <div class="score score--key">
       <div class="score__main">
         <span class="score__value">{fmt(val(p), 1)}</span>
         <span class="score__unit">дБ</span>

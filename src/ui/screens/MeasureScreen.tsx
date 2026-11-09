@@ -1,5 +1,6 @@
 // «Замер»: свип (АЧХ в нескольких точках → замер проекта), хлопок (RT60 по октавам), живой анализатор баса.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { shownTreatments } from '../../core/treatments';
 import type { Project } from '../../state/project';
 import type { Measurement, Room, Setup } from '../../core/types';
 import { analyzeSweep, averageRT, calAt, clapRT60, logGrid, logSweep, parseCalibration, powerAverage, RT_BANDS, smoothOct, sweepSegment, wav16, type BandRT, type SweepResult } from '../../core/dsp';
@@ -364,7 +365,7 @@ function RtaTool({ project, applyCal }: { project: Project; applyCal: (f: number
       {curve && <p class="muted small">{S.measure.rtaLegend(snaps.length)}{ev ? ` ${S.measure.predLegend}` : ''}</p>}
       <h3 class="subhead">{S.measure.whereTitle}</h3>
       <p class="muted small">{S.measure.whereHint}</p>
-      <PlanView depth={room.depth} width={room.width} items={items} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} marks={here ? [{ x: here.x, y: here.y, label: '', kind: 'probe' }] : []} onTap={setHere} showKey={false} />
+      <PlanView depth={room.depth} width={room.width} items={items} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} marks={here ? [{ x: here.x, y: here.y, label: '', kind: 'probe' }] : []} onTap={setHere} showKey={false} />
     </Panel>
   );
 }

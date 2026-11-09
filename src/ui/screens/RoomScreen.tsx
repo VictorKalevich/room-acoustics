@@ -1,4 +1,5 @@
 import type { Project } from '../../state/project';
+import { shownTreatments } from '../../core/treatments';
 import { defaultRoom, rotateRoom, rotateSetup } from '../../state/project';
 import type { Room, SurfaceId, ReverbResult, Furnishing } from '../../core/types';
 import { SURFACES } from '../../core/types';
@@ -45,7 +46,7 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
         </Panel>
       )}
       <Panel class="panel--hero">
-        <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} />
+        <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} />
         <div class="dims">
           <NumberField label={S.room.depth} hint={S.room.depthHint} value={room.depth} unit="м" min={1} max={50} onChange={(v) => set({ depth: v })} />
           <NumberField label={S.room.width} hint={S.room.widthHint} value={room.width} unit="м" min={1} max={50} onChange={(v) => set({ width: v })} />

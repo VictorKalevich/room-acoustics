@@ -1,5 +1,6 @@
 // Отчёт: всё по комнате на одной странице. «Сохранить PDF» — системная печать (на iPhone — «Поделиться → Сохранить в Файлы»).
 import { useMemo, useRef, useState } from 'preact/hooks';
+import { shownTreatments } from '../../core/treatments';
 import { shareFile } from '../audio/mic';
 import type { Project } from '../../state/project';
 import type { Mode, ReverbResult } from '../../core/types';
@@ -77,7 +78,7 @@ export function ReportScreen({ project, modes, reverb }: Props) {
       </Panel>
 
       <Panel title={S.report.placement}>
-        <PlanView depth={room.depth} width={room.width} items={items} seats={ev?.seats ?? []} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} showKey={false} />
+        <PlanView depth={room.depth} width={room.width} items={items} seats={ev?.seats ?? []} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} showKey={false} />
         <table class="report-table">
           <thead><tr><th>{S.report.what}</th><th>{S.report.fromFront}</th><th>{S.report.fromLeft}</th><th>{S.report.heightCol}</th></tr></thead>
           <tbody>

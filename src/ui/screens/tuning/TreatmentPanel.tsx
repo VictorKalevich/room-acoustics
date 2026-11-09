@@ -15,6 +15,8 @@ import { NumberField, Panel, SelectField } from '../../components/Fields';
 import { S } from '../../strings';
 import { fmt } from '../../format';
 import { itemsOf } from './shared';
+import { isWave } from '../../../core/geometry';
+import { ConfirmSheet } from '../../components/ConfirmSheet';
 
 // ---------- Обработка ----------
 
@@ -91,8 +93,25 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
   const withT = useMemo(() => ({ ...room, treatmentsOn: true }), [room]);
   const dBare = useMemo(() => modeDecays(bare, modes, computeReverb(bare), 150), [bare, modes]);
   const dWith = useMemo(() => modeDecays(withT, modes, computeReverb(withT), 150), [withT, modes]);
-  const { ev: evBare } = useSetupEval(bare, sources, c, list.length ? current : null);
+  // без элементов обработки оба варианта совпадают: считаем один
+  const { ev: evBare } = useSetupEval(bare, sources, c, current);
   const { ev: evWith } = useSetupEval(withT, sources, c, list.length ? current : null);
+  const evNow = room.treatmentsOn && list.length ? evWith : evBare;
+  const [askClear, setAskClear] = useState(false);
+  const scoreBlock = (
+    <div class="score score--key treat-score">
+      <div class="score__main">
+        <span class="score__value">{evNow ? fmt(evNow.score, 1) : '…'}</span>
+        <span class="score__unit">дБ</span>
+      </div>
+      <div class="score__text">
+        <span class="score__label">{S.placement.score}</span>
+        <span class="muted small">{!list.length ? S.treat.scoreNone : room.treatmentsOn ? S.treat.scoreWith : S.treat.scoreWithout}</span>
+        <span class="muted small">{S.tuning.setupHint}</span>
+        <span class="model-tag">{isWave(room) ? S.model.waveTag : S.model.modalTag}</span>
+      </div>
+    </div>
+  );
   const longCount = (d: ModeDecay[]) => d.filter((x) => x.kind !== 'oblique' && x.t60 > x.limit).length;
   const meanAx = (d: ModeDecay[]) => { const a = d.filter((x) => x.kind === 'axial'); return a.length ? a.reduce((s, x) => s + x.t60, 0) / a.length : 0; };
   const area: Record<string, number> = {};
@@ -102,7 +121,10 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
       <h3 class="subhead">{S.treat.title}</h3>
       <p class="small">{S.treat.intro}</p>
       {list.length === 0 && (
-        <button type="button" class="btn btn--primary" onClick={() => onRoom({ ...room, treatments: suggestTreatments(room, reflections, makeId) })}>{S.treat.suggest}</button>
+        <>
+          {scoreBlock}
+          <button type="button" class="btn btn--primary" onClick={() => onRoom({ ...room, treatments: suggestTreatments(room, reflections, makeId) })}>{S.treat.suggest}</button>
+        </>
       )}
       {list.length > 0 && (
         <>
@@ -110,6 +132,7 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
             <input type="checkbox" checked={!!room.treatmentsOn} onChange={(e) => onRoom({ ...room, treatmentsOn: (e.target as HTMLInputElement).checked })} />
             <span>{S.treat.apply}</span>
           </label>
+          {scoreBlock}
           <div class="treat-compare">
             <div><span class="muted small">{S.treat.longModes}</span><strong>{longCount(dBare)} → {longCount(dWith)}</strong></div>
             <div><span class="muted small">{S.treat.axialT60}</span><strong>{fmt(meanAx(dBare), 1)} → {fmt(meanAx(dWith), 1)} с</strong></div>
@@ -163,6 +186,16 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
             <button type="button" class="btn btn--small" onClick={() => add('panel')}>{S.treat.addPanel}</button>
             <button type="button" class="btn btn--small" onClick={() => add('cloud')}>{S.treat.addCloud}</button>
           </div>
+          <button type="button" class="btn btn--small btn--ghost treat-clear" onClick={() => setAskClear(true)}>{S.treat.clearAll}</button>
+          {askClear && (
+            <ConfirmSheet
+              title={S.treat.clearTitle}
+              text={S.treat.clearText(list.length)}
+              confirm={S.treat.clearAll}
+              onCancel={() => setAskClear(false)}
+              onConfirm={() => { setAskClear(false); onRoom({ ...room, treatments: [], treatmentsOn: false }); }}
+            />
+          )}
           <h4 class="subhead">{S.treat.shopping}</h4>
           <ul class="plain-list small">
             {Object.entries(area).sort((a, b) => +a[0] - +b[0]).map(([d, a], ki) => <li key={ki}>{S.treat.material(Math.round(+d * 100), fmt(a, 1))}</li>)}

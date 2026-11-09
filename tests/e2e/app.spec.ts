@@ -337,3 +337,32 @@ test('009: цель подбора — меньше провалов внизу 
   await page.getByRole('radio', { name: 'Вручную' }).click();
   await expect(page.getByText('Цель подбора: Без провалов на модах')).toBeVisible();
 });
+
+test('011: обработка на планах — только когда учтена; оценка под галочкой; «Удалить все» с подтверждением', async ({ page }) => {
+  await page.goto('/#tuning');
+  // блока «Текущая расстановка» больше нет, оценка — в плане обработки и без элементов
+  await expect(page.getByRole('heading', { name: 'Текущая расстановка' })).toHaveCount(0);
+  await expect(page.locator('.treat-score .score__value')).not.toHaveText('…', { timeout: 20_000 });
+  await page.getByRole('button', { name: 'Предложить план' }).click();
+  await expect(page.locator('.treat-score')).toContainText('не учтена');
+  // галочка выключена: на «Расстановке» элементов обработки нет, в «Настройке» — есть
+  expect(await page.locator('svg.plan .plan__treat').count()).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Расстановка' }).click();
+  await page.getByRole('radio', { name: 'Вручную' }).click();
+  await expect(page.locator('svg.plan .plan__treat')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Настройка' }).click();
+  await page.getByLabel('Учесть обработку в расчёте').check();
+  await expect(page.locator('.treat-score')).toContainText('С обработкой');
+  await page.getByRole('button', { name: 'Расстановка' }).click();
+  await expect.poll(() => page.locator('svg.plan .plan__treat').count()).toBeGreaterThan(0);
+  // удалить всё: сначала отмена, потом подтверждение
+  await page.getByRole('button', { name: 'Настройка' }).click();
+  await page.getByRole('button', { name: 'Удалить все' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Отмена' }).click();
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(page.getByLabel('Учесть обработку в расчёте')).toBeVisible();
+  await page.getByRole('button', { name: 'Удалить все' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Удалить все' }).click();
+  await expect(page.getByRole('button', { name: 'Предложить план' })).toBeVisible();
+  await expect(page.locator('.treat-score')).toContainText('Без акустической обработки');
+});

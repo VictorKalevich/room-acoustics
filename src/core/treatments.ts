@@ -45,6 +45,14 @@ export function treatmentSurfaces(t: Treatment): { s: SurfaceId; share: number }
   return [{ s: fb, share: 0.5 }, { s: lr, share: 0.5 }];
 }
 
+/**
+ * Элементы обработки для показа на планах: только когда обработка учтена в расчёте. На экране «Настройка»
+ * план обработки показывает все элементы всегда — там их правят.
+ */
+export function shownTreatments(room: Room): Treatment[] | undefined {
+  return room.treatmentsOn ? room.treatments : undefined;
+}
+
 export function activeTreatments(room: Room): Treatment[] {
   return room.treatmentsOn ? (room.treatments ?? []).filter((t) => t.enabled !== false) : [];
 }

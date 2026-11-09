@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { shownTreatments } from '../../core/treatments';
 import type { Project } from '../../state/project';
 import { makeId } from '../../state/project';
 import type { BassObjective, Constraints, Setup, Vec3 } from '../../core/types';
@@ -142,7 +143,7 @@ export function ManualScreen({ project, onSetup, onSetups, onConstraints }: Prop
           width={room.width}
           items={items}
           seats={evalCur?.seats ?? []}
-          zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope}
+          zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope}
           heatmap={layers.map ? (layer === 'robust' ? robustHeat : heat) : null}
           axes={layers.axes}
           marks={marks}
@@ -175,7 +176,7 @@ export function ManualScreen({ project, onSetup, onSetups, onConstraints }: Prop
       </Panel>
 
       <Panel title={S.manual.best}>
-        <div class="score">
+        <div class="score score--key">
           <div class="score__main">
             <span class="score__value">{evalCur ? fmt(evalCur.objScore, 1) : '…'}</span>
             <span class="score__unit">дБ</span>
