@@ -16,22 +16,35 @@ import { S } from '../strings';
 import { PlayButton } from '../components/MiniPlayer';
 import { fmt } from '../format';
 import { modeWhere } from '../../core/modes';
+import { shownTreatments } from '../../core/treatments';
 
-type View = 'single' | 'average' | 'band';
+type View = 'single' | 'band';
 interface Pick { f: number; n?: [number, number, number] }
 
 // состояние экрана живёт между переключениями вкладок
 const saved: {
-  kind: FieldKind; picks: Pick[]; view: View; active: number; band: [number, number]; threshold: number; slice: [number, number] | null; roomKey?: string;
-} = { kind: 'excited', picks: [], view: 'single', active: 0, band: [40, 60], threshold: 6, slice: null };
+  kind: FieldKind; pick: Pick | null; view: View; band: [number, number]; threshold: number; slice: [number, number] | null; roomKey?: string;
+} = { kind: 'excited', pick: null, view: 'single', band: [40, 60], threshold: 6, slice: null };
 
 /** Открыть экран 3D сразу на этой частоте (переход из «Обзора»). */
 export function setFieldFocus(f: number) {
-  const p = { f: Math.round(f * 10) / 10 };
-  if (!saved.picks.some((q) => Math.abs(q.f - p.f) < 0.05)) saved.picks = [...saved.picks, p].sort((a, b) => a.f - b.f);
+  saved.pick = { f: Math.round(f * 10) / 10 };
   saved.view = 'single';
-  saved.active = saved.picks.findIndex((q) => Math.abs(q.f - p.f) < 0.05);
 }
+
+/**
+ * Посчитанные поля: переключение между уже просмотренными частотами — без пересчёта и мигания.
+ * Ключ — всё, от чего зависит поле (комната, источники, их места и настройки, вид, частоты).
+ */
+const fieldCache = new Map<string, FieldResult>();
+const CACHE_MAX = 16;
+
+/** Ползунок частоты — по логарифмической шкале: низкие моды стоят густо. */
+const SLIDER_STEPS = 1000;
+const toSlider = (f: number, lo: number, hi: number) => Math.round((Math.log(f / lo) / Math.log(hi / lo)) * SLIDER_STEPS);
+const fromSlider = (v: number, lo: number, hi: number) => Math.round(lo * Math.pow(hi / lo, v / SLIDER_STEPS) * 10) / 10;
+/** Ползунок «прилипает» к моде ближе 1,5 % по частоте. */
+const SNAP = 0.015;
 
 interface Props {
   project: Project;
@@ -55,14 +68,12 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   const fTop = useMemo(() => Math.min(300, Math.max(120, computeReverb(room).schroeder)), [room]);
 
   const [kind, setKind] = useState<FieldKind>(saved.kind);
-  const [picks, setPicks] = useState<Pick[]>(saved.picks);
+  const [pick, setPick] = useState<Pick | null>(saved.pick);
   const [view, setView] = useState<View>(saved.view);
-  const [active, setActive] = useState(saved.active);
   const [allChips, setAllChips] = useState(false);
   const [band, setBand] = useState<[number, number]>(saved.band);
   const [threshold, setThreshold] = useState(saved.threshold);
   const [slice, setSlice] = useState<[number, number]>(saved.slice ?? [Math.max(0, c.earHeight - 0.1), Math.min(room.height, c.earHeight + 0.1)]);
-  const [custom, setCustom] = useState(50);
   const [sysModes, setSysModes] = useState<SystemMode[] | null>(null);
   const [field, setField] = useState<FieldResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -72,7 +83,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   const [View3D, setView3D] = useState<FunctionComponent<any> | null>(null);
   const job = useRef<ComputeJob<FieldResult> | null>(null);
 
-  useEffect(() => { Object.assign(saved, { kind, picks, view, active, band, threshold, slice }); }, [kind, picks, view, active, band, threshold, slice]);
+  useEffect(() => { Object.assign(saved, { kind, pick, view, band, threshold, slice }); }, [kind, pick, view, band, threshold, slice]);
   useEffect(() => { import('../components/Field3D').then((m) => setView3D(() => m.default)).catch(() => undefined); }, []);
   // срез — в пределах высоты комнаты
   useEffect(() => {
@@ -98,19 +109,19 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   const roomKey = `${room.depth}|${room.width}|${room.height}|${(room.extensions ?? []).length}|${room.slope ? 1 : 0}`;
   useEffect(() => {
     // сбрасываем выбор; самую низкую моду подставит следующий эффект, когда моды новой комнаты будут готовы
-    if (saved.roomKey && saved.roomKey !== roomKey) { setPicks([]); setActive(0); }
+    if (saved.roomKey && saved.roomKey !== roomKey) setPick(null);
     saved.roomKey = roomKey;
   }, [roomKey]);
-  useEffect(() => { if (quick.length) setPicks((ps) => (ps.length ? ps : [quick[0]])); }, [quick]);
+  useEffect(() => { if (quick.length) setPick((p) => p ?? quick[0]); }, [quick]);
 
-  const isPicked = (p: Pick) => picks.some((q) => Math.abs(q.f - p.f) < 0.05);
-  const toggle = (p: Pick) => {
-    setPicks((ps) => (isPicked(p) ? ps.filter((q) => Math.abs(q.f - p.f) >= 0.05) : [...ps, p].sort((a, b) => a.f - b.f)));
-  };
-  const addCustom = () => {
-    if (!(custom >= 10 && custom <= 300)) return;
-    const p: Pick = { f: Math.round(custom * 10) / 10 };
-    if (!isPicked(p)) setPicks((ps) => [...ps, p].sort((a, b) => a.f - b.f));
+  // одна частота: кнопка моды или ползунок (только для «Ваша система»)
+  // у слившихся мод одна частота: выбранной считается та, чьи номера совпадают
+  const isPicked = (p: Pick) => !!pick && Math.abs(pick.f - p.f) < 0.05 && (!pick.n || !p.n || pick.n.join() === p.n.join());
+  const fLo = 15, fHi = fTop;
+  const onSlider = (v: number) => {
+    const f = fromSlider(v, fLo, fHi);
+    const near = quick.reduce<Pick | null>((a, q) => (Math.abs(q.f - f) / q.f < SNAP && (!a || Math.abs(q.f - f) < Math.abs(a.f - f)) ? q : a), null);
+    setPick(near ?? { f });
   };
 
   // что считать
@@ -124,16 +135,20 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
       }
       return { freqs: bandFreqs(band[0], band[1]) };
     }
-    if (!picks.length) return null;
+    if (!pick) return null;
     if (shapeModal) {
-      const ms = picks.map((p) => (p.n ? { f: p.f, n: p.n } : { f: nearestOf(modes, p.f).f, n: nearestOf(modes, p.f).n }));
-      return { freqs: ms.map((m) => m.f), modes: ms.map((m) => m.n) };
+      const m = pick.n ? { f: pick.f, n: pick.n } : nearestOf(modes, pick.f);
+      return { freqs: [m.f], modes: [m.n] };
     }
-    return { freqs: picks.map((p) => p.f) };
-  }, [kind, wave, view, band, picks, modes]);
+    return { freqs: [pick.f] };
+  }, [kind, wave, view, band, pick, modes]);
 
   useEffect(() => {
     if (!request) { setField(null); return; }
+    const key = JSON.stringify([room, sources, current.positions, current.subSettings, current.crossoverHz, kind, request]);
+    const hit = fieldCache.get(key);
+    // уже считали — сразу; иначе прежняя картинка остаётся на экране, пока считается новая
+    if (hit) { job.current?.cancel(); setField(hit); setBusy(false); setError(null); return; }
     const t = setTimeout(() => {
       job.current?.cancel();
       setBusy(true);
@@ -142,7 +157,11 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
       const j = compute<FieldResult>('field', { room, sources, setup: current, kind, ...request }, setProgress);
       job.current = j;
       j.promise
-        .then((r) => { if (job.current === j) { setField(r); setBusy(false); } })
+        .then((r) => {
+          if (fieldCache.size >= CACHE_MAX) fieldCache.delete(fieldCache.keys().next().value!);
+          fieldCache.set(key, r);
+          if (job.current === j) { setField(r); setBusy(false); }
+        })
         .catch((e) => { if (job.current === j) { setError(e.message); setBusy(false); } });
     }, 300);
     return () => clearTimeout(t);
@@ -151,19 +170,12 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   }, [room, sources, current.positions, current.subSettings, current.crossoverHz, kind, request]);
   useEffect(() => () => job.current?.cancel(), []);
 
-  // какие частоты сводим
-  const activeIdx = Math.min(active, Math.max(0, picks.length - 1));
-  const energy = useMemo(() => {
-    if (!field) return null;
-    if (view === 'single') {
-      const want = request?.freqs[activeIdx];
-      if (want == null) return null;
-      let best = -1, d = Infinity;
-      field.freqs.forEach((f, i) => { if (Math.abs(f - want) < d) { d = Math.abs(f - want); best = i; } });
-      return best >= 0 && d < 0.5 ? combineEnergy(field, [best]) : null;
-    }
-    return combineEnergy(field, field.freqs.map((_, i) => i));
-  }, [field, view, activeIdx, request]);
+  // показываем то, что посчитано (пока считается новая частота — прежнюю, с подписью, какая она)
+  const energy = useMemo(() => (field ? combineEnergy(field, field.freqs.map((_, i) => i)) : null), [field]);
+  const shown = field
+    ? field.freqs.length === 1 ? S.field.shown(fmt(field.freqs[0], 1)) : S.field.shownBand(fmt(Math.min(...field.freqs), 0), fmt(Math.max(...field.freqs), 0))
+    : null;
+  const shapeOf = kind === 'shape' && !wave && pick && !pick.n ? nearestOf(modes, pick.f) : null;
   const sl = useMemo(() => (field && energy ? sliceField(field, energy, slice[0], slice[1]) : null), [field, energy, slice]);
 
   const items = useMemo<PlanItem[]>(() => [
@@ -195,7 +207,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     extensions: room.extensions,
     openings: room.openings,
     features: room.features,
-    treatments: room.treatments,
+    treatments: shownTreatments(room),
     slope: room.slope,
     field: sl ? { slice: sl, threshold } : null,
     marks: probe ? [{ x: probe.x, y: probe.y, label: '', kind: 'probe' }] : [],
@@ -216,6 +228,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
             </div>
           )}
         </div>
+        {shown && <p class="field-shown small">{shown}{busy ? ` · ${S.field.computingNew}` : ''}</p>}
         <p class="muted small">{S.field.rotateHint}</p>
         <Segmented
           label={S.field.kindLabel}
@@ -225,59 +238,60 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
         />
         <p class="muted small">{kind === 'excited' ? S.field.kindHint.excited : S.field.kindHint.shape}</p>
 
-        {view !== 'band' && (
-          <div class="field">
-            <span class="field__label">{S.field.freqs}</span>
-            <div class="chips" role="group" aria-label={S.field.freqs}>
-              {(allChips ? quick : quick.filter((p, i) => i < QUICK_SHOWN || isPicked(p))).map((p) => (
-                <button key={p.n ? p.n.join('-') : p.f} type="button" class={`chip${isPicked(p) ? ' is-on' : ''}`} aria-pressed={isPicked(p)} onClick={() => toggle(p)}>
-                  {fmt(p.f, 1)}{p.n && <small> {modeWhere(p.n, true)}</small>}
-                </button>
-              ))}
-              {quick.length > QUICK_SHOWN && (
-                <button type="button" class="chip chip--more" aria-expanded={allChips} onClick={() => setAllChips(!allChips)}>
-                  {allChips ? S.field.fewer : S.field.more(quick.length - QUICK_SHOWN)}
-                </button>
-              )}
-              {picks.filter((p) => !quick.some((q) => Math.abs(q.f - p.f) < 0.05)).map((p) => (
-                <button key={p.f} type="button" class="chip is-on is-custom" aria-pressed="true" onClick={() => toggle(p)}>{fmt(p.f, 1)} ×</button>
-              ))}
-            </div>
-            <div class="custom-freq">
-              <NumberField compact id="field-custom" label={S.field.custom} value={custom} unit="Гц" min={10} max={300} digits={1} onChange={setCustom} />
-              <button type="button" class="btn btn--small" onClick={addCustom}>{S.field.add}</button>
-            </div>
-            <p class="muted small">{wave ? S.field.quickWave : S.field.quickModal}</p>
-          </div>
-        )}
-
-
         <Segmented
           label={S.field.viewLabel}
           value={view}
           options={[
             { value: 'single' as View, label: S.field.views.single },
-            { value: 'average' as View, label: S.field.views.average },
             { value: 'band' as View, label: S.field.views.band },
           ]}
           onChange={setView}
         />
-        {view === 'single' && picks[activeIdx] && (
-          <div class="play-row">
-            <PlayButton f={picks[activeIdx].f} />
-            <span class="small">{S.field.playHint(fmt(picks[activeIdx].f, 1))}</span>
-          </div>
-        )}
-        {view === 'single' && picks.length > 1 && (
-          <div class="segmented segmented--wrap" role="radiogroup" aria-label={S.field.which}>
-            {picks.map((p, i) => (
-              <button key={i} type="button" role="radio" aria-checked={i === activeIdx} class={i === activeIdx ? 'is-on' : ''} onClick={() => setActive(i)}>
-                {fmt(p.f, 1)} Гц
+        {view === 'single' && (
+          <div class="field">
+            <span class="field__label" id="field-freqs">{S.field.freqs}</span>
+            <div class="segmented segmented--wrap freq-picks" role="radiogroup" aria-labelledby="field-freqs">
+              {(allChips ? quick : quick.filter((p, i) => i < QUICK_SHOWN || isPicked(p))).map((p) => (
+                <button key={p.n ? p.n.join('-') : p.f} type="button" role="radio" aria-checked={isPicked(p)} class={isPicked(p) ? 'is-on' : ''} onClick={() => setPick(p)}>
+                  {fmt(p.f, 1)}{p.n && <small>{modeWhere(p.n, true)}</small>}
+                </button>
+              ))}
+            </div>
+            {quick.length > QUICK_SHOWN && (
+              <button type="button" class="btn btn--small btn--ghost" aria-expanded={allChips} onClick={() => setAllChips(!allChips)}>
+                {allChips ? S.field.fewer : S.field.more(quick.length - QUICK_SHOWN)}
               </button>
-            ))}
+            )}
+            {kind === 'excited' && (
+              <div class="freq-slider">
+                <label class="field__label" for="field-slider">{S.field.slider}: <strong>{pick ? `${fmt(pick.f, 1)} Гц` : '—'}</strong>{pick?.n ? ` · ${modeWhere(pick.n, true)}` : ''}</label>
+                <input
+                  id="field-slider"
+                  type="range"
+                  min={0}
+                  max={SLIDER_STEPS}
+                  step={1}
+                  value={pick ? toSlider(Math.min(fHi, Math.max(fLo, pick.f)), fLo, fHi) : 0}
+                  onInput={(e) => onSlider(+(e.target as HTMLInputElement).value)}
+                />
+                <div class="freq-slider__ticks" aria-hidden="true">
+                  {quick.filter((q) => q.f >= fLo && q.f <= fHi).map((q) => (
+                    <span key={q.f} style={{ left: `${(toSlider(q.f, fLo, fHi) / SLIDER_STEPS) * 100}%` }} />
+                  ))}
+                </div>
+                <div class="freq-slider__scale muted small" aria-hidden="true"><span>{fLo} Гц</span><span>{fmt(fHi, 0)} Гц</span></div>
+              </div>
+            )}
+            {shapeOf && <p class="muted small">{S.field.nearestShape(fmt(shapeOf.f, 1), modeWhere(shapeOf.n, true))}</p>}
+            <p class="muted small">{kind === 'excited' ? (wave ? S.field.quickWave : S.field.quickModal) : S.field.quickShape}</p>
           </div>
         )}
-        {view === 'average' && <p class="muted small">{S.field.averageHint(picks.map((p) => fmt(p.f, 1)).join(', '))}</p>}
+        {view === 'single' && pick && (
+          <div class="play-row">
+            <PlayButton f={pick.f} />
+            <span class="small">{S.field.playHint(fmt(pick.f, 1))}</span>
+          </div>
+        )}
         {view === 'band' && (
           <div class="grid-2">
             <NumberField compact id="band-lo" label={S.field.bandFrom} value={band[0]} unit="Гц" min={10} max={300} digits={0} onChange={(v) => setBand([v, band[1]])} />

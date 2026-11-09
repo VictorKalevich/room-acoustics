@@ -120,9 +120,21 @@ test('версия приложения видна на экране «Прое�
 test('004: экран 3D — поле, способы показа, порог и срез', async ({ page }) => {
   await page.goto('/#field');
   await expect(page.locator('.field3d')).toBeVisible();
-  await expect(page.locator('.chip.is-on').first()).toBeVisible({ timeout: 15_000 });
+  const picks = page.locator('.freq-picks [role="radio"]');
+  await expect(picks.and(page.locator('[aria-checked="true"]'))).toHaveCount(1, { timeout: 15_000 });
   await expect(page.locator('.field3d__busy')).toHaveCount(0, { timeout: 30_000 });
-  await page.getByRole('radio', { name: 'Средняя энергия' }).click();
+  // одна частота: кнопка выбирает её (выбрана ровно одна), подпись — что показано
+  const second = picks.nth(1);
+  const f2 = (await second.textContent())!.match(/\d+,\d/)![0];
+  await second.click();
+  await expect(picks.and(page.locator('[aria-checked="true"]'))).toHaveCount(1);
+  await expect(page.locator('.field-shown')).toContainText(`Показано: ${f2} Гц`, { timeout: 30_000 });
+  // вернуться к первой — уже посчитана, без пересчёта
+  await picks.first().click();
+  await expect(page.locator('.field3d__busy')).toHaveCount(0);
+  // ползунок: любая частота, между модами
+  await page.locator('#field-slider').fill('500');
+  await expect(page.locator('.field-shown')).not.toContainText(f2, { timeout: 30_000 });
   await page.getByRole('radio', { name: 'Полоса' }).click();
   await page.getByRole('radio', { name: '±3' }).click();
   await expect(page.locator('.field3d__busy')).toHaveCount(0, { timeout: 30_000 });
