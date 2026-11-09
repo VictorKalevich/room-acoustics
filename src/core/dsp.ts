@@ -189,13 +189,28 @@ export function octaveBand(x: Float32Array, f0: number, fs: number): Float32Arra
   return Float32Array.from(re.subarray(0, x.length));
 }
 
+/** Время реверберации по одной записи: T60, по какому участку кривой спада и запас над шумом. */
+export interface DecayFit {
+  t60: number;
+  /** T20 — по участку −5…−25 дБ; T10 — −5…−15 дБ, когда запас над шумом 25–35 дБ (разброс до ±25–40 %). */
+  method: 'T20' | 'T10';
+  rangeDb: number;
+}
+
 /**
  * T60 по кривой Шрёдера с поправкой на шум (по методу Лундебю, ISO 3382-2): шумовой пол оценивается по концу
  * записи, огибающая аппроксимируется прямой до уровня «шум + 10 дБ», интегрирование ведётся от точки пересечения
- * прямой с шумом, а энергия хвоста за ней добавляется по найденному наклону. Наклон кривой — между −5 и −25 дБ
- * (T20), при малом запасе — −5…−15 дБ (T10). null — меньше 25 дБ динамики.
+ * прямой с шумом (шум вычитается), а энергия хвоста за ней добавляется по найденному наклону. Наклон кривой —
+ * между −5 и −25 дБ (T20), при малом запасе — −5…−15 дБ (T10). null — меньше 25 дБ динамики.
+ * Проверка на синтетических спадах (известное T60, шум): при запасе ≥ 38 дБ и T ≥ 0,4 с ошибка ≤ 5–10 %;
+ * у коротких спадов на низах (125 Гц, 0,25 с) статистический разброс ±14 % и без шума — узкая полоса;
+ * при запасе 30 дБ (T10) — ±25–40 %. Варианты (сглаженная огибающая, без вычитания шума) не лучше.
  */
 export function schroederT60(x: Float32Array, fs: number): number | null {
+  return schroederFit(x, fs)?.t60 ?? null;
+}
+
+export function schroederFit(x: Float32Array, fs: number): DecayFit | null {
   const blk = Math.max(1, Math.round(0.01 * fs));
   const nb = Math.floor(x.length / blk);
   if (nb < 30) return null;
@@ -253,17 +268,44 @@ export function schroederT60(x: Float32Array, fs: number): number | null {
     return s < 0 ? -60 / s : null;
   };
   const range = dB(env[pb]) - dB(noise);
-  return (range >= 35 ? fit(-5, -25) : null) ?? fit(-5, -15);
+  const t20 = range >= 35 ? fit(-5, -25) : null;
+  if (t20 != null) return { t60: t20, method: 'T20', rangeDb: range };
+  const t10 = fit(-5, -15);
+  return t10 != null ? { t60: t10, method: 'T10', rangeDb: range } : null;
 }
 
 export const RT_BANDS = [125, 250, 500, 1000, 2000, 4000];
 
+export interface BandRT {
+  band: number;
+  t60: number | null;
+  /** Мало запаса над шумом (оценка по T10): значение приблизительное. */
+  approx?: boolean;
+}
+
 /** RT60 по октавам из записи хлопка (от самого громкого места до конца записи). */
-export function clapRT60(rec: Float32Array, fs: number): { band: number; t60: number | null }[] {
+export function clapRT60(rec: Float32Array, fs: number): BandRT[] {
   let pk = 0, at = 0;
   for (let i = 0; i < rec.length; i++) if (Math.abs(rec[i]) > pk) { pk = Math.abs(rec[i]); at = i; }
   const seg = rec.subarray(Math.max(0, at - Math.round(0.005 * fs)), Math.min(rec.length, at + Math.round(2.5 * fs)));
-  return RT_BANDS.map((band) => ({ band, t60: schroederT60(octaveBand(seg, band, fs), fs) }));
+  return RT_BANDS.map((band) => {
+    const r = schroederFit(octaveBand(seg, band, fs), fs);
+    return r ? { band, t60: r.t60, approx: r.method === 'T10' } : { band, t60: null };
+  });
+}
+
+/**
+ * Среднее RT60 по нескольким хлопкам в каждой октаве: если есть оценки по T20, берутся только они
+ * (у T10 разброс в несколько раз больше), иначе — по T10, и значение помечается как приблизительное.
+ */
+export function averageRT(takes: BandRT[][]): BandRT[] {
+  return RT_BANDS.map((band, k) => {
+    const all = takes.map((t) => t[k]).filter((r): r is BandRT & { t60: number } => !!r && r.t60 != null);
+    const good = all.filter((r) => !r.approx);
+    const use = good.length ? good : all;
+    if (!use.length) return { band, t60: null };
+    return { band, t60: use.reduce((a, r) => a + r.t60, 0) / use.length, approx: !good.length };
+  });
 }
 
 // ---------- FIR ----------

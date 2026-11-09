@@ -2,6 +2,7 @@
 // Используются только регулировки, которые есть у конкретного устройства.
 import type { Constraints, Room, Setup, SourceSpec, SubSetting } from './types';
 import { logFreqs } from './frequency';
+import { speedOfSound } from './physics';
 import { flatnessScore } from './metric';
 import {
   evaluateSetup, filterSet, makeCtx, rawResponses, receiverSet, speakerPenalties, sumPenalties, type Spectrum,
@@ -48,6 +49,40 @@ export interface IntegrationResult {
 }
 
 type SetupLike = Pick<Setup, 'listener' | 'positions' | 'subSettings' | 'crossoverHz'>;
+
+/** Насколько сабвуфер может отставать от колонок без риска «вялого» баса, мс (порог заметности на басу — 10–20 мс). */
+const LAG_WARN_MS = 10;
+
+/**
+ * Пояснения к найденным настройкам. Подбор ищет самую ровную АЧХ у слушателя, и проверка полным перебором
+ * подтверждает, что он находит лучшее по этой оценке (расхождение ≤ 0,02 дБ). Но оценка не видит времени:
+ * большая задержка иногда выравнивает АЧХ интерференцией ценой отставания баса от колонок; а нижний предел
+ * уровня означает, что комната сильно поднимает низ — плоская цель срезает его целиком, хотя в комнате
+ * обычно предпочитают небольшой подъём низа (+3…6 дБ; Olive, Welti — исследования Harman).
+ */
+export function settingNotes(room: Room, subs: SourceSpec[], spks: SourceSpec[], setup: SetupLike, settings: Record<string, SubSetting>): string[] {
+  const out: string[] = [];
+  const c = speedOfSound(room.temperatureC);
+  const L = setup.listener;
+  const dist = (id: string) => { const p = setup.positions[id]; return Math.hypot(p.x - L.x, p.y - L.y, p.z - L.z); };
+  const mainMs = spks.length ? (spks.reduce((a, s) => a + dist(s.id), 0) / spks.length / c) * 1000 : null;
+  for (const s of subs) {
+    const set = settings[s.id];
+    if (!set) continue;
+    const name = s.id.replace('sub', 'сабвуфер ').trim();
+    const Name = `${name[0].toUpperCase()}${name.slice(1)}`;
+    if (mainMs != null && set.delayMs > 0) {
+      const lag = (dist(s.id) / c) * 1000 + set.delayMs - mainMs;
+      if (lag > LAG_WARN_MS) {
+        out.push(`${Name}: с задержкой ${set.delayMs.toFixed(1).replace('.', ',')} мс он звучит на ${Math.round(lag)} мс позже колонок. По расчёту так ровнее, но удары баса могут «отставать» — если бас на слух вялый, уменьшите задержку.`);
+      }
+    }
+    if (s.levelAdjustable && set.gainDb <= -5.75) {
+      out.push(`${Name}: уровень на нижнем пределе (−6 дБ) — комната сильно поднимает низ, и ровная цель срезает этот подъём целиком. Если бас кажется тонким, прибавьте 2–4 дБ: в комнате обычно нравится небольшой подъём низа.`);
+    }
+  }
+  return out;
+}
 
 export function optimizeSubs(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike): IntegrationResult {
   const t0 = Date.now();
@@ -192,6 +227,7 @@ export function optimizeSubs(room: Room, sources: SourceSpec[], c: Constraints, 
   if (beforeEval.score - afterEval.score < 0.05 && hasAdjustments(sources, c)) {
     notes.push('Текущие настройки уже близки к оптимальным для этой расстановки.');
   }
+  notes.push(...settingNotes(room, subs, spks, setup, finalSettings));
   return {
     settings: finalSettings,
     crossoverHz: finalXo,

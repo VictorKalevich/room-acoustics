@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeSweep, calAt, clapRT60, convolve, fft, firLinearPhase, firMinPhase, logSweep, parseCalibration, schroederT60, spectrumDb, wav16, wavFloat32 } from '../../src/core/dsp';
+import { analyzeSweep, averageRT, calAt, clapRT60, convolve, fft, firLinearPhase, firMinPhase, logSweep, parseCalibration, RT_BANDS, schroederFit, schroederT60, spectrumDb, wav16, wavFloat32 } from '../../src/core/dsp';
 import { peqGainDb } from '../../src/core/eq';
 
 const fs = 48000;
@@ -171,4 +171,32 @@ describe('RT60 по хлопку при шуме', () => {
       expect(Math.abs(sum / 3 / T - 1)).toBeLessThan(tol);
     });
   }
+});
+
+describe('RT60: малый запас над шумом', () => {
+  let seed = 5;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+  const take = (T: number, snr: number) => {
+    const n = Math.round(2.5 * fs), nl = Math.pow(10, -snr / 20);
+    return octaveBand(Float32Array.from({ length: n }, (_, i) => gauss() * Math.exp((-6.91 * i) / fs / T) + nl * gauss()), 1000, fs);
+  };
+
+  it('запас ≥ 35 дБ — T20, 25–35 дБ — T10 (приблизительно)', () => {
+    expect(schroederFit(take(0.5, 50), fs)!.method).toBe('T20');
+    const low = schroederFit(take(0.5, 30), fs)!;
+    expect(low.method).toBe('T10');
+    expect(low.rangeDb).toBeLessThan(35);
+  });
+
+  it('среднее по хлопкам: оценки T20 вытесняют T10; только T10 — помечено «≈»', () => {
+    const t = (v: number | null, approx = false) => RT_BANDS.map((band) => ({ band, t60: v, approx }));
+    const avg = averageRT([t(0.5), t(0.9, true), t(0.6)]);
+    expect(avg[0].t60).toBeCloseTo(0.55, 9);
+    expect(avg[0].approx).toBe(false);
+    const rough = averageRT([t(0.9, true), t(0.7, true), t(null)]);
+    expect(rough[0].t60).toBeCloseTo(0.8, 9);
+    expect(rough[0].approx).toBe(true);
+    expect(averageRT([t(null)])[0].t60).toBeNull();
+  });
 });

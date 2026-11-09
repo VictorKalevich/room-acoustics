@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import type { Measurement, Room, Setup } from '../../core/types';
-import { analyzeSweep, calAt, clapRT60, logGrid, logSweep, parseCalibration, powerAverage, RT_BANDS, smoothOct, sweepSegment, wav16, type SweepResult } from '../../core/dsp';
+import { analyzeSweep, averageRT, calAt, clapRT60, logGrid, logSweep, parseCalibration, powerAverage, RT_BANDS, smoothOct, sweepSegment, wav16, type BandRT, type SweepResult } from '../../core/dsp';
 import { setBusy } from '../updates';
 import { computeReverb } from '../../core/reverb';
 import { openMic, playBuffer, shareFile, type Mic } from '../audio/mic';
@@ -204,7 +204,7 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
 
 function ClapTool({ project }: { project: Project }) {
   const [state, setState] = useState<'idle' | 'rec' | 'busy'>('idle');
-  const [res, setRes] = useState<{ band: number; t60: number | null }[][]>([]);
+  const [res, setRes] = useState<BandRT[][]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const mic = useRef<Mic | null>(null);
   useEffect(() => () => mic.current?.close(), []);
@@ -233,10 +233,9 @@ function ClapTool({ project }: { project: Project }) {
       setMsg(S.measure.micError((e as Error).message));
     }
   };
-  const avg = RT_BANDS.map((_b, k) => {
-    const v = res.map((r) => r[k].t60).filter((x): x is number => x != null);
-    return v.length ? v.reduce((a, c) => a + c, 0) / v.length : null;
-  });
+  const avgRT = averageRT(res);
+  const avg = avgRT.map((r) => r.t60);
+  const anyApprox = avgRT.some((r) => r.t60 != null && r.approx);
   const model = (band: number) => rev.used[rev.bands.indexOf(band)] ?? null;
   const midM = [avg[2], avg[3]].filter((x): x is number => x != null);
   const mid = midM.length ? midM.reduce((a, b) => a + b, 0) / midM.length : null;
@@ -253,11 +252,12 @@ function ClapTool({ project }: { project: Project }) {
             <thead><tr><th>{S.report.freq}</th><th>{S.measure.measured}</th><th>{S.measure.model}</th></tr></thead>
             <tbody>
               {RT_BANDS.map((b, k) => (
-                <tr key={k}><td>{b >= 1000 ? `${b / 1000} кГц` : `${b} Гц`}</td><td>{avg[k] != null ? `${fmt(avg[k]!, 2)} с` : '—'}</td><td>{model(b) != null ? `${fmt(model(b)!, 2)} с` : '—'}</td></tr>
+                <tr key={k}><td>{b >= 1000 ? `${b / 1000} кГц` : `${b} Гц`}</td><td>{avg[k] != null ? `${avgRT[k].approx ? '≈ ' : ''}${fmt(avg[k]!, 2)} с` : '—'}</td><td>{model(b) != null ? `${fmt(model(b)!, 2)} с` : '—'}</td></tr>
               ))}
             </tbody>
           </table>
           <p class="muted small">{S.measure.clapCount(res.length)}</p>
+          {anyApprox && <p class="muted small">{S.measure.clapApprox}</p>}
           {mid != null && (
             <Note tone={Math.abs(mid - rev.tMid) / rev.tMid > 0.25 ? 'warn' : 'good'}>
               {mid > rev.tMid * 1.25 ? S.measure.clapMore(fmt(mid, 2), fmt(rev.tMid, 2)) : mid < rev.tMid * 0.75 ? S.measure.clapLess(fmt(mid, 2), fmt(rev.tMid, 2)) : S.measure.clapOk(fmt(mid, 2))}
