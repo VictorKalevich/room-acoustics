@@ -85,10 +85,12 @@ export function Segmented<T extends string | number>(p: {
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
+  // id без пробелов: aria-labelledby — список id через пробел, «Что ищем» иначе читался бы как два id
+  const id = `seg-${p.label.replace(/[^\p{L}\p{N}]+/gu, '-')}`;
   return (
     <div class="field">
-      <span class="field__label" id={`seg-${p.label}`}>{p.label}</span>
-      <div class="segmented" role="radiogroup" aria-labelledby={`seg-${p.label}`}>
+      <span class="field__label" id={id}>{p.label}</span>
+      <div class="segmented" role="radiogroup" aria-labelledby={id}>
         {p.options.map((o, ki) => (
           <button key={ki}
             type="button"

@@ -44,7 +44,7 @@ test('US4: толстый ковёр уменьшает RT60', async ({ page }) 
   await page.goto('/#room');
   const rt = page.locator('.stat__value').first();
   const before = Number((await rt.textContent())!.replace(',', '.').replace(/[^\d.]/g, ''));
-  await page.getByLabel('Пол').selectOption('carpet-thick');
+  await page.getByLabel('Пол', { exact: true }).selectOption('carpet-thick');
   await expect(async () => {
     const after = Number((await rt.textContent())!.replace(',', '.').replace(/[^\d.]/g, ''));
     expect(after).toBeLessThan(before);
@@ -333,9 +333,10 @@ test('009: цель подбора — меньше провалов внизу 
   await expect(page.getByText(/Учитываются: .*по глубине/)).toHaveCount(0);
   // результат устарел после смены цели
   await expect(page.getByText(/устарел|изменились/i).first()).toBeVisible();
-  // в ручном режиме та же цель
+  // цель — в общем блоке над переключателем: в ручном режиме та же
   await page.getByRole('radio', { name: 'Вручную' }).click();
-  await expect(page.getByText('Цель подбора: Без провалов на модах')).toBeVisible();
+  await expect(page.locator('.setup-card__summary')).toContainText('цель: без провалов на модах');
+  await expect(page.getByRole('combobox', { name: 'Что искать' })).toHaveValue('modes');
 });
 
 test('011: обработка на планах — только когда учтена; оценка под галочкой; «Удалить все» с подтверждением', async ({ page }) => {
@@ -391,4 +392,28 @@ test('012: подсказка к карте «Место слушателя / с
   expect(await page.evaluate(() => document.body.style.position)).toBe('');
   // страница не прокрутилась колесом (800 px); небольшой сдвиг возможен, если ниже дорисовалась карта
   expect(Math.abs((await page.evaluate(() => window.scrollY)) - y0)).toBeLessThan(60);
+});
+
+test('013: общий блок «Система и цель подбора» над переключателем режима; свой блок у каждого режима', async ({ page }) => {
+  await page.goto('/#placement');
+  const card = page.locator('details.setup-card');
+  await expect(card).toHaveAttribute('open', '');
+  // переключатель режима — под общим блоком
+  const cardBox = await card.boundingBox();
+  const sw = page.getByRole('radiogroup', { name: 'Режим расстановки' });
+  expect((await sw.boundingBox())!.y).toBeGreaterThan(cardBox!.y + cardBox!.height - 1);
+  // автоподбор: границы поиска — под переключателем; в ручном их нет, а общий блок тот же
+  await expect(page.getByText('Только для автоподбора')).toBeVisible();
+  await page.getByRole('radio', { name: 'Пара' }).click();
+  await page.getByRole('radio', { name: 'Вручную' }).click();
+  await expect(page.getByText('Только для автоподбора')).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: 'Пара' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('radiogroup', { name: 'Что ищем' })).toBeVisible();
+  await expect(page.getByText('Система и ограничения')).toHaveCount(0);
+  // свернуть — остаётся сводка; состояние запоминается
+  await page.locator('.setup-card__head').click();
+  await expect(card).not.toHaveAttribute('open', '');
+  await expect(page.locator('.setup-card__summary')).toContainText('пара колонок');
+  await page.reload();
+  await expect(page.locator('details.setup-card')).not.toHaveAttribute('open', '');
 });

@@ -6,6 +6,7 @@ import type { Project } from '../../state/project';
 import { defaultSetup, defaultSources, validateSources } from '../../state/project';
 import type { BassObjective, Constraints, PlacementResult, SourceSpec, SubZone, Placement, Setup, PhaseMode } from '../../core/types';
 import { NumberField, Panel, Segmented, Note, Details, SelectField } from '../components/Fields';
+import { SetupCard } from '../components/SetupCard';
 import { compute, type ComputeJob } from '../compute';
 import { ManualScreen } from './ManualScreen';
 import { PlanView, HeatLegend } from '../components/PlanView';
@@ -144,9 +145,10 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
   }, [layers.map, current, sel, effKind, effSub, result, room, sources, c]);
   useEffect(() => () => heatJob.current?.cancel(), []);
 
-  const settingsPanels = (
+  // общие настройки обоих режимов: система, места и высота ушей, где может стоять сабвуфер, цель подбора
+  const sharedBody = (
     <>
-      <Panel title={S.placement.system}>
+      <h3 class="subhead">{S.placement.system}</h3>
         <Segmented
           label={S.placement.speakers}
           value={spk.length}
@@ -159,12 +161,6 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
           options={[0, 1, 2, 3, 4].map((n) => ({ value: n, label: n === 0 ? 'Нет' : String(n) }))}
           onChange={(n) => setCounts(spk.length, n)}
         />
-        {subs.length >= 2 && (
-          <label class="check">
-            <input type="checkbox" checked={!!c.dba} onChange={(e) => setC({ dba: (e.target as HTMLInputElement).checked })} />
-            <span>{S.robust.dbaToggle} <Term id="dba">DBA</Term></span>
-          </label>
-        )}
         <h3 class="subhead">{S.placement.range}</h3>
         <RangeRow
           label={S.placement.speakerRange}
@@ -243,18 +239,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             )}
           </div>
         </Details>
-      </Panel>
-
-      <Panel title={S.placement.limits}>
-        <div class="grid-2">
-          <NumberField label={`Слушатель: ${S.placement.from}`} value={c.listenerMinX} unit="м" min={0.3} max={room.depth - 0.2} onChange={(v) => setC({ listenerMinX: v })} />
-          <NumberField label={S.placement.to} value={c.listenerMaxX} unit="м" min={0.4} max={room.depth - 0.1} onChange={(v) => setC({ listenerMaxX: v })} />
-        </div>
-        <p class="muted small">{S.placement.listenerZone}.</p>
-        <div class="grid-2">
-          <NumberField label={S.placement.speakerFront} value={c.speakerMinFront} unit="м" min={0.05} max={room.depth / 2} onChange={(v) => setC({ speakerMinFront: v })} />
-          <NumberField label={S.placement.speakerSide} value={c.speakerMinSide} unit="м" min={0.05} max={room.width / 2 - 0.2} onChange={(v) => setC({ speakerMinSide: v })} />
-        </div>
+      <h3 class="subhead">{S.setup.places}</h3>
         {subs.length > 0 && (
           <Segmented
             label={S.placement.subZone}
@@ -276,48 +261,65 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
         <Details summary={S.placement.earHeight}>
           <NumberField label={S.placement.earHeight} value={c.earHeight} unit="м" min={0.5} max={2} onChange={(v) => setC({ earHeight: v })} />
         </Details>
-      </Panel>
-
-    </>
-  );
-  const objectivePanel = (
-    <Panel title={S.objective.title}>
+      <h3 class="subhead">{S.objective.title}</h3>
       <p class="muted small">{S.objective.intro}</p>
       <ObjectivePicker room={room} value={c.objective} onChange={(o: BassObjective) => setC({ objective: o })} band={band} />
-    </Panel>
+    </>
+  );
+  const summary = S.setup.summary(
+    spk.length, spk[0] ? `${fmtInt(spk[0].fLow)}–${fmtInt(spk[0].fHigh)}` : '',
+    subs.length, subs[0] ? `${fmtInt(subs[0].fLow)}–${fmtInt(subs[0].fHigh)}` : '',
+    c.seats.count, S.objective.names[c.objective?.id ?? 'flat'].toLowerCase(),
+  );
+  const sharedCard = <SetupCard title={S.setup.title} summary={summary}>{sharedBody}</SetupCard>;
+  // переключатель режима — как остальные переключатели, в карточке вместе с настройками своего режима
+  const modeSwitch = (
+    <Segmented
+      label={S.setup.mode}
+      value={mode}
+      options={[{ value: 'auto', label: S.manual.modeAuto }, { value: 'manual', label: S.manual.modeManual }]}
+      onChange={onMode}
+    />
+  );
+  // только для автоподбора: где искать кресло, отступы колонок, схема DBA
+  const autoOnly = (
+    <>
+      <h3 class="subhead">{S.setup.autoOnly}</h3>
+      <p class="muted small">{S.setup.autoOnlyHint}</p>
+        <div class="grid-2">
+          <NumberField label={`Слушатель: ${S.placement.from}`} value={c.listenerMinX} unit="м" min={0.3} max={room.depth - 0.2} onChange={(v) => setC({ listenerMinX: v })} />
+          <NumberField label={S.placement.to} value={c.listenerMaxX} unit="м" min={0.4} max={room.depth - 0.1} onChange={(v) => setC({ listenerMaxX: v })} />
+        </div>
+        <p class="muted small">{S.placement.listenerZone}.</p>
+        <div class="grid-2">
+          <NumberField label={S.placement.speakerFront} value={c.speakerMinFront} unit="м" min={0.05} max={room.depth / 2} onChange={(v) => setC({ speakerMinFront: v })} />
+          <NumberField label={S.placement.speakerSide} value={c.speakerMinSide} unit="м" min={0.05} max={room.width / 2 - 0.2} onChange={(v) => setC({ speakerMinSide: v })} />
+        </div>
+      {subs.length >= 2 && (
+        <label class="check">
+          <input type="checkbox" checked={!!c.dba} onChange={(e) => setC({ dba: (e.target as HTMLInputElement).checked })} />
+          <span>{S.robust.dbaToggle} <Term id="dba">DBA</Term></span>
+        </label>
+      )}
+    </>
   );
 
   if (mode === 'manual') {
     return (
       <div class="screen">
-      <div class="mode-switch">
-        <Segmented
-          label="Режим"
-          value={mode}
-          options={[{ value: 'auto', label: S.manual.modeAuto }, { value: 'manual', label: S.manual.modeManual }]}
-          onChange={onMode}
-        />
-      </div>
-        <ManualScreen project={project} onSetup={onSetup} onSetups={onSetups} onConstraints={onConstraints} />
-        <Details summary={`${S.placement.system} и ${S.placement.limits.toLowerCase()}`}>
-          <div class="screen">{settingsPanels}</div>
-        </Details>
+        {sharedCard}
+        <ManualScreen project={project} onSetup={onSetup} onSetups={onSetups} header={modeSwitch} />
       </div>
     );
   }
 
   return (
     <div class="screen">
-      <div class="mode-switch">
-        <Segmented
-          label="Режим"
-          value={mode}
-          options={[{ value: 'auto', label: S.manual.modeAuto }, { value: 'manual', label: S.manual.modeManual }]}
-          onChange={onMode}
-        />
-      </div>
-      {settingsPanels}
-      {objectivePanel}
+      {sharedCard}
+      <Panel class="mode-panel">
+        {modeSwitch}
+        {autoOnly}
+      </Panel>
       {/* главное действие видно, пока заполняются настройки выше */}
       <div class="run-bar is-sticky">
         <button type="button" class="btn btn--primary btn--wide" onClick={run} disabled={running || srcErrors.length > 0}>

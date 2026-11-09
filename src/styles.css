@@ -305,13 +305,16 @@ td.num { text-align: right; }
 .pos-table th[scope='row'] { font-weight: 500; }
 .pos-table thead th { text-align: right; white-space: normal; line-height: 1.2; }
 
-.tabs { display: flex; gap: 6px; overflow-x: auto; margin: 0 -2px; padding: 2px; scrollbar-width: none; }
+/* выбор одного из нескольких — везде в виде переключателя (.segmented); варианты прокручиваются, если не помещаются */
+.tabs { display: flex; gap: 3px; padding: 3px; overflow-x: auto; scrollbar-width: none; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-control); }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs button {
-  flex: none; min-height: 44px; padding: 0 14px; border-radius: var(--r-chip);
-  border: 1px solid var(--line); background: none; color: var(--muted); font-size: 14.5px; font-weight: 500; cursor: pointer;
+  flex: 1 0 auto; min-height: 44px; padding: 0 12px; border: 0; border-radius: 8px;
+  background: none; color: var(--muted); font-size: 15px; font-weight: 500; cursor: pointer; white-space: nowrap;
 }
-.tabs button.is-on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.tabs button.is-on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(23, 34, 43, 0.14); }
+.segmented--wrap { flex-wrap: wrap; }
+.segmented--wrap button { flex: 1 0 auto; padding: 0 10px; }
 
 .project-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .project-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -402,8 +405,16 @@ td.num { text-align: right; }
 .inline-form .btn { min-height: 46px; }
 @media (max-width: 430px) { .inline-form { grid-template-columns: 1fr; } }
 
-.mode-switch .field__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.mode-switch .segmented { background: var(--surface); }
+.setup-card { background: var(--surface); border-radius: var(--r-panel); border: 1.5px solid var(--accent); box-shadow: 0 1px 3px rgba(23, 34, 43, 0.08); }
+.setup-card__head { cursor: pointer; list-style: none; display: grid; grid-template-columns: 22px 1fr; gap: 2px 6px; padding: 14px 16px; border-radius: var(--r-panel); background: var(--accent-soft); }
+.setup-card[open] .setup-card__head { border-radius: var(--r-panel) var(--r-panel) 0 0; }
+.setup-card__head::-webkit-details-marker { display: none; }
+.setup-card__head::before { content: '+'; grid-row: 1; color: var(--accent); font-weight: 700; font-size: 20px; line-height: 1.1; }
+.setup-card[open] .setup-card__head::before { content: '−'; }
+.setup-card__title { font-size: 18px; font-weight: 650; color: var(--ink); }
+.setup-card__summary { grid-column: 2; color: var(--muted); }
+.setup-card__body { display: flex; flex-direction: column; gap: 14px; padding: 6px 16px 18px; }
+
 
 .zone-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--paper); }
 .zone-card .field__box { background: var(--surface); }

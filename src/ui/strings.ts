@@ -266,6 +266,21 @@ export const S = {
     leakages: { sealed: 'Закрыта наглухо', typical: 'Обычная, двери закрыты', door: 'Открытая дверь', open: 'Открытая планировка' },
   },
 
+  setup: {
+    title: 'Система и цель подбора',
+    places: 'Места и сабвуфер',
+    mode: 'Режим расстановки',
+    autoOnly: 'Только для автоподбора',
+    autoOnlyHint: 'Где искать кресло и колонки. В ручном режиме ставите сами, эти границы не действуют.',
+    summary: (nSpk: number, spkRange: string, nSub: number, subRange: string, seats: number, goal: string) =>
+      [
+        nSpk === 2 ? `пара колонок ${spkRange}\u00a0Гц` : `одна колонка ${spkRange}\u00a0Гц`,
+        nSub ? `${nSub === 1 ? 'сабвуфер' : `сабвуферов: ${nSub}`}\u00a0${subRange}\u00a0Гц` : 'без сабвуфера',
+        `мест: ${seats}`,
+        `цель: ${goal}`,
+      ].join(' · '),
+  },
+
   scoreBlock: {
     explain: {
       flat: (v: string) => `бас в среднем отклоняется от ровной линии на ${v} дБ — и вверх (гул), и вниз (провалы); меньше — ровнее`,

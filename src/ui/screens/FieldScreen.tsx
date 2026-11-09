@@ -269,9 +269,9 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
           </div>
         )}
         {view === 'single' && picks.length > 1 && (
-          <div class="chips" role="radiogroup" aria-label={S.field.which}>
+          <div class="segmented segmented--wrap" role="radiogroup" aria-label={S.field.which}>
             {picks.map((p, i) => (
-              <button key={i} type="button" role="radio" aria-checked={i === activeIdx} class={`chip${i === activeIdx ? ' is-on' : ''}`} onClick={() => setActive(i)}>
+              <button key={i} type="button" role="radio" aria-checked={i === activeIdx} class={i === activeIdx ? 'is-on' : ''} onClick={() => setActive(i)}>
                 {fmt(p.f, 1)} Гц
               </button>
             ))}

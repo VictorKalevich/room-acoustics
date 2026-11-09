@@ -1,10 +1,11 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { shownTreatments } from '../../core/treatments';
 import { MapModeHelp, type MapMode } from '../components/MapModeHelp';
 import { ScoreBlock } from '../components/ScoreBlock';
 import type { Project } from '../../state/project';
 import { makeId } from '../../state/project';
-import type { BassObjective, Constraints, Setup, Vec3 } from '../../core/types';
+import type { Setup, Vec3 } from '../../core/types';
 import { robustnessMap, type Heatmap } from '../../core/field';
 import { ROBUST_LISTENER_SHIFT, ROBUST_SOURCE_SHIFT } from '../../core/metric';
 import { evaluateSetup } from '../../core/system';
@@ -17,26 +18,22 @@ import { NumberField, Panel, Segmented, Note, Details } from '../components/Fiel
 import { S } from '../strings';
 import { fmt } from '../format';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
-import { ObjectivePicker } from '../components/ObjectivePicker';
-import { evalBand } from '../../core/system';
 import { isFlat, objectivePpo } from '../../core/objective';
 
 interface Props {
   project: Project;
   onSetup: (s: Setup) => void;
   onSetups: (list: Setup[]) => void;
-  onConstraints?: (c: Constraints) => void;
+  /** Переключатель режима: стоит первым в карточке ручного режима, над его настройками. */
+  header?: ComponentChildren;
 }
 
 type Mode = 'listener' | 'sub';
 
-export function ManualScreen({ project, onSetup, onSetups, onConstraints }: Props) {
+export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
   const { room, sources, constraints: c, current } = project;
   const layers = usePlanLayers();
-  const band = useMemo(() => { const b = evalBand(room, sources); return [b.fLo, b.fHi] as [number, number]; }, [room, sources]);
   const flatGoal = isFlat(c.objective);
-  const goalName = S.objective.names[c.objective?.id ?? 'flat'];
-  const setObjective = (o: BassObjective) => onConstraints?.({ ...c, objective: o });
   const subs = sources.filter((s) => s.kind === 'sub');
   const [mode, setMode] = useState<Mode>('listener');
   const [subId, setSubId] = useState<string>(subs[0]?.id ?? '');
@@ -127,6 +124,7 @@ export function ManualScreen({ project, onSetup, onSetups, onConstraints }: Prop
   return (
     <div class="screen">
       <Panel class="panel--hero">
+        {header}
         <Segmented
           label={S.manual.find}
           value={effMode}
@@ -160,12 +158,6 @@ export function ManualScreen({ project, onSetup, onSetups, onConstraints }: Prop
         {layers.map && heat && <HeatLegend hm={layer === 'robust' ? robustHeat! : heat} />}
         {layers.map && <Segmented label={S.robust.layer} value={layer} options={[{ value: 'flat' as const, label: S.robust.layers.flat }, { value: 'robust' as const, label: S.robust.layers.robust }]} onChange={setLayer} />}
         {layers.map && layer === 'robust' && <p class="muted small">{S.robust.layerHint}</p>}
-        {onConstraints && (
-          <Details summary={`${S.objective.title}: ${goalName}`}>
-            <p class="muted small">{S.objective.intro}</p>
-            <ObjectivePicker room={room} value={c.objective} onChange={setObjective} band={band} />
-          </Details>
-        )}
         <p class="progress-text small" role="status" aria-live="polite">
           {busy ? <><span class="spinner" aria-hidden="true" /> {S.manual.computing}</> : <span class="muted">{S.manual.hint}</span>}
         </p>
