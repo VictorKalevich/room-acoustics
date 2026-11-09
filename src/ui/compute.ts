@@ -1,7 +1,7 @@
 // Расчёты в постоянном воркере (очередь, отмена ещё не начатых задач, кэш волновой модели).
 import { logError } from '../state/errlog';
 
-export type ComputeType = 'optimize' | 'listenerMap' | 'subMap' | 'integrate' | 'calibrate' | 'compare' | 'evaluate' | 'modes' | 'field' | 'subFilters';
+export type ComputeType = 'optimize' | 'listenerMap' | 'subMap' | 'integrate' | 'calibrate' | 'compare' | 'evaluate' | 'modes' | 'field' | 'subFilters' | 'voiceMap';
 
 export interface ComputeJob<T> {
   promise: Promise<T>;

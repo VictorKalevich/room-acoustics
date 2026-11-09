@@ -9,9 +9,12 @@ import { S } from '../strings';
 
 export interface PlanItem {
   id: string;
-  kind: 'spk' | 'sub' | 'listener';
+  kind: 'spk' | 'sub' | 'listener' | 'singer';
   pos: Vec3;
   label?: string;
+  /** Исполнитель: куда смотрит (угол в плане: 0 — к задней стене, π/2 — к правой) и микрофон перед ртом, м. */
+  facing?: number;
+  micDist?: number;
 }
 
 export interface PlanMark {
@@ -386,6 +389,24 @@ export function PlanView(p: PlanProps) {
             </g>
           );
         }
+        if (it.kind === 'singer') {
+          // поворот рисунка: «вперёд» в комнате (cos φ по глубине — вниз, sin φ по ширине — вправо)
+          const f = it.facing ?? Math.PI;
+          const ang = (Math.atan2(Math.cos(f), Math.sin(f)) * 180) / Math.PI;
+          const m = Math.max(14, (it.micDist ?? 0.2) * scale);
+          return (
+            <g key={it.id} class={`plan__singer${sel}`} {...common} transform={`translate(${cx} ${cy})`}>
+              <circle r="20" class="plan__hit" />
+              <g transform={`rotate(${ang.toFixed(1)})`}>
+                <ellipse cx="-4" cy="0" rx="5.5" ry="13" class="plan__singer-body" />
+                <circle cx="0" cy="0" r="6" class="plan__singer-head" />
+                <line x1="5" y1="0" x2={m - 3.5} y2="0" class="plan__singer-ray" />
+                <circle cx={m} cy="0" r="3.5" class="plan__singer-mic" />
+                <path d={`M ${m + 8} -4.5 L ${m + 14} 0 L ${m + 8} 4.5`} class="plan__singer-dir" />
+              </g>
+            </g>
+          );
+        }
         if (it.kind === 'listener') {
           return (
             <g key={it.id} class={`plan__listener${sel}`} {...common}>
@@ -423,6 +444,7 @@ export function keysFor(p: PlanProps, items: PlanItem[] = p.items ?? [], seats: 
   if (spk.length) keys.push('spk');
   if (items.some((i) => i.kind === 'sub')) keys.push('sub');
   if (listener) keys.push('listener');
+  if (items.some((i) => i.kind === 'singer')) keys.push('singer');
   if (listener && spk.length) keys.push('triangle');
   if (seats.length > 1) keys.push('seats');
   if (hm) keys.push('heat');
@@ -445,7 +467,7 @@ export function keysFor(p: PlanProps, items: PlanItem[] = p.items ?? [], seats: 
 
 export type KeyId =
   | 'front' | 'spk' | 'sub' | 'listener' | 'triangle' | 'seats' | 'heat' | 'best' | 'probe'
-  | 'reflection' | 'trap' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor' | 'field' | 'treat' | 'slope' | 'axes';
+  | 'reflection' | 'trap' | 'singer' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor' | 'field' | 'treat' | 'slope' | 'axes';
 
 /** Маленький значок обозначения — теми же стилями, что и на плане. */
 function KeyIcon({ id }: { id: KeyId }) {
@@ -465,6 +487,14 @@ function KeyIcon({ id }: { id: KeyId }) {
       case 'best': return <g class="plan__mark is-best"><circle cx="14" cy="10" r="9" /><text x="14" y="14" text-anchor="middle">1</text></g>;
       case 'probe': return <g class="plan__mark is-probe"><circle cx="14" cy="10" r="6" /></g>;
       case 'reflection': return <circle class="plan__reflection" cx="14" cy="10" r="4.5" />;
+      case 'singer': return (
+        <g class="plan__singer" transform="translate(8 10)">
+          <ellipse cx="-2" cy="0" rx="3.5" ry="8.5" class="plan__singer-body" />
+          <circle cx="0" cy="0" r="4" class="plan__singer-head" />
+          <circle cx="11" cy="0" r="2.6" class="plan__singer-mic" />
+          <path d="M 15 -3 L 19 0 L 15 3" class="plan__singer-dir" />
+        </g>
+      );
       case 'trap': return <g class="plan__mark is-trap"><circle cx="14" cy="10" r="7" /></g>;
       case 'listenerZone': return <rect class="plan__zone" x="2" y="3" width="24" height="14" rx="4" />;
       case 'zone': return <g class="plan__zone-rect"><rect x="3" y="3" width="22" height="14" fill="url(#keyhatch)" /><rect x="3" y="3" width="22" height="14" class="plan__zone-outline" /></g>;
@@ -516,7 +546,7 @@ export function PlanKey({ keys, notes }: { keys: KeyId[]; notes?: Partial<Record
 export function heatTop(hm: Heatmap): number {
   const v = Array.from(hm.scores).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
   if (!v.length) return hm.max;
-  return Math.max(v[Math.floor(v.length * 0.75)], hm.min + 1);
+  return Math.max(v[Math.floor(v.length * 0.75)], hm.min + (hm.minSpan ?? 1));
 }
 
 /** Стороны смежного помещения (кроме стороны у комнаты): [x0, y0, x1, y1, открыта]. */
@@ -535,13 +565,13 @@ function extEdges(e: Extension, b: { x0: number; x1: number; y0: number; y1: num
   return edges;
 }
 
-export function HeatLegend({ hm }: { hm: Heatmap }) {
+export function HeatLegend({ hm, hint }: { hm: Heatmap; hint?: string }) {
   return (
     <div class="heat-legend">
       <span>{fmt(hm.min, 1)} дБ</span>
       <span class="heat-legend__bar" aria-hidden="true" />
       <span>≥ {fmt(heatTop(hm), 1)} дБ</span>
-      <span class="muted small heat-legend__hint">{S.manual.legend}</span>
+      <span class="muted small heat-legend__hint">{hint ?? S.manual.legend}</span>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 // Локальное хранение проектов (IndexedDB) и файл проекта (contracts/project-file.md).
+import { normalizeVoice } from '../core/voice';
 import type { Project } from './project';
 import { defaultConstraints, defaultRoom, defaultSetup, defaultSources, defaultSub, makeId, syncSetup, validateRoom, validateSources } from './project';
 import type { Measurement, Setup, SourceSpec } from '../core/types';
@@ -96,6 +97,7 @@ export function normalizeProject(raw: any): Project {
     selectedIndex: typeof raw.selectedIndex === 'number' ? raw.selectedIndex : 0,
     current: fixSetup(raw.current, 'Текущая'),
     setups: Array.isArray(raw.setups) ? raw.setups.map((s: any) => fixSetup(s, s?.name ?? 'Вариант')) : [],
+    ...(raw.voice ? { voice: normalizeVoice(raw.voice) } : {}),
   };
 }
 

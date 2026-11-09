@@ -21,6 +21,8 @@ import { wizardOn } from './wizard';
 import { HelpScreen } from './screens/HelpScreen';
 import { MeasureScreen } from './screens/MeasureScreen';
 import { ReportScreen } from './screens/ReportScreen';
+import { VoiceScreen } from './screens/VoiceScreen';
+import type { VoiceSettings } from '../core/voice';
 import { SyncScreen } from './screens/SyncScreen';
 import { OverviewScreen } from './screens/OverviewScreen';
 import { AboutPanel } from './screens/ProjectsScreen';
@@ -32,7 +34,7 @@ import { consumeJustUpdated, setBeforeReload } from './updates';
 import { activeTreatments } from '../core/treatments';
 
 type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects' | DrawerItem;
-const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects', 'measure', 'report', 'sync', 'help', 'about'];
+const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects', 'measure', 'voice', 'report', 'sync', 'help', 'about'];
 /** Вкладки нижней панели; «Проекты» — кнопка в верхней панели. */
 const BAR: ('room' | 'modes' | 'placement' | 'tuning')[] = ['room', 'modes', 'placement', 'tuning'];
 const TITLES: Record<Tab, string> = {
@@ -42,6 +44,7 @@ const TITLES: Record<Tab, string> = {
   tuning: S.tuning.title,
   projects: S.projects.title,
   measure: S.drawer.items.measure,
+  voice: S.drawer.items.voice,
   report: S.drawer.items.report,
   sync: S.drawer.items.sync,
   help: S.drawer.items.help,
@@ -138,6 +141,7 @@ export function App() {
   const onConstraints = (constraints: Constraints) => touch({ constraints });
   const onSetup = (current: Setup) => touch({ current }, false);
   const onSetups = (setups: Setup[]) => touch({ setups }, false);
+  const onVoice = (voice: VoiceSettings) => touch({ voice }, false);
   const setModes = (v: 'list' | 'field' | 'overview') => {
     setModesView(v);
     history.replaceState(null, '', v === 'list' ? '#modes' : `#${v}`);
@@ -237,6 +241,7 @@ export function App() {
           />
         )}
         {tab === 'measure' && <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={(t: Tab) => go(t)} />}
+        {tab === 'voice' && <VoiceScreen project={project} onVoice={onVoice} />}
         {tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} />}
         {tab === 'sync' && <SyncScreen project={project} onReplace={(p: Project) => setProject(p)} />}
         {tab === 'help' && <HelpScreen project={project} onGo={(t) => go(t)} onWizard={refreshWizard} />}

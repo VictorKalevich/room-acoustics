@@ -7,6 +7,7 @@ import { evaluateSetup } from '../core/system';
 import { waveSystemModes } from '../core/acoustics';
 import { computeField } from '../core/field3d';
 import { optimizeSubFilters } from '../core/subfilters';
+import { voiceMap } from '../core/voice';
 
 interface Job { id: number; type: string; payload: any }
 const queue: Job[] = [];
@@ -32,10 +33,13 @@ function run(job: Job) {
       case 'modes': result = waveSystemModes(p.room, p.fMax, progress); break;
       case 'field': result = computeField(p, progress); break;
       case 'subFilters': result = optimizeSubFilters(p.room, p.sources, p.constraints, p.setup); break;
+      case 'voiceMap': result = voiceMap(p.room, p.settings, progress); break;
       default: throw new Error(`Неизвестная задача ${type}`);
     }
     const fr = result as { energy?: Float32Array; mask?: Uint8Array };
-    const transfer = type === 'field' && fr.energy && fr.mask ? [fr.energy.buffer, fr.mask.buffer] : [];
+    const vm = result as { scores?: Float32Array; facing?: Float32Array; allowed?: Uint8Array };
+    const transfer = type === 'field' && fr.energy && fr.mask ? [fr.energy.buffer, fr.mask.buffer]
+      : type === 'voiceMap' && vm.scores && vm.facing && vm.allowed ? [vm.scores.buffer, vm.facing.buffer, vm.allowed.buffer] : [];
     self.postMessage({ id, kind: 'done', result }, transfer as any);
   } catch (err) {
     self.postMessage({ id, kind: 'error', error: (err as Error).message ?? String(err), stack: (err as Error).stack });

@@ -4,6 +4,9 @@ import { S } from '../strings';
 import { modeWhere } from '../../core/modes';
 
 const TICKS = [20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 400, 500];
+/** Для широкой полосы (голос): реже и до 20 кГц, подписи «1к», «10к». */
+const WIDE_TICKS = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+const hz = (f: number) => (f >= 1000 ? `${f / 1000}к` : String(f));
 
 function logScale(f0: number, f1: number, x0: number, x1: number) {
   const a = Math.log(f0);
@@ -18,26 +21,29 @@ interface Line {
   dash?: boolean;
 }
 
-/** АЧХ в точке прослушивания: комната, цель (без комнаты), базовая для сравнения. */
-export function ResponseChart({ lines, fLo, fHi }: { lines: Line[]; fLo: number; fHi: number }) {
+/**
+ * АЧХ в точке прослушивания: комната, цель (без комнаты), базовая для сравнения.
+ * yRange — своя шкала с нулём на 0 дБ (например, голос относительно прямого звука), иначе — по среднему, 33 дБ.
+ */
+export function ResponseChart({ lines, fLo, fHi, yRange, yTicks: yt }: { lines: Line[]; fLo: number; fHi: number; yRange?: [number, number]; yTicks?: number[] }) {
   const W = 340, H = 210, l = 34, r = 10, t = 12, b = 26;
   const x = logScale(fLo, fHi, l, W - r);
   // центрируем по цели
   const all = lines.flatMap((ln) => ln.db).filter((v) => Number.isFinite(v));
   const mean = all.reduce((a, v) => a + v, 0) / Math.max(1, all.length);
-  const ref = Math.round(mean / 5) * 5;
-  const yMin = ref - 18;
-  const yMax = ref + 15;
+  const ref = yRange ? 0 : Math.round(mean / 5) * 5;
+  const yMin = yRange ? yRange[0] : ref - 18;
+  const yMax = yRange ? yRange[1] : ref + 15;
   const y = (v: number) => t + ((yMax - Math.max(yMin, Math.min(yMax, Number.isFinite(v) ? v : yMin))) / (yMax - yMin)) * (H - t - b);
-  const ticks = TICKS.filter((f) => f >= fLo && f <= fHi);
-  const yTicks = [-10, 0, 10];
+  const ticks = (fHi / fLo > 40 ? WIDE_TICKS : TICKS).filter((f) => f >= fLo && f <= fHi);
+  const yTicks = yt ?? [-10, 0, 10];
   return (
     <svg class="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="График АЧХ">
       {ticks.map((f, ki) => (
         <g key={ki} class="chart__grid">
           <line x1={x(f)} x2={x(f)} y1={t} y2={H - b} />
           {/* у правого края подпись частоты наезжала бы на «Гц» */}
-          {x(f) < W - r - 26 && <text x={x(f)} y={H - 8} text-anchor="middle">{f}</text>}
+          {x(f) < W - r - 26 && <text x={x(f)} y={H - 8} text-anchor="middle">{hz(f)}</text>}
         </g>
       ))}
       {yTicks.map((v, ki) => (

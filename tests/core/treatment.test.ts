@@ -24,6 +24,34 @@ describe('точки первых отражений', () => {
     const c = r.find((q) => q.speakerId === 'spkL' && q.surface === 'ceiling')!.point;
     expect(c.z).toBe(room.height);
   });
+
+  it('передняя и задняя стены: точки есть у каждой колонки, углы падения и отражения равны', () => {
+    expect(r.filter((q) => q.speakerId === 'spkL').map((q) => q.surface).sort()).toEqual(['back', 'ceiling', 'front', 'left', 'right']);
+    const s = { x: 0.5, y: 1, z: 1 };
+    const f = r.find((q) => q.speakerId === 'spkL' && q.surface === 'front')!.point;
+    const b = r.find((q) => q.speakerId === 'spkL' && q.surface === 'back')!.point;
+    expect(f.x).toBe(0);
+    expect(b.x).toBe(room.depth);
+    // угол к нормали стены: tg = смещение вдоль стены / расстояние до стены — одинаковый для падающего и отражённого лучей
+    const tan = (p: { y: number; z: number }, from: { x: number; y: number; z: number }, dist: number) => Math.hypot(p.y - from.y, p.z - from.z) / dist;
+    expect(tan(f, s, s.x)).toBeCloseTo(tan(f, L, L.x), 9);
+    expect(tan(b, s, room.depth - s.x)).toBeCloseTo(tan(b, L, room.depth - L.x), 9);
+  });
+
+  it('точка на окне отмечается, но помечается «на окне»; в предложенный план панель на окно не ставится', async () => {
+    const { suggestTreatments } = await import('../../src/core/treatments');
+    const b0 = r.find((q) => q.speakerId === 'spkL' && q.surface === 'back')!.point;
+    const withWin = { ...room, features: [{ id: 'w', kind: 'window' as const, wall: 'back' as const, a0: b0.y - 0.5, a1: b0.y + 0.5, bottom: 0.5, top: 2 }] };
+    const rw = reflectionPoints(withWin, [{ id: 'spkL', pos: { x: 0.5, y: 1, z: 1 } }], L);
+    expect(rw.find((q) => q.surface === 'back')!.on).toBe('window');
+    expect(rw.find((q) => q.surface === 'left')!.on).toBeNull();
+    let n = 0;
+    const plan = suggestTreatments(withWin, rw, () => `t${n++}`);
+    const panels = plan.filter((t) => t.kind === 'panel');
+    expect(panels.map((t) => t.wall).sort()).toEqual(['front', 'left', 'right']);
+    // на передней стене панель стоит по ширине (координата y), а не по глубине
+    expect(panels.find((t) => t.wall === 'front')!.at).toBeCloseTo(rw.find((q) => q.surface === 'front')!.point.y, 9);
+  });
 });
 
 describe('басовые ловушки', () => {

@@ -27,7 +27,7 @@ function flatFromSpectra(parts: { h: Spectrum; f: Spectrum }[], target: number[]
 }
 
 export interface Heatmap {
-  kind: 'listener' | 'sub';
+  kind: 'listener' | 'sub' | 'voice';
   subId?: string;
   x0: number;
   y0: number;
@@ -43,6 +43,8 @@ export interface Heatmap {
   min: number;
   max: number;
   elapsedMs: number;
+  /** Наименьший размах цветовой шкалы, дБ (по умолчанию 1). */
+  minSpan?: number;
 }
 
 type SetupLike = Pick<Setup, 'listener' | 'positions' | 'subSettings' | 'crossoverHz'>;

@@ -2,6 +2,7 @@ import type { Constraints, Room, SourceSpec, SurfaceId, PlacementResult, Setup, 
 import { baselinePositions } from '../core/placement';
 import { rotateExtension, rotateOpening, validateExtension, validateSlope } from '../core/geometry';
 import type { DetectSummary } from '../scan/detect';
+import type { VoiceSettings } from '../core/voice';
 
 export interface Project {
   id: string;
@@ -17,6 +18,8 @@ export interface Project {
   current: Setup;
   /** Сохранённые варианты. */
   setups: Setup[];
+  /** Запись голоса: микрофон, полоса частот, где стоит исполнитель. */
+  voice?: VoiceSettings;
 }
 
 export function defaultRoom(): Room {

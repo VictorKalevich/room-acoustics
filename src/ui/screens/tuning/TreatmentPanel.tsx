@@ -27,21 +27,24 @@ export function TreatmentPanel({ project, modes, onRoom }: { project: Project; m
   const refl = reflectionPoints(room, spk, current.listener);
   const { ev } = useSetupEval(room, sources, c, current, 48);
   const advice = ev ? bassAdvice(ev.response, modes) : [];
-  const wallMarks: WallMark[] = refl.filter((r) => r.surface !== 'ceiling').map((r) => ({ surface: r.surface as 'left' | 'right', at: r.point.x }));
+  const wallMarks: WallMark[] = refl.filter((r) => r.surface !== 'ceiling').map((r) => ({
+    surface: r.surface as WallMark['surface'],
+    at: r.surface === 'front' || r.surface === 'back' ? r.point.y : r.point.x,
+  }));
   const ceilMarks: PlanMark[] = refl.filter((r) => r.surface === 'ceiling').map((r) => ({ x: r.point.x, y: r.point.y, label: '', kind: 'trap' }));
   return (
     <Panel title={S.tuning.treatTitle}>
       <h3 class="subhead">{S.tuning.reflections}</h3>
       <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} wallMarks={wallMarks} marks={ceilMarks} showDims={false} />
-      <p class="muted small">{S.tuning.reflectionsHint} Кружки на стенах — боковые отражения, кольца внутри — точки на потолке.</p>
+      <p class="muted small">{S.tuning.reflectionsHint} {S.tuning.reflectionsKey}</p>
       <ul class="plain-list small">
         {refl.map((r, ki) => (
           <li key={ki}>
             {S.tuning.reflRow(
               S.placement.sourceName(r.speakerId),
               S.tuning.surfaces[r.surface],
-              fmt(r.point.x, 2),
-              r.surface === 'ceiling' ? `${fmt(r.point.y, 2)} м от левой стены` : `высота ${fmt(r.point.z, 2)} м`,
+              S.tuning.reflWhere(r.surface, fmt(r.point.x, 2), fmt(r.point.y, 2), fmt(r.point.z, 2)),
+              r.on ? S.tuning.reflOn[r.on] : null,
             )}
           </li>
         ))}

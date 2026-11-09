@@ -1,35 +1,54 @@
 // Подсказки по акустической обработке (research R14).
 import type { Mode, Room, Vec3 } from './types';
 import { modeWhere } from './modes';
+import { patchContains, roomPatches } from './patches';
 
-export type ReflectSurface = 'left' | 'right' | 'ceiling';
+export type ReflectSurface = 'left' | 'right' | 'front' | 'back' | 'ceiling';
 
 export interface Reflection {
   speakerId: string;
   surface: ReflectSurface;
   point: Vec3;
+  /** Точка попала на окно, дверь или проём: метка ставится всё равно, но панель туда не повесить. */
+  on?: 'window' | 'door' | 'opening' | null;
 }
 
-/** Точки первых отражений методом мнимого источника: отрезок колонка → зеркальный слушатель. */
+/**
+ * Точки первых отражений методом мнимого источника: отрезок колонка → зеркальный слушатель.
+ * Боковые стены, передняя (за колонками), задняя (за слушателем) и потолок.
+ */
 export function reflectionPoints(room: Room, speakers: { id: string; pos: Vec3 }[], listener: Vec3): Reflection[] {
   const out: Reflection[] = [];
-  const W = room.width;
-  const H = room.height;
+  const { depth: D, width: W, height: H } = room;
+  const patches = roomPatches(room).filter((p) => p.kind !== 'treatment');
+  const on = (surface: ReflectSurface, pt: Vec3): Reflection['on'] => {
+    if (surface === 'ceiling') return null;
+    const u = surface === 'front' || surface === 'back' ? pt.y : pt.x;
+    const hit = patches.find((p) => patchContains(p, surface, u, pt.z));
+    return hit ? (hit.kind as Reflection['on']) : null;
+  };
   for (const { id, pos: s } of speakers) {
     const cross = (img: Vec3, t: number): Vec3 => ({
       x: s.x + (img.x - s.x) * t,
       y: s.y + (img.y - s.y) * t,
       z: s.z + (img.z - s.z) * t,
     });
+    const add = (surface: ReflectSurface, point: Vec3) => out.push({ speakerId: id, surface, point, on: on(surface, point) });
     // левая стена y = 0
     const li = { ...listener, y: -listener.y };
-    out.push({ speakerId: id, surface: 'left', point: { ...cross(li, s.y / (s.y - li.y)), y: 0 } });
+    add('left', { ...cross(li, s.y / (s.y - li.y)), y: 0 });
     // правая стена y = W
     const ri = { ...listener, y: 2 * W - listener.y };
-    out.push({ speakerId: id, surface: 'right', point: { ...cross(ri, (W - s.y) / (ri.y - s.y)), y: W } });
+    add('right', { ...cross(ri, (W - s.y) / (ri.y - s.y)), y: W });
+    // передняя стена x = 0 (за колонками)
+    const fi = { ...listener, x: -listener.x };
+    if (s.x > 0) add('front', { ...cross(fi, s.x / (s.x - fi.x)), x: 0 });
+    // задняя стена x = D (за слушателем)
+    const bi = { ...listener, x: 2 * D - listener.x };
+    if (s.x < D) add('back', { ...cross(bi, (D - s.x) / (bi.x - s.x)), x: D });
     // потолок z = H
     const ci = { ...listener, z: 2 * H - listener.z };
-    out.push({ speakerId: id, surface: 'ceiling', point: { ...cross(ci, (H - s.z) / (ci.z - s.z)), z: H } });
+    add('ceiling', { ...cross(ci, (H - s.z) / (ci.z - s.z)), z: H });
   }
   return out;
 }

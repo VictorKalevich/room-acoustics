@@ -466,3 +466,48 @@ test('014: «Очистить» на экране комнаты; модель �
   await expect(page.locator('.start-card')).toBeVisible();
   await expect(page.locator('.plan__slope')).toHaveCount(0);
 });
+
+test('015: отражения от передней и задней стен; экран «Запись голоса» из меню — карта, место, направление, полоса частот, пересчёт при изменении комнаты', async ({ page }) => {
+  // «Настройка»: точки отражений теперь и на передней, и на задней стене
+  await page.goto('/#tuning');
+  const list = page.locator('.plain-list').first();
+  await expect(list).toContainText('передняя стена');
+  await expect(list).toContainText('задняя стена');
+  // «Запись голоса» — пункт меню слева
+  await page.getByRole('button', { name: 'Открыть меню' }).click();
+  await page.getByRole('button', { name: /Запись голоса/ }).click();
+  await expect(page.locator('.topbar__title')).toHaveText('Запись голоса');
+  const plan = page.locator('svg.plan:visible');
+  await expect(plan.locator('.plan__heat rect').first()).toBeAttached({ timeout: 20_000 });
+  await expect(plan.locator('.plan__singer')).toHaveCount(1);
+  await expect(page.locator('.score__value:visible').first()).not.toHaveText('…');
+  await expect(page.getByText(/^Лицом /)).toBeVisible();
+  // поворот меняет направление
+  const before = await page.getByText(/^Лицом /).textContent();
+  await page.getByRole('button', { name: 'Правее ↻' }).click();
+  await page.getByRole('button', { name: 'Правее ↻' }).click();
+  await expect(page.getByText(/^Лицом /)).not.toHaveText(before!);
+  // своя полоса частот, сброс к 80–12 000
+  await page.getByLabel('Нижняя частота').fill('300');
+  await page.getByLabel('Верхняя частота').fill('3000');
+  await expect(page.getByText(/300–3.?000 Гц, полосы 1\/6 октавы/)).toBeVisible();
+  await page.getByRole('button', { name: 'Вернуть 80–12 000 Гц' }).click();
+  await expect(page.getByLabel('Нижняя частота')).toHaveValue('80');
+  // суперкардиоида — другое описание
+  await page.getByRole('radio', { name: 'Суперкардиоида' }).click();
+  await expect(page.getByText(/задний лепесток/)).toBeVisible();
+  // встать в лучшее место № 2
+  await page.locator('.best-list li').nth(1).getByRole('button', { name: 'Встать сюда' }).click();
+  // комната меняется — экран считает заново: окно на стене напротив появляется в списке отражений
+  await page.getByRole('button', { name: 'Комната' }).click();
+  await page.getByLabel('Глубина', { exact: true }).fill('4');
+  await page.getByLabel('Ширина', { exact: true }).fill('3');
+  await page.getByRole('button', { name: 'Добавить окно' }).click();
+  const win = page.locator('.zone-card').filter({ hasText: 'Окно 1' });
+  await win.getByLabel('Отступ', { exact: true }).fill('0');
+  await win.getByLabel('Ширина', { exact: true }).fill('4');
+  await page.getByRole('button', { name: 'Открыть меню' }).click();
+  await page.getByRole('button', { name: /Запись голоса/ }).click();
+  await expect(page.locator('.topbar__room')).toContainText('4,00 × 3,00');
+  await expect(page.locator('.voice-refl')).toContainText('на окне');
+});

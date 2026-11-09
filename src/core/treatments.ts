@@ -62,10 +62,13 @@ export function treatmentKey(room: Room): string {
   return JSON.stringify(activeTreatments(room).map((t) => [t.kind, t.thickness, t.gap ?? 0, t.width, t.height, t.corner, t.wall, t.at, t.z, t.x, t.y]));
 }
 
-/** План по умолчанию: ловушки в четырёх вертикальных углах, панели на точках боковых отражений, облако над слушателем. */
+/**
+ * План по умолчанию: ловушки в четырёх вертикальных углах, панели на точках отражений от стен
+ * (кроме точек на окнах, дверях и проёмах — туда панель не повесить), облако над слушателем.
+ */
 export function suggestTreatments(
   room: Room,
-  reflections: { surface: 'left' | 'right' | 'ceiling'; point: { x: number; y: number; z: number } }[],
+  reflections: { surface: 'left' | 'right' | 'front' | 'back' | 'ceiling'; point: { x: number; y: number; z: number }; on?: string | null }[],
   makeId: () => string,
 ): Treatment[] {
   const out: Treatment[] = [];
@@ -73,8 +76,9 @@ export function suggestTreatments(
     out.push({ id: makeId(), kind: 'corner', corner, thickness: 0.3, width: 0.6, height: Math.min(room.height, 2.4), enabled: true });
   }
   for (const r of reflections) {
-    if (r.surface === 'ceiling') continue;
-    out.push({ id: makeId(), kind: 'panel', wall: r.surface, at: r.point.x, z: Math.max(0.7, Math.min(room.height - 0.7, r.point.z)), thickness: 0.1, gap: 0.05, width: 0.6, height: 1.2, enabled: true });
+    if (r.surface === 'ceiling' || r.on) continue;
+    const along = r.surface === 'front' || r.surface === 'back' ? r.point.y : r.point.x;
+    out.push({ id: makeId(), kind: 'panel', wall: r.surface, at: along, z: Math.max(0.7, Math.min(room.height - 0.7, r.point.z)), thickness: 0.1, gap: 0.05, width: 0.6, height: 1.2, enabled: true });
   }
   const ceil = reflections.filter((r) => r.surface === 'ceiling');
   if (ceil.length) {
