@@ -17,6 +17,7 @@ import { fmt } from '../../format';
 import { itemsOf } from './shared';
 import { isWave } from '../../../core/geometry';
 import { ConfirmSheet } from '../../components/ConfirmSheet';
+import { ScoreBlock } from '../../components/ScoreBlock';
 
 // ---------- Обработка ----------
 
@@ -99,17 +100,16 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
   const evNow = room.treatmentsOn && list.length ? evWith : evBare;
   const [askClear, setAskClear] = useState(false);
   const scoreBlock = (
-    <div class="score score--key treat-score">
-      <div class="score__main">
-        <span class="score__value">{evNow ? fmt(evNow.score, 1) : '…'}</span>
-        <span class="score__unit">дБ</span>
-      </div>
-      <div class="score__text">
-        <span class="score__label">{S.placement.score}</span>
-        <span class="muted small">{!list.length ? S.treat.scoreNone : room.treatmentsOn ? S.treat.scoreWith : S.treat.scoreWithout}</span>
+    <div class="treat-score">
+      <ScoreBlock
+        objective={c.objective}
+        objScore={evNow ? evNow.objScore : null}
+        flatScore={evNow ? evNow.score : null}
+        context={!list.length ? S.treat.scoreNone : room.treatmentsOn ? S.treat.scoreWith : S.treat.scoreWithout}
+      >
         <span class="muted small">{S.tuning.setupHint}</span>
         <span class="model-tag">{isWave(room) ? S.model.waveTag : S.model.modalTag}</span>
-      </div>
+      </ScoreBlock>
     </div>
   );
   const longCount = (d: ModeDecay[]) => d.filter((x) => x.kind !== 'oblique' && x.t60 > x.limit).length;

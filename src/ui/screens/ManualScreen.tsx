@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { shownTreatments } from '../../core/treatments';
 import { MapModeHelp, type MapMode } from '../components/MapModeHelp';
+import { ScoreBlock } from '../components/ScoreBlock';
 import type { Project } from '../../state/project';
 import { makeId } from '../../state/project';
 import type { BassObjective, Constraints, Setup, Vec3 } from '../../core/types';
@@ -178,18 +179,15 @@ export function ManualScreen({ project, onSetup, onSetups, onConstraints }: Prop
       </Panel>
 
       <Panel title={S.manual.best}>
-        <div class="score score--key">
-          <div class="score__main">
-            <span class="score__value">{evalCur ? fmt(evalCur.objScore, 1) : '…'}</span>
-            <span class="score__unit">дБ</span>
-          </div>
-          <div class="score__text">
-            <span class="score__label">{S.manual.current}{flatGoal ? '' : ` — ${S.objective.short[c.objective!.id].toLowerCase()}`}</span>
-            <span class="muted small">{flatGoal ? S.placement.scoreHint : `${S.objective.lessBetter}; ${evalCur ? S.objective.flatAlso(fmt(evalCur.score, 1)) : ''}`}</span>
-            {evalCur?.angleDeg != null && <span class="muted small">{S.placement.angle}: {fmt(evalCur.angleDeg, 0)}°</span>}
-            <span class="model-tag">{wave ? S.model.waveTag : S.model.modalTag}</span>
-          </div>
-        </div>
+        <ScoreBlock
+          objective={c.objective}
+          objScore={evalCur ? evalCur.objScore : null}
+          flatScore={evalCur ? evalCur.score : null}
+          context={S.manual.current}
+          flatDetail={evalCur?.angleDeg != null ? `${S.placement.angle}: ${fmt(evalCur.angleDeg, 0)}°.` : undefined}
+        >
+          <span class="model-tag">{wave ? S.model.waveTag : S.model.modalTag}</span>
+        </ScoreBlock>
         {heat && heat.best.length === 0 && <Note tone="warn">{S.manual.noBest}</Note>}
         <ul class="best-list">
           {(heat?.best ?? []).map((b, i) => {

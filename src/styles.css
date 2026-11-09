@@ -263,6 +263,15 @@ textarea { font-size: 16px; }
 .score--key { background: var(--accent-soft); border-radius: 14px; padding: 14px 16px; }
 .score--key .score__value { font-size: 52px; color: var(--accent); }
 .score--key .score__label { font-size: 16.5px; }
+.score-block { flex-wrap: wrap; }
+.score-block .score__text { flex: 1 1 180px; min-width: 0; gap: 3px; }
+.score__context { color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
+.score__grade { align-self: flex-start; font-size: 13px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--surface); }
+.score__grade.is-good { color: var(--good); }
+.score__grade.is-mid { color: var(--arch); }
+.score__grade.is-bad { color: var(--warn); }
+.score__second { flex: 1 1 100%; display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 14.5px; }
+.score__extra { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 
 .meter { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
 .meter__label { color: var(--muted); }

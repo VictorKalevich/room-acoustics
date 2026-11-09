@@ -320,7 +320,7 @@ test('009: цель подбора — меньше провалов внизу 
   await page.getByRole('combobox', { name: 'Что искать' }).selectOption('lowDips');
   await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
   await expect(page.locator('.score__label').first()).toHaveText('Провалы внизу', { timeout: 30_000 });
-  await expect(page.locator('.score').first()).toContainText(/неровность \d+,\d дБ/);
+  await expect(page.locator('.score').first()).toContainText(/Неровность всей АЧХ \(с пиками\): \d+,\d дБ/);
   // моды: «Свои» начинаются с первых осевых, одну можно снять
   await page.getByRole('combobox', { name: 'Что искать' }).selectOption('modes');
   await expect(page.getByText(/Учитываются: .*\(по глубине\).*\(по ширине\).*\(по высоте\)/)).toBeVisible();
@@ -389,5 +389,6 @@ test('012: подсказка к карте «Место слушателя / с
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await expect(page.locator('.sheet')).toHaveCount(0);
   expect(await page.evaluate(() => document.body.style.position)).toBe('');
-  expect(await page.evaluate(() => window.scrollY)).toBe(y0);
+  // страница не прокрутилась колесом (800 px); небольшой сдвиг возможен, если ниже дорисовалась карта
+  expect(Math.abs((await page.evaluate(() => window.scrollY)) - y0)).toBeLessThan(60);
 });

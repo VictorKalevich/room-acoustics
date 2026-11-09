@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { shownTreatments } from '../../core/treatments';
 import { MapModeHelp } from '../components/MapModeHelp';
+import { ScoreBlock } from '../components/ScoreBlock';
 import type { Project } from '../../state/project';
 import { defaultSetup, defaultSources, validateSources } from '../../state/project';
 import type { BassObjective, Constraints, PlacementResult, SourceSpec, SubZone, Placement, Setup, PhaseMode } from '../../core/types';
@@ -442,30 +443,17 @@ function RangeRow(p: { label: string; lo: number; hi: number; onLo: (v: number) 
 }
 
 function ScoreLine({ p, baseline, isBaseline, objective }: { p: Placement; baseline: Placement; isBaseline: boolean; objective?: BassObjective }) {
-  const flat = isFlat(objective);
-  // при другой цели подбора главное число — оценка по ней (по ней и упорядочены варианты)
-  const val = (q: Placement) => (flat ? q.score : q.objScore ?? q.score);
-  const d = val(baseline) - val(p);
+  // главное число — оценка по цели подбора (по ней и упорядочены варианты)
+  const val = (q: Placement) => (isFlat(objective) ? q.score : q.objScore ?? q.score);
+  const detail = `${fmt(p.scoreCenter, 1)} дБ ${S.placement.center}, ${fmt(p.scoreSeats, 1)} дБ ${S.placement.seats}${p.angleDeg != null ? `; ${S.placement.angle.toLowerCase()} ${fmt(p.angleDeg, 0)}°` : ''}.`;
   return (
-    <div class="score score--key">
-      <div class="score__main">
-        <span class="score__value">{fmt(val(p), 1)}</span>
-        <span class="score__unit">дБ</span>
-      </div>
-      <div class="score__text">
-        <span class="score__label">{flat ? S.placement.score : S.objective.short[objective!.id]}</span>
-        {!isBaseline && (
-          <span class={`score__delta ${d > 0.05 ? 'is-good' : d < -0.05 ? 'is-bad' : ''}`}>
-            {d > 0.05 ? (flat ? S.placement.better(fmt(d, 1)) : S.objective.betterBy(fmt(d, 1))) : d < -0.05 ? (flat ? S.placement.worse(fmt(-d, 1)) : S.objective.worseBy(fmt(-d, 1))) : S.placement.same}
-          </span>
-        )}
-        {!flat && <span class="muted small">{S.objective.lessBetter}; {S.objective.flatAlso(fmt(p.score, 1))}</span>}
-        <span class="muted small">
-          {fmt(p.scoreCenter, 1)} дБ {S.placement.center}, {fmt(p.scoreSeats, 1)} дБ {S.placement.seats}
-          {p.angleDeg != null ? `; ${S.placement.angle.toLowerCase()} ${fmt(p.angleDeg, 0)}°` : ''}
-        </span>
-      </div>
-    </div>
+    <ScoreBlock
+      objective={objective}
+      objScore={val(p)}
+      flatScore={p.score}
+      delta={isBaseline ? null : val(baseline) - val(p)}
+      flatDetail={detail}
+    />
   );
 }
 
