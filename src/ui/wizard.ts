@@ -1,8 +1,9 @@
 // Помощник по шагам: от скана до отчёта. Часть шагов определяется сама, остальные отмечаются вручную.
 import type { Project } from '../state/project';
 import { defaultRoom } from '../state/project';
+import type { Destination } from './navigation';
 
-export type WizardTab = 'room' | 'modes' | 'placement' | 'tuning' | 'measure' | 'report';
+export type WizardTab = Destination;
 export interface WizardStep { id: string; title: string; hint: string; tab: WizardTab; auto?: (p: Project) => boolean }
 
 export const STEPS: WizardStep[] = [
@@ -11,8 +12,8 @@ export const STEPS: WizardStep[] = [
   { id: 'materials', title: 'Материалы', hint: 'Укажите материалы пола, стен и потолка и мебель.', tab: 'room' },
   { id: 'placement', title: 'Расстановка', hint: 'Подберите расстановку автоматически или вручную.', tab: 'placement', auto: (p) => !!p.result },
   { id: 'check', title: 'Проверка', hint: 'Послушайте моды тоном или сделайте замер.', tab: 'measure', auto: (p) => !!p.current.measurement },
-  { id: 'sub', title: 'Сабвуфер', hint: 'Подберите задержку, фазу и уровень сабвуфера.', tab: 'tuning' },
-  { id: 'eq', title: 'Эквалайзер', hint: 'Рассчитайте фильтры и загрузите их в плеер или DSP.', tab: 'tuning' },
+  { id: 'sub', title: 'Сабвуфер', hint: 'Подберите задержку, фазу и уровень сабвуфера.', tab: 'tuning/sub' },
+  { id: 'eq', title: 'Эквалайзер', hint: 'Рассчитайте фильтры и загрузите их в плеер или DSP.', tab: 'tuning/eq' },
   { id: 'report', title: 'Обработка и отчёт', hint: 'Посмотрите план обработки и сохраните отчёт.', tab: 'report' },
 ];
 

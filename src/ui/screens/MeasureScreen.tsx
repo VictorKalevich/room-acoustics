@@ -11,16 +11,20 @@ import { getTone, onTone } from '../audio/tone';
 import { useSetupEval } from '../useEval';
 import { ResponseChart } from '../components/Charts';
 import { PlanView, type PlanItem } from '../components/PlanView';
-import { Note, Panel, Segmented } from '../components/Fields';
+import { Note, Panel } from '../components/Fields';
 import { Term } from '../components/Term';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { MeasureCompare } from '../components/MeasureCompare';
 import { withMeasurement } from '../../state/variant';
 import { makeId } from '../../state/project';
+import { SectionNav } from '../components/SectionNav';
+import { RetainedSection } from '../components/RetainedSection';
+import { MeasurePanel } from './measure/MeasurePanel';
+import type { Destination, MeasureView } from '../navigation';
+import { useActiveView } from '../useActiveView';
 
-type Tool = 'sweep' | 'clap' | 'rta';
-interface Props { project: Project; onSetup: (s: Setup) => void; onRoom: (r: Room) => void; onGo: (t: any) => void }
+interface Props { project: Project; onSetup: (s: Setup) => void; onRoom: (r: Room) => void; onGo: (t: Destination) => void; view: MeasureView; active: boolean }
 
 const F1 = 10, F2 = 1000, T = 6;
 const CAL_KEY = 'ra-mic-cal';
@@ -29,8 +33,7 @@ function loadCal(): { name: string; f: number[]; db: number[] } | null {
   try { return JSON.parse(localStorage.getItem(CAL_KEY) ?? 'null'); } catch { return null; }
 }
 
-export function MeasureScreen({ project, onSetup, onGo }: Props) {
-  const [tool, setTool] = useState<Tool>('sweep');
+export function MeasureScreen({ project, onSetup, onRoom, onGo, view, active }: Props) {
   const [cal, setCal] = useState(loadCal());
   const [err, setErr] = useState<string | null>(null);
   const calInput = useRef<HTMLInputElement>(null);
@@ -38,19 +41,20 @@ export function MeasureScreen({ project, onSetup, onGo }: Props) {
 
   return (
     <div class="screen">
+      <SectionNav label="Раздел измерений" value={view} onChange={(v) => onGo(`measure/${v}`)} options={[
+        { value: 'sweep', label: 'Свип', hint: 'АЧХ в точках комнаты' },
+        { value: 'clap', label: 'Хлопок', hint: 'Время реверберации' },
+        { value: 'rta', label: 'Анализатор', hint: 'Спектр в реальном времени' },
+        { value: 'compare', label: 'Сравнение и REW', hint: 'Импорт, история, модель' },
+      ]} />
+      <div hidden={view === 'compare'}>
       <Panel>
         <p class="small">{S.measure.intro}</p>
-        <Segmented
-          label={S.measure.tool}
-          value={tool}
-          options={[{ value: 'sweep' as Tool, label: S.measure.tools.sweep }, { value: 'clap' as Tool, label: S.measure.tools.clap }, { value: 'rta' as Tool, label: S.measure.tools.rta }]}
-          onChange={setTool}
-        />
         <Note>{S.measure.micNote}</Note>
         <div class="btn-row">
           <button type="button" class="btn btn--small" onClick={() => calInput.current?.click()}>{cal ? S.measure.calReplace : S.measure.calLoad}</button>
           {cal && <button type="button" class="btn btn--small btn--ghost" onClick={() => { try { localStorage.removeItem(CAL_KEY); } catch { /* */ } setCal(null); }}>{S.measure.calRemove}</button>}
-          <button type="button" class="btn btn--small btn--ghost" onClick={() => onGo('tuning')}>{S.measure.rewImport}</button>
+          <button type="button" class="btn btn--small btn--ghost" onClick={() => onGo('measure/compare')}>{S.measure.rewImport}</button>
         </div>
         {cal && <p class="muted small">{S.measure.calLoaded(cal.name)}</p>}
         <input
@@ -72,16 +76,22 @@ export function MeasureScreen({ project, onSetup, onGo }: Props) {
         />
         {err && <Note tone="warn">{err}</Note>}
       </Panel>
-      {tool === 'sweep' && <SweepTool project={project} onSetup={onSetup} onGo={onGo} applyCal={applyCal} />}
-      {tool === 'clap' && <ClapTool project={project} />}
-      {tool === 'rta' && <RtaTool project={project} applyCal={applyCal} />}
+      </div>
+      <RetainedSection active={view === 'sweep'}><SweepTool project={project} onSetup={onSetup} onGo={onGo} applyCal={applyCal} active={active && view === 'sweep'} /></RetainedSection>
+      <RetainedSection active={view === 'clap'}><ClapTool project={project} active={active && view === 'clap'} /></RetainedSection>
+      <RetainedSection active={view === 'rta'}><RtaTool project={project} applyCal={applyCal} active={active && view === 'rta'} /></RetainedSection>
+      <RetainedSection active={view === 'compare'}>
+        <MeasurePanel project={project} onSetup={onSetup} onRoom={onRoom} />
+        <div class="btn-row"><button type="button" class="btn" onClick={() => onGo('tuning/eq')}>Открыть эквалайзер</button></div>
+      </RetainedSection>
     </div>
   );
 }
 
 // ---------- Свип ----------
 
-function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onSetup: (s: Setup) => void; onGo: (t: any) => void; applyCal: (f: number[], db: number[]) => number[] }) {
+function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Project; onSetup: (s: Setup) => void; onGo: (t: Destination) => void; applyCal: (f: number[], db: number[]) => number[]; active: boolean }) {
+  const activeView = useActiveView(active);
   const [playHere, setPlayHere] = useState(false);
   const [takes, setTakes] = useState<SweepResult[]>([]);
   // сеанс записи: повторное сохранение с добавленными точками уточняет замер; все точки убрали — новый сеанс
@@ -91,6 +101,14 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
   const [msg, setMsg] = useState<{ t: string; tone: 'warn' | 'good' } | null>(null);
   const mic = useRef<Mic | null>(null);
   const timer = useRef<number | null>(null);
+  useEffect(() => {
+    if (!active) {
+      mic.current?.close(); mic.current = null;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      setState('idle');
+    }
+  }, [active]);
   useEffect(() => () => { mic.current?.close(); if (timer.current) clearTimeout(timer.current); }, []);
 
   const finish = () => {
@@ -119,13 +137,18 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
   const record = async () => {
     setMsg(null);
     try {
-      if (!mic.current) mic.current = await openMic();
+      if (!mic.current) {
+        const opened = await openMic();
+        if (!activeView.current) { opened.close(); return; }
+        mic.current = opened;
+      }
       const m = mic.current;
       if (!m.running()) { setMsg({ t: S.measure.tapAgain, tone: 'warn' }); return; }
       m.start();
       setState('rec');
       if (playHere) {
         await playBuffer(logSweep(F1, F2, T, m.sampleRate), 0.5);
+        if (!activeView.current) return;
         timer.current = window.setTimeout(finish, 1200);
       } else {
         timer.current = window.setTimeout(finish, 30000);
@@ -192,7 +215,8 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
           <div class="btn-row">
             <button type="button" class="btn btn--primary" onClick={save}>{S.measure.save}</button>
             <button type="button" class="btn btn--ghost" onClick={() => setTakes((t) => t.slice(0, -1))}>{S.measure.undo}</button>
-            <button type="button" class="btn btn--ghost" onClick={() => onGo('tuning')}>{S.measure.toTuning}</button>
+            <button type="button" class="btn btn--ghost" onClick={() => onGo('measure/compare')}>Сравнить с моделью</button>
+            <button type="button" class="btn btn--ghost" onClick={() => onGo('tuning/eq')}>{S.measure.toTuning}</button>
           </div>
         </>
       )}
@@ -203,25 +227,34 @@ function SweepTool({ project, onSetup, onGo, applyCal }: { project: Project; onS
 
 // ---------- Хлопок ----------
 
-function ClapTool({ project }: { project: Project }) {
+function ClapTool({ project, active }: { project: Project; active: boolean }) {
+  const activeView = useActiveView(active);
   const [state, setState] = useState<'idle' | 'rec' | 'busy'>('idle');
   const [res, setRes] = useState<BandRT[][]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const mic = useRef<Mic | null>(null);
-  useEffect(() => () => mic.current?.close(), []);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!active) { mic.current?.close(); mic.current = null; if (timer.current) clearTimeout(timer.current); setState('idle'); }
+    return () => { mic.current?.close(); if (timer.current) clearTimeout(timer.current); };
+  }, [active]);
   const rev = useMemo(() => computeReverb(project.room), [project.room]);
   const go = async () => {
     setMsg(null);
     try {
-      if (!mic.current) mic.current = await openMic();
+      if (!mic.current) {
+        const opened = await openMic();
+        if (!activeView.current) { opened.close(); return; }
+        mic.current = opened;
+      }
       const m = mic.current;
       if (!m.running()) { setMsg(S.measure.tapAgain); return; }
       m.start();
       setState('rec');
-      setTimeout(() => {
+      timer.current = setTimeout(() => {
         const x = m.stop();
         setState('busy');
-        setTimeout(() => {
+        timer.current = setTimeout(() => {
           let pk = 0;
           for (let i = 0; i < x.length; i++) pk = Math.max(pk, Math.abs(x[i]));
           if (pk < 0.05) { setMsg(S.measure.noClap); setState('idle'); return; }
@@ -273,9 +306,10 @@ function ClapTool({ project }: { project: Project }) {
 
 // ---------- Анализатор ----------
 
-function RtaTool({ project, applyCal }: { project: Project; applyCal: (f: number[], db: number[]) => number[] }) {
+function RtaTool({ project, applyCal, active }: { project: Project; applyCal: (f: number[], db: number[]) => number[]; active: boolean }) {
   const { room, sources, constraints: c, current } = project;
   const [on, setOn] = useState(false);
+  useEffect(() => { if (!active) setOn(false); }, [active]);
   const [curve, setCurve] = useState<number[] | null>(null);
   const [snaps, setSnaps] = useState<{ name: string; db: number[] }[]>([]);
   const [here, setHere] = useState<{ x: number; y: number } | null>(null);
@@ -294,7 +328,11 @@ function RtaTool({ project, applyCal }: { project: Project; applyCal: (f: number
     let buf: Float32Array | null = null;
     (async () => {
       try {
-        if (!mic.current) mic.current = await openMic();
+        if (!mic.current) {
+          const opened = await openMic();
+          if (stop) { opened.close(); return; }
+          mic.current = opened;
+        }
         an = mic.current.analyser(32768);
         buf = new Float32Array(an.frequencyBinCount);
         const fs = mic.current.sampleRate;

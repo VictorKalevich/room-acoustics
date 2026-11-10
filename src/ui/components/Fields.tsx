@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useId, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { fmt } from '../format';
 
@@ -17,6 +17,7 @@ interface NumberFieldProps {
 
 /** Числовое поле: принимает запятую и точку, проверяет диапазон, не мешает вводу. */
 export function NumberField(p: NumberFieldProps) {
+  const uniqueId = useId();
   const digits = p.digits ?? 2;
   const [text, setText] = useState(fmtPlain(p.value, digits));
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export function NumberField(p: NumberFieldProps) {
     if (v !== p.value) p.onChange(v);
   };
 
-  const id = p.id ?? `f-${p.label.replace(/\s+/g, '-')}`;
+  const id = p.id ?? `field-${uniqueId}`;
   return (
     <div class={`field${p.compact ? ' field--compact' : ''}${error ? ' field--error' : ''}`}>
       <label for={id}>{p.label}</label>
@@ -85,8 +86,7 @@ export function Segmented<T extends string | number>(p: {
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
-  // id без пробелов: aria-labelledby — список id через пробел, «Что ищем» иначе читался бы как два id
-  const id = `seg-${p.label.replace(/[^\p{L}\p{N}]+/gu, '-')}`;
+  const id = `seg-${useId()}`;
   return (
     <div class="field">
       <span class="field__label" id={id}>{p.label}</span>
@@ -96,8 +96,17 @@ export function Segmented<T extends string | number>(p: {
             type="button"
             role="radio"
             aria-checked={o.value === p.value}
+            tabIndex={o.value === p.value ? 0 : -1}
             class={o.value === p.value ? 'is-on' : ''}
             onClick={() => p.onChange(o.value)}
+            onKeyDown={(e) => {
+              if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+              e.preventDefault();
+              const n = p.options.length;
+              const index = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (ki + (e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1) + n) % n;
+              p.onChange(p.options[index].value);
+              (e.currentTarget.parentElement?.children[index] as HTMLButtonElement | undefined)?.focus();
+            }}
           >
             {o.label}
           </button>
@@ -113,7 +122,7 @@ export function SelectField(p: {
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
 }) {
-  const id = `s-${p.label.replace(/\s+/g, '-')}`;
+  const id = `select-${useId()}`;
   return (
     <div class="field">
       <label for={id}>{p.label}</label>
@@ -128,7 +137,21 @@ export function SelectField(p: {
   );
 }
 
-export function Panel(p: { title?: string; children: ComponentChildren; id?: string; class?: string }) {
+export function Panel(p: { title?: string; children: ComponentChildren; id?: string; class?: string; collapseKey?: string; summary?: string }) {
+  const [open, setOpen] = useState(() => {
+    try { return !p.collapseKey || localStorage.getItem(p.collapseKey) !== '0'; } catch { return true; }
+  });
+  if (p.collapseKey) return (
+    <details class={`panel panel--collapsible ${p.class ?? ''}`} id={p.id} open={open}
+      onToggle={(e) => {
+        const value = e.currentTarget.open;
+        setOpen(value);
+        try { localStorage.setItem(p.collapseKey!, value ? '1' : '0'); } catch { /* session state remains available */ }
+      }}>
+      <summary><span class="panel__title">{p.title}</span>{p.summary && <span class="muted small">{p.summary}</span>}</summary>
+      <div class="panel__body">{p.children}</div>
+    </details>
+  );
   return (
     <section class={`panel ${p.class ?? ''}`} id={p.id} aria-label={p.title}>
       {p.title && <h2 class="panel__title">{p.title}</h2>}

@@ -2,7 +2,8 @@
 import { useMemo, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import type { Mode, ReverbResult } from '../../core/types';
-import { buildOverview, decayLimit, type ActionTarget, type ModeDecay, type Severity } from '../../core/overview';
+import { buildOverview, decayLimit, type ModeDecay, type Severity } from '../../core/overview';
+import type { Destination } from '../navigation';
 import { useSetupEval } from '../useEval';
 import { Panel, Note } from '../components/Fields';
 import { PlayButton } from '../components/MiniPlayer';
@@ -15,7 +16,7 @@ interface Props {
   project: Project;
   modes: Mode[];
   reverb: ReverbResult;
-  onGo: (t: ActionTarget, f?: number) => void;
+  onGo: (t: Destination, f?: number) => void;
 }
 
 const SUB_TERM: Record<string, string> = { bass: 'flatness', decay: 'decay', symmetry: 'reflection', reverb: 'rt60', proportions: 'mode' };
@@ -63,7 +64,7 @@ export function OverviewScreen({ project, modes, reverb, onGo }: Props) {
               <p class="small muted">{p.detail}</p>
               <div class="btn-row">
                 {p.actions.map((a) => (
-                  <button key={a} type="button" class="btn btn--small btn--ghost" onClick={() => onGo(a, p.f)}>{S.overview.actions[a]}</button>
+                  <button key={a} type="button" class="btn btn--small btn--ghost" onClick={() => onGo(a === 'tuning' ? (p.id.startsWith('peak-') ? 'tuning/eq' : 'tuning/treatment') : a, p.f)}>{a === 'tuning' ? (p.id.startsWith('peak-') ? 'Эквалайзер' : 'Обработка') : S.overview.actions[a]}</button>
                 ))}
               </div>
             </li>

@@ -16,10 +16,11 @@ import { firLinearPhase, firMinPhase, linearPhaseLength, wavFloat32 } from '../.
 import { fmt } from '../../format';
 import { ExportBlock } from './shared';
 import { exportCamillaDSP } from '../../../core/camilla';
+import { CalculationStatus } from '../../components/CalculationStatus';
 
 // ---------- Эквалайзер ----------
 
-export function EqPanel({ project }: { project: Project }) {
+export function EqPanel({ project, active = true }: { project: Project; active?: boolean }) {
   const { room, sources, constraints: c, current } = project;
   const m = current.measurement;
   const [source, setSource] = useState<'model' | 'measured'>('model');
@@ -29,12 +30,14 @@ export function EqPanel({ project }: { project: Project }) {
   const [camillaXo, setCamillaXo] = useState(false);
 
   const [eqBusy, setEqBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const run = () => {
+    setError(null);
     if (isWave(room)) {
       setEqBusy(true);
       compute<SetupEval>('evaluate', { room, sources, constraints: c, setup: current, ppo: 48 }).promise
         .then((e) => { setEqBusy(false); finish(e); })
-        .catch(() => setEqBusy(false));
+        .catch((e) => { setEqBusy(false); setError(e.message); });
     } else finish(evaluateSetup(room, sources, c, current, { ppo: 48 }));
   };
   const finish = (e: SetupEval) => {
@@ -61,6 +64,7 @@ export function EqPanel({ project }: { project: Project }) {
         <Segmented label={S.tuning.eqSource} value={source} options={[{ value: 'model', label: S.tuning.eqModel }, { value: 'measured', label: S.tuning.eqMeasured }]} onChange={(v) => { setSource(v); setRes(null); }} />
       )}
       <button type="button" class="btn btn--primary" onClick={run} disabled={eqBusy}>{eqBusy ? S.model.computing : S.tuning.eqRun}</button>
+      <CalculationStatus busy={eqBusy} error={error} label={S.model.computing} />
       {res && res.eq.filters.length === 0 && <Note tone="good">{S.tuning.eqNone}</Note>}
       {res && res.eq.filters.length > 0 && (
         <>
@@ -114,7 +118,7 @@ export function EqPanel({ project }: { project: Project }) {
           </div>
           <p class="muted small">{S.fir.note(fs / 1000, fmt(linearPhaseLength(res.eq.filters, fs) / 2 / fs, 2))}</p>
           <Details summary={S.aural.title}>
-            <Auralize response={{ f: res.f, db: res.before, target: res.target }} filters={res.eq.filters} />
+            <Auralize active={active} response={{ f: res.f, db: res.before, target: res.target }} filters={res.eq.filters} />
           </Details>
         </>
       )}

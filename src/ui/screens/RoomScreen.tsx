@@ -15,13 +15,14 @@ import { OpeningsPanel } from './room/OpeningsPanel';
 import { ZonesPanel } from './room/ZonesPanel';
 import { ClearIcon, FileIcon, RotateIcon } from './room/icons';
 import { ConfirmSheet } from '../components/ConfirmSheet';
+import type { Destination } from '../navigation';
 
 interface Props {
   project: Project;
   reverb: ReverbResult;
   onRoom: (room: Room, extra?: Partial<Project>) => void;
   /** Переход к следующему шагу после применения скана. */
-  onGo?: (t: 'placement') => void;
+  onGo?: (t: Destination) => void;
 }
 
 export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
@@ -51,7 +52,7 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
             <button type="button" class="btn btn--primary" onClick={() => document.getElementById('scan-file')?.click()}>
               <FileIcon /> {S.start.scan}
             </button>
-            <button type="button" class="btn" onClick={() => { const el = document.getElementById(`f-${S.room.depth.replace(/\s+/g, '-')}`) as HTMLInputElement | null; el?.scrollIntoView({ behavior: 'smooth', block: 'center' }); el?.focus(); }}>
+            <button type="button" class="btn" onClick={() => { const el = document.getElementById('room-depth') as HTMLInputElement | null; el?.scrollIntoView({ behavior: 'smooth', block: 'center' }); el?.focus(); }}>
               {S.start.manual}
             </button>
           </div>
@@ -61,7 +62,7 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
       <Panel class="panel--hero">
         <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} />
         <div class="dims">
-          <NumberField label={S.room.depth} hint={S.room.depthHint} value={room.depth} unit="м" min={1} max={50} onChange={(v) => set({ depth: v })} />
+          <NumberField id="room-depth" label={S.room.depth} hint={S.room.depthHint} value={room.depth} unit="м" min={1} max={50} onChange={(v) => set({ depth: v })} />
           <NumberField label={S.room.width} hint={S.room.widthHint} value={room.width} unit="м" min={1} max={50} onChange={(v) => set({ width: v })} />
           <NumberField label={S.room.height} value={room.height} unit="м" min={1} max={20} onChange={(v) => set({ height: v })} />
         </div>
@@ -104,9 +105,7 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
 
       <OpeningsPanel room={room} onRoom={(r) => onRoom(r)} />
 
-      <ZonesPanel room={room} onRoom={(r) => onRoom(r)} />
-
-      <Panel title={S.room.materials}>
+      <Panel title={S.room.materials} collapseKey="ra-room-materials" summary={`${MATERIALS.find((m) => m.id === room.materials.floor)?.name ?? ''} · ${FURNISHING_LABEL[room.furnishing]}`}>
         <div class="grid-2 grid-2--wide-items">
           {SURFACES.map((s: SurfaceId, ki) => (
             <SelectField key={ki}
@@ -125,6 +124,8 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
         />
         <p class="muted small">{S.room.furnishingHint}</p>
       </Panel>
+
+      <ZonesPanel room={room} onRoom={(r) => onRoom(r)} />
 
       <Panel title={S.room.reverb}>
         <div class="stat-row">
@@ -159,6 +160,14 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
           <p class="small">{S.room.reverbAssumptions}</p>
         </Details>
       </Panel>
+      {onGo && <Panel title="Что хотите сделать?">
+        <div class="quick-links">
+          <button type="button" class="btn" onClick={() => onGo('analysis')}>Оценить акустику</button>
+          <button type="button" class="btn" onClick={() => onGo('placement')}>Подобрать расстановку</button>
+          <button type="button" class="btn" onClick={() => onGo('voice')}>Найти место для записи</button>
+          <button type="button" class="btn" onClick={() => onGo('measure')}>Сделать измерение</button>
+        </div>
+      </Panel>}
     </div>
   );
 }

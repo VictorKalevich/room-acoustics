@@ -3,10 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 60_000,
-  use: { baseURL: 'http://localhost:4173/' },
+  use: { baseURL: 'http://127.0.0.1:4173/' },
   webServer: {
-    command: 'npm run build && npx vite preview --port 4173 --strictPort',
-    port: 4173,
+    command: 'npm run build && npx vite preview --host 127.0.0.1 --port 4173 --strictPort',
+    url: 'http://127.0.0.1:4173/',
     reuseExistingServer: true,
     timeout: 180_000,
   },
@@ -17,7 +17,7 @@ export default defineConfig({
     {
       name: 'iphone',
       // Эмуляция iPhone в Chromium (работает везде, в том числе в контейнере и на сервере GitHub)
-      use: { ...devices['iPhone 15 Pro'], browserName: 'chromium', trace: 'retain-on-failure' },
+      use: { ...devices['iPhone 15 Pro'], browserName: 'chromium', channel: process.env.PLAYWRIGHT_CHROMIUM_CHANNEL || undefined, trace: 'retain-on-failure' },
     },
     {
       name: 'iphone-safari',

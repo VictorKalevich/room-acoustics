@@ -19,6 +19,7 @@ import { S } from '../strings';
 import { fmt } from '../format';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
 import { isFlat, objectivePpo } from '../../core/objective';
+import { useViewState } from '../useViewState';
 
 interface Props {
   project: Project;
@@ -35,18 +36,18 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
   const layers = usePlanLayers();
   const flatGoal = isFlat(c.objective);
   const subs = sources.filter((s) => s.kind === 'sub');
-  const [mode, setMode] = useState<Mode>('listener');
-  const [subId, setSubId] = useState<string>(subs[0]?.id ?? '');
-  const [symmetric, setSymmetric] = useState(true);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [mode, setMode] = useViewState<Mode>(project.id, 'manual.mode', 'listener');
+  const [subId, setSubId] = useViewState(project.id, 'manual.sub', subs[0]?.id ?? '');
+  const [symmetric, setSymmetric] = useViewState(project.id, 'manual.symmetric', true);
+  const [selected, setSelected] = useViewState<string | null>(project.id, 'manual.selected', null);
   const [heat, setHeat] = useState<Heatmap | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [probe, setProbe] = useState<{ x: number; y: number } | null>(null);
-  const [compareId, setCompareId] = useState<string | null>(null);
-  const [layer, setLayer] = useState<'flat' | 'robust'>('flat');
+  const [compareId, setCompareId] = useViewState<string | null>(project.id, 'manual.compare', null);
+  const [layer, setLayer] = useViewState<'flat' | 'robust'>(project.id, 'manual.layer', 'flat');
   const robustHeat = useMemo(() => (heat ? robustnessMap(heat, heat.kind === 'listener' ? ROBUST_LISTENER_SHIFT : ROBUST_SOURCE_SHIFT) : null), [heat]);
-  const [name, setName] = useState('');
+  const [name, setName] = useViewState(project.id, 'manual.name', '');
   const job = useRef<ComputeJob<Heatmap> | null>(null);
 
   const effMode: Mode = mode === 'sub' && subs.length ? 'sub' : 'listener';

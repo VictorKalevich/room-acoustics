@@ -91,7 +91,7 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
   /** Ширина вдоль стены (без хвостов округления). */
   const span = (a0: number, a1: number) => Math.round((a1 - a0) * 1000) / 1000;
   return (
-    <Panel title={S.openings.title}>
+    <Panel title={S.openings.title} collapseKey="ra-room-geometry" summary={`Окна и двери: ${room.features?.length ?? 0} · Проёмы: ${openings.length} · Коридоры и ниши: ${exts.length}${room.slope ? ' · Есть скос' : ''}`}>
       <p class="small">{S.openings.intro}</p>
       {openings.length === 0 && exts.length === 0 && <p class="muted small">{S.openings.none}</p>}
       {exts.map((e, i) => {

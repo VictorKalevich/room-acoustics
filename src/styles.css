@@ -722,3 +722,27 @@ line.chart__grid { stroke: var(--line); stroke-width: 1; }
 .plan-layers .chip { min-height: 44px; padding: 8px 14px; font-size: 14px; }
 .plan-layers .chip::before { content: ''; display: inline-block; box-sizing: border-box; width: 16px; height: 16px; margin-right: 7px; vertical-align: -3px; border-radius: 4px; border: 1.5px solid currentColor; font-size: 12px; line-height: 13px; text-align: center; font-weight: 700; }
 .plan-layers .chip.is-on::before { content: '✓'; background: var(--accent-ink); border-color: var(--accent-ink); color: var(--accent); }
+
+/* Shared workspaces: navigation, context and collapsible room sections. */
+.retained-section:not([hidden]) { display: contents; }
+.section-nav { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--surface); margin-bottom: 14px; }
+.section-nav--four { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 600px) { .section-nav--four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.section-nav button { flex: 1 1 100px; min-height: 48px; border: 0; border-radius: var(--r-control); padding: 10px 12px; background: transparent; text-align: left; cursor: pointer; }
+.section-nav button span { display: block; font-weight: 600; font-size: 14px; }
+.section-nav button small { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.section-nav button.is-on { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.workspace-context { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+.drawer__group-title { margin: 18px 18px 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.drawer__panel { overflow-y: auto; overscroll-behavior: contain; }
+.panel--collapsible > summary { cursor: pointer; min-height: 44px; position: relative; padding-right: 24px; list-style: none; }
+.panel--collapsible > summary::-webkit-details-marker { display: none; }
+.panel--collapsible > summary::after { content: '⌄'; position: absolute; right: 3px; top: 3px; color: var(--muted); }
+.panel--collapsible[open] > summary::after { transform: rotate(180deg); }
+.panel--collapsible > summary > span { display: block; }
+.panel--collapsible > summary .panel__title { margin-bottom: 4px; }
+.panel__body { margin-top: 16px; }
+.quick-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.quick-links .btn { white-space: normal; text-align: left; min-height: 52px; }
+@media (max-width: 360px) { .quick-links { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }

@@ -4,7 +4,11 @@ import { useSheetLock } from '../sheetLock';
 import { S } from '../strings';
 
 export type DrawerItem = 'measure' | 'voice' | 'report' | 'sync' | 'help' | 'about';
-const ITEMS: DrawerItem[] = ['measure', 'voice', 'report', 'sync', 'help', 'about'];
+const GROUPS: { title: string; items: DrawerItem[] }[] = [
+  { title: 'Работа со звуком', items: ['measure', 'voice'] },
+  { title: 'Проект', items: ['report', 'sync'] },
+  { title: 'Справка', items: ['help', 'about'] },
+];
 const ICONS: Record<DrawerItem, string> = {
   measure: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z M5 11a7 7 0 0 0 14 0 M12 18v3',
   voice: 'M10 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M3.5 21v-1.5a6.5 6.5 0 0 1 13 0V21 M18.2 5.5a1.5 1.5 0 0 1 3 0v3a1.5 1.5 0 0 1-3 0z M19.7 10v3.5',
@@ -44,9 +48,11 @@ export function Drawer({ open, current, onClose, onPick }: { open: boolean; curr
           <strong>{S.drawer.title}</strong>
           <button type="button" class="sheet__close" aria-label="Закрыть меню" onClick={onClose}>×</button>
         </div>
+        {GROUPS.map((group) => <div key={group.title} class="drawer__group">
+        <h2 class="drawer__group-title">{group.title}</h2>
         <ul class="drawer__list">
-          {ITEMS.map((i, ki) => (
-            <li key={ki}>
+          {group.items.map((i) => (
+            <li key={i}>
               <button type="button" class={`drawer__item${current === i ? ' is-on' : ''}`} tabIndex={open ? 0 : -1} onClick={() => onPick(i)}>
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={ICONS[i]} /></svg>
                 <span>
@@ -57,6 +63,7 @@ export function Drawer({ open, current, onClose, onPick }: { open: boolean; curr
             </li>
           ))}
         </ul>
+        </div>)}
       </nav>
     </div>
   );

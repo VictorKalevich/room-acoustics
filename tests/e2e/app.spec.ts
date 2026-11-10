@@ -8,7 +8,8 @@ test('US1: моды по ручным размерам', async ({ page }) => {
   await page.getByLabel('Глубина', { exact: true }).fill('5');
   await page.getByLabel('Ширина', { exact: true }).fill('4');
   await page.getByLabel('Высота', { exact: true }).fill('2,5');
-  await page.getByRole('button', { name: 'Моды' }).click();
+  await page.getByRole('button', { name: 'Анализ', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   const rows = page.locator('.modes-table tbody tr');
   await expect(rows.nth(0)).toContainText('34,3');
   await expect(rows.nth(1)).toContainText('42,9');
@@ -67,11 +68,12 @@ test('002 US2: карта мест сабвуфера', async ({ page }) => {
 });
 
 test('002 US3/US5: настройка сабвуфера и эквалайзер', async ({ page }) => {
-  await page.goto('/#tuning');
+  await page.goto('/#tuning/sub');
   await page.getByRole('button', { name: 'Подобрать настройки' }).click();
   await expect(page.locator('.tuning-result')).toBeVisible({ timeout: 15_000 });
   await page.getByRole('button', { name: 'Применить' }).click();
   await expect(page.getByRole('button', { name: 'Применено' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Раздел настройки' }).getByRole('button', { name: /Эквалайзер/ }).click();
   await page.getByRole('button', { name: 'Рассчитать фильтры' }).click();
   await expect(page.locator('#eq-apo')).toHaveValue(/Filter 1: ON PK/);
   // экспорт в CamillaDSP: микшер на сабвуфер, эквалайзер, настройки сабвуфера
@@ -83,7 +85,7 @@ test('002 US3/US5: настройка сабвуфера и эквалайзер
 });
 
 test('002 US8: импорт замера REW', async ({ page }) => {
-  await page.goto('/#tuning');
+  await page.goto('/#measure/compare');
   const lines = ['* REW export', ...Array.from({ length: 300 }, (_, i) => { const f = 10 * Math.pow(2, i / 48); return `${f.toFixed(3)} ${(80 + 6 * Math.sin(f / 7)).toFixed(2)} 0`; })];
   await page.setInputFiles('#rew-file', { name: 'rew.txt', mimeType: 'text/plain', buffer: Buffer.from(lines.join('\n')) });
   await expect(page.getByText(/Расхождение модели и замера/)).toBeVisible();
@@ -95,7 +97,8 @@ test('003: коридор за аркой — моды системы и вол�
   await page.goto('/#room');
   await page.getByRole('button', { name: 'Добавить коридор' }).click();
   await expect(page.locator('.plan__ext').first()).toBeVisible();
-  await page.getByRole('button', { name: 'Моды' }).click();
+  await page.getByRole('button', { name: 'Анализ', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   await expect(page.locator('.sysmodes-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Расстановка' }).click();
   await page.getByRole('radio', { name: 'Вручную' }).click();
@@ -139,7 +142,7 @@ test('004: экран 3D — поле, способы показа, порог �
   await page.getByRole('radio', { name: '±3' }).click();
   await expect(page.locator('.field3d__busy')).toHaveCount(0, { timeout: 30_000 });
   await expect(page.locator('.plan__field rect').first()).toBeVisible();
-  await page.getByRole('radio', { name: 'Список' }).click();
+  await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   await expect(page.locator('.modes-table')).toBeVisible();
   await page.getByRole('button', { name: 'Проекты' }).click();
   await expect(page.locator('.app-version')).toBeVisible();
@@ -148,9 +151,9 @@ test('004: экран 3D — поле, способы показа, порог �
 test('005: меню слева открывает новые разделы', async ({ page }) => {
   await page.goto('/#room');
   for (const [item, check] of [
-    ['Замер', '.screen >> text=Замер свипом'],
+    ['Измерения', '.screen >> text=Замер свипом'],
     ['Отчёт', '.report__title'],
-    ['Синхронизация', 'text=Синхронизация через Файлы'],
+    ['Импорт и экспорт', 'text=Синхронизация через Файлы'],
     ['Помощник и словарь', 'text=Словарь терминов'],
     ['О приложении', '.app-version'],
   ] as const) {
@@ -160,11 +163,16 @@ test('005: меню слева открывает новые разделы', as
   }
 });
 
-test('005: обзор — оценка, проблемы, затухание мод; тон моды', async ({ page }) => {
+test('005: обзор — оценка, проблемы, затухание мод', async ({ page }) => {
   await page.goto('/#overview');
   await expect(page.locator('.score-ring__num')).toBeVisible();
   await expect(page.locator('.decay-chart__pt').first()).toBeAttached();
-  await page.getByRole('radio', { name: 'Список' }).click();
+});
+
+test('005: тон моды и мини-плеер', async ({ page }) => {
+  await page.goto('/#analysis');
+  test.skip(!await page.evaluate(() => typeof AudioContext !== 'undefined'), 'Web Audio unavailable in this browser build (Windows WebKit).');
+  await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   await page.locator('.modes-table .play-btn').first().click();
   await expect(page.locator('.miniplayer')).toBeVisible();
   await page.locator('.miniplayer').getByRole('button', { name: 'Стоп' }).click();
@@ -172,7 +180,7 @@ test('005: обзор — оценка, проблемы, затухание м�
 });
 
 test('005: план обработки, скос потолка и помощник', async ({ page }) => {
-  await page.goto('/#tuning');
+  await page.goto('/#tuning/treatment');
   await page.getByRole('button', { name: 'Предложить план' }).click();
   await expect(page.locator('.treat-compare')).toBeVisible();
   await expect(page.locator('.plan__treat').first()).toBeAttached();
@@ -189,7 +197,7 @@ test('аудит: свои фильтры сабвуфера — возможн�
   await page.getByText('Регулировки сабвуфера').click();
   await page.locator('.sub-caps').first().getByRole('radio', { name: '4' }).click();
   await page.getByText('Есть all-pass (фазовый) фильтр').first().click();
-  await page.goto('/#tuning');
+  await page.goto('/#tuning/sub');
   await page.getByText('Дополнительно: свои PEQ и all-pass для каждого сабвуфера').click();
   await page.getByRole('button', { name: 'Подобрать фильтры сабвуферов' }).click();
   await expect(page.locator('.subf .stat-row')).toBeVisible({ timeout: 30_000 });
@@ -228,12 +236,13 @@ test('UX: найденный вариант становится текущей 
 });
 
 test('UX: предложенный план обработки не меняет расчёты, пока не включён; включённый — виден на всех экранах', async ({ page }) => {
-  await page.goto('/#tuning');
+  await page.goto('/#tuning/treatment');
   await page.getByRole('button', { name: 'Предложить план' }).click();
   await expect(page.locator('.treat-compare')).toBeVisible();
   await expect(page.locator('.whatif-strip')).toHaveCount(0);
   await page.getByText('Учесть обработку в расчёте (что если)').click();
-  await page.getByRole('button', { name: 'Моды' }).click();
+  await page.getByRole('button', { name: 'Анализ', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   await expect(page.locator('.whatif-strip')).toBeVisible();
   await page.locator('.whatif-strip').getByRole('button', { name: 'Без обработки' }).click();
   await expect(page.locator('.whatif-strip')).toHaveCount(0);
@@ -241,6 +250,7 @@ test('UX: предложенный план обработки не меняет
 
 test('UX: поля выбора не мельче 16 px (иначе Safari увеличивает страницу при касании)', async ({ page }) => {
   await page.goto('/#room');
+  await expect(page.getByLabel('Глубина', { exact: true })).toBeVisible();
   const sizes = await page.locator('select').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
   expect(sizes.length).toBeGreaterThan(3);
   for (const s of sizes) expect(s).toBeGreaterThanOrEqual(16);
@@ -281,7 +291,7 @@ test('До и после: второй замер сравнивается с п
     const db = 80 + peak * Math.exp(-0.5 * (Math.log2(f / 45) / 0.08) ** 2) - 10 * Math.exp(-0.5 * (Math.log2(f / 90) / 0.06) ** 2);
     return `${f.toFixed(3)} ${db.toFixed(2)} 0`;
   })].join('\n'));
-  await page.goto('/#tuning');
+  await page.goto('/#measure/compare');
   await page.setInputFiles('#rew-file', { name: 'do.txt', mimeType: 'text/plain', buffer: rew(12) });
   await expect(page.getByText('do.txt')).toBeVisible();
   await expect(page.getByTestId('measure-compare')).toHaveCount(0);
@@ -352,22 +362,22 @@ test('009: цель подбора — меньше провалов внизу 
 });
 
 test('011: обработка на планах — только когда учтена; оценка под галочкой; «Удалить все» с подтверждением', async ({ page }) => {
-  await page.goto('/#tuning');
+  await page.goto('/#tuning/treatment');
   // блока «Текущая расстановка» больше нет, оценка — в плане обработки и без элементов
   await expect(page.getByRole('heading', { name: 'Текущая расстановка' })).toHaveCount(0);
   await expect(page.locator('.treat-score .score__value')).not.toHaveText('…', { timeout: 20_000 });
   await page.getByRole('button', { name: 'Предложить план' }).click();
   await expect(page.locator('.treat-score')).toContainText('не учтена');
   // галочка выключена: на «Расстановке» элементов обработки нет, в «Настройке» — есть
-  expect(await page.locator('svg.plan .plan__treat').count()).toBeGreaterThan(0);
+  expect(await page.locator('svg.plan:visible .plan__treat').count()).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Расстановка' }).click();
   await page.getByRole('radio', { name: 'Вручную' }).click();
-  await expect(page.locator('svg.plan .plan__treat')).toHaveCount(0);
+  await expect(page.locator('svg.plan:visible .plan__treat')).toHaveCount(0);
   await page.getByRole('button', { name: 'Настройка' }).click();
   await page.getByLabel('Учесть обработку в расчёте').check();
   await expect(page.locator('.treat-score')).toContainText('С обработкой');
   await page.getByRole('button', { name: 'Расстановка' }).click();
-  await expect.poll(() => page.locator('svg.plan .plan__treat').count()).toBeGreaterThan(0);
+  await expect.poll(() => page.locator('svg.plan:visible .plan__treat').count()).toBeGreaterThan(0);
   // удалить всё: сначала отмена, потом подтверждение
   await page.getByRole('button', { name: 'Настройка' }).click();
   await page.getByRole('button', { name: 'Удалить все' }).click();
@@ -380,7 +390,7 @@ test('011: обработка на планах — только когда уч
   await expect(page.locator('.treat-score')).toContainText('Без акустической обработки');
 });
 
-test('012: подсказка к карте «Место слушателя / сабвуфера»; шторка не пропускает касания на страницу', async ({ page }) => {
+test('012: подсказка к карте «Место слушателя / сабвуфера»; шторка не пропускает касания на страницу', async ({ page, browserName }) => {
   await page.goto('/#placement');
   await page.getByRole('radio', { name: 'Вручную' }).click();
   await expect(page.locator('.map-help__line')).toContainText('куда сесть');
@@ -397,11 +407,12 @@ test('012: подсказка к карте «Место слушателя / с
   const y0 = await page.evaluate(() => window.scrollY);
   await page.locator('button.term').first().evaluate((e) => (e as HTMLButtonElement).click());
   await expect(page.locator('.sheet')).toBeVisible();
-  expect(await page.evaluate(() => document.body.style.position)).toBe('fixed');
-  await page.mouse.wheel(0, 800);
+  await expect.poll(() => page.evaluate(() => document.body.style.position)).toBe('fixed');
+  // Playwright does not implement mouse.wheel for mobile WebKit; both engines still verify lock and restoration.
+  if (browserName !== 'webkit') await page.mouse.wheel(0, 800);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await expect(page.locator('.sheet')).toHaveCount(0);
-  expect(await page.evaluate(() => document.body.style.position)).toBe('');
+  await expect.poll(() => page.evaluate(() => document.body.style.position)).toBe('');
   // страница не прокрутилась колесом (800 px); небольшой сдвиг возможен, если ниже дорисовалась карта
   expect(Math.abs((await page.evaluate(() => window.scrollY)) - y0)).toBeLessThan(60);
 });
@@ -469,14 +480,14 @@ test('014: «Очистить» на экране комнаты; модель �
 
 test('015: отражения от передней и задней стен; экран «Запись голоса» из меню — карта, место, направление, полоса частот, пересчёт при изменении комнаты', async ({ page }) => {
   // «Настройка»: точки отражений теперь и на передней, и на задней стене
-  await page.goto('/#tuning');
+  await page.goto('/#tuning/treatment');
   const list = page.locator('.plain-list').first();
   await expect(list).toContainText('передняя стена');
   await expect(list).toContainText('задняя стена');
   // «Запись голоса» — пункт меню слева
   await page.getByRole('button', { name: 'Открыть меню' }).click();
-  await page.getByRole('button', { name: /Запись голоса/ }).click();
-  await expect(page.locator('.topbar__title')).toHaveText('Запись голоса');
+  await page.getByRole('button', { name: /Место для записи/ }).click();
+  await expect(page.locator('.topbar__title')).toHaveText('Место для записи');
   const plan = page.locator('svg.plan:visible');
   await expect(plan.locator('.plan__heat rect').first()).toBeAttached({ timeout: 20_000 });
   await expect(plan.locator('.plan__singer')).toHaveCount(1);
@@ -507,7 +518,7 @@ test('015: отражения от передней и задней стен; э
   await win.getByLabel('Отступ', { exact: true }).fill('0');
   await win.getByLabel('Ширина', { exact: true }).fill('4');
   await page.getByRole('button', { name: 'Открыть меню' }).click();
-  await page.getByRole('button', { name: /Запись голоса/ }).click();
+  await page.getByRole('button', { name: /Место для записи/ }).click();
   await expect(page.locator('.topbar__room')).toContainText('4,00 × 3,00');
   await expect(page.locator('.voice-refl')).toContainText('на окне');
 });

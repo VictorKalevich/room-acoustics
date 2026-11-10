@@ -24,7 +24,7 @@ export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
     onRoom({ ...room, zones: [...zones, z] });
   };
   return (
-    <Panel title={S.zones.title}>
+    <Panel title={S.zones.title} collapseKey="ra-room-zones" summary={`Зон: ${zones.length} · ${S.zones.leakages[room.leakage ?? 'typical']}`}>
       <p class="small">{S.zones.intro}</p>
       {zones.length === 0 && <p class="muted small">{S.zones.none}</p>}
       {zones.map((z, i) => (

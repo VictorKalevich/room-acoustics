@@ -8,6 +8,7 @@ import { setBusy } from '../updates';
 import { S } from '../strings';
 
 interface Props {
+  active?: boolean;
   /** АЧХ в месте слушателя и цель (дБ) на сетке f. */
   response: { f: number[]; db: number[]; target: number[] };
   filters: PeqFilter[];
@@ -30,7 +31,7 @@ function demoBass(ctx: AudioContext): AudioBuffer {
   return buf;
 }
 
-export function Auralize({ response, filters }: Props) {
+export function Auralize({ response, filters, active = true }: Props) {
   const [playing, setPlaying] = useState(false);
   const [after, setAfter] = useState(false);
   const [file, setFile] = useState<AudioBuffer | null>(null);
@@ -47,6 +48,7 @@ export function Auralize({ response, filters }: Props) {
     playerActive('aural', false);
   };
   useEffect(() => stop, []);
+  useEffect(() => { if (!active) stop(); }, [active]);
 
   const start = () => {
     playerActive('aural', true);

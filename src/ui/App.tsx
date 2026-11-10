@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
+import type { Room } from '../core/types';
+import { useProject } from './useProject';
 import type { Project } from '../state/project';
-import { defaultConstraints, newProject, syncSetup } from '../state/project';
-import { loadDraft, saveDraft } from '../state/storage';
-import type { Constraints, Room, Setup, SourceSpec } from '../core/types';
-import { clampToRoom } from '../core/system';
 import { computeReverb } from '../core/reverb';
 import { computeModes } from '../core/modes';
 import { RoomScreen } from './screens/RoomScreen';
@@ -12,8 +10,10 @@ import { PlacementScreen } from './screens/PlacementScreen';
 import { ProjectsScreen } from './screens/ProjectsScreen';
 import { TuningScreen } from './screens/TuningScreen';
 import { FieldScreen } from './screens/FieldScreen';
-import { Segmented } from './components/Fields';
-import { Drawer, type DrawerItem } from './components/Drawer';
+import { Drawer } from './components/Drawer';
+import { SectionNav } from './components/SectionNav';
+import { RetainedSection } from './components/RetainedSection';
+import { useNavigation, type Tab, type AnalysisView } from './navigation';
 import { TermSheet } from './components/Term';
 import { MiniPlayer } from './components/MiniPlayer';
 import { WizardStrip } from './components/WizardStrip';
@@ -22,7 +22,6 @@ import { HelpScreen } from './screens/HelpScreen';
 import { MeasureScreen } from './screens/MeasureScreen';
 import { ReportScreen } from './screens/ReportScreen';
 import { VoiceScreen } from './screens/VoiceScreen';
-import type { VoiceSettings } from '../core/voice';
 import { SyncScreen } from './screens/SyncScreen';
 import { OverviewScreen } from './screens/OverviewScreen';
 import { AboutPanel } from './screens/ProjectsScreen';
@@ -30,16 +29,14 @@ import { ProblemReport } from './components/ProblemReport';
 import { setFieldFocus } from './screens/FieldScreen';
 import { S } from './strings';
 import { fmt } from './format';
-import { consumeJustUpdated, setBeforeReload } from './updates';
+import { consumeJustUpdated } from './updates';
 import { activeTreatments } from '../core/treatments';
 
-type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects' | DrawerItem;
-const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects', 'measure', 'voice', 'report', 'sync', 'help', 'about'];
 /** Вкладки нижней панели; «Проекты» — кнопка в верхней панели. */
 const BAR: ('room' | 'modes' | 'placement' | 'tuning')[] = ['room', 'modes', 'placement', 'tuning'];
 const TITLES: Record<Tab, string> = {
   room: S.room.title,
-  modes: S.modes.title,
+  modes: S.tabs.modes,
   placement: S.placement.title,
   tuning: S.tuning.title,
   projects: S.projects.title,
@@ -51,105 +48,19 @@ const TITLES: Record<Tab, string> = {
   about: S.drawer.items.about,
 };
 
-function readTab(): Tab {
-  const h = location.hash.replace('#', '');
-  if (h === 'manual') return 'placement';
-  if (h === 'field' || h === 'overview') return 'modes';
-  return TABS.includes(h as Tab) ? (h as Tab) : 'room';
-}
-
-/** Приводит расстановку к текущим источникам и размерам комнаты. */
-function fitSetup(s: Setup, p: Project): Setup {
-  const synced = syncSetup(s, p.room, p.sources, p.constraints);
-  return {
-    ...synced,
-    listener: clampToRoom(p.room, synced.listener, 0.1),
-    positions: Object.fromEntries(Object.entries(synced.positions).map(([k, v]) => [k, clampToRoom(p.room, v)])),
-  };
-}
-
-/** Держит зону слушателя внутри комнаты после изменения размеров. */
-function fitConstraints(c: Constraints, room: Room): Constraints {
-  const d = defaultConstraints(room);
-  const bad = c.listenerMaxX >= room.depth - 0.05 || c.listenerMinX >= c.listenerMaxX || c.listenerMinX <= 0;
-  return bad ? { ...c, listenerMinX: d.listenerMinX, listenerMaxX: d.listenerMaxX } : c;
-}
-
 export function App() {
-  const [tab, setTab] = useState<Tab>(readTab);
-  const [placementMode, setPlacementMode] = useState<'auto' | 'manual'>(location.hash === '#manual' ? 'manual' : 'auto');
-  const [modesView, setModesView] = useState<'list' | 'field' | 'overview'>(location.hash === '#field' ? 'field' : location.hash === '#overview' ? 'overview' : 'list');
+  const { route, go } = useNavigation();
+  const { tab, placement: placementMode, analysis: modesView } = route;
   const [drawer, setDrawer] = useState(false);
   const [wizard, setWizard] = useState(wizardOn());
   const [, setWizardTick] = useState(0);
-  const [project, setProject] = useState<Project>(() => newProject());
-  const [ready, setReady] = useState(false);
+  const { project, setProject, ready, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice } = useProject();
   const [justUpdated, setJustUpdated] = useState(consumeJustUpdated);
 
-  useEffect(() => {
-    loadDraft()
-      .then((d) => d && setProject(d))
-      .catch(() => undefined)
-      .finally(() => setReady(true));
-    const onHash = () => {
-      setTab(readTab());
-      if (location.hash === '#manual') setPlacementMode('manual');
-      if (location.hash === '#field') setModesView('field');
-      if (location.hash === '#overview') setModesView('overview');
-    };
-    addEventListener('hashchange', onHash);
-    return () => removeEventListener('hashchange', onHash);
-  }, []);
-
-  useEffect(() => {
-    if (ready) setBeforeReload(() => saveDraft(project));
-  }, [project, ready]);
-
-  useEffect(() => {
-    if (!ready) return;
-    const t = setTimeout(() => saveDraft(project).catch(() => undefined), 300);
-    return () => clearTimeout(t);
-  }, [project, ready]);
-
-  const go = (t: Tab) => {
-    setTab(t);
-    // адрес отражает и подраздел: «Моды → 3D / Обзор», «Расстановка → Вручную»
-    const hash = t === 'modes' && modesView !== 'list' ? modesView : t === 'placement' && placementMode === 'manual' ? 'manual' : t;
-    history.replaceState(null, '', `#${hash}`);
-    scrollTo({ top: 0 });
-  };
-
-  const touch = (p: Partial<Project>, invalidate = true) =>
-    setProject((prev) => {
-      const next: Project = {
-        ...prev,
-        ...p,
-        updatedAt: new Date().toISOString(),
-        // явно переданный результат (в том числе null после очистки комнаты) важнее пометки «устарел»
-        result: p.result !== undefined ? p.result : invalidate && prev.result ? { ...prev.result, stale: true } : prev.result,
-      };
-      if (p.room || p.sources || p.constraints || p.current) {
-        next.current = fitSetup(next.current, next);
-        if (p.room || p.sources) next.setups = next.setups.map((x) => fitSetup(x, next));
-      }
-      return next;
-    });
-
-  const onRoom = (room: Room, extra: Partial<Project> = {}) =>
-    touch({ ...extra, room, constraints: fitConstraints(extra.constraints ?? project.constraints, room) });
-  const onSources = (sources: SourceSpec[]) => touch({ sources });
-  const onConstraints = (constraints: Constraints) => touch({ constraints });
-  const onSetup = (current: Setup) => touch({ current }, false);
-  const onSetups = (setups: Setup[]) => touch({ setups }, false);
-  const onVoice = (voice: VoiceSettings) => touch({ voice }, false);
-  const setModes = (v: 'list' | 'field' | 'overview') => {
-    setModesView(v);
-    history.replaceState(null, '', v === 'list' ? '#modes' : `#${v}`);
-  };
+  const setModes = (v: AnalysisView) => go(v === 'list' ? 'analysis/list' : v === 'overview' ? 'analysis' : 'field');
   const refreshWizard = () => { setWizard(wizardOn()); setWizardTick((x) => x + 1); };
   const setMode = (m: 'auto' | 'manual') => {
-    setPlacementMode(m);
-    history.replaceState(null, '', m === 'manual' ? '#manual' : '#placement');
+    go(m === 'manual' ? 'manual' : 'placement/auto');
   };
 
   const reverb = useMemo(() => computeReverb(project.room), [project.room]);
@@ -157,6 +68,7 @@ export function App() {
   const modes = useMemo(() => computeModes(project.room, fMax), [project.room, fMax]);
 
   const r = project.room;
+  if (!ready) return <div class="screen"><p role="status">Открываем проект…</p></div>;
   return (
     <div class="app">
       <header class="topbar">
@@ -192,13 +104,13 @@ export function App() {
       <Drawer open={drawer} current={tab} onClose={() => setDrawer(false)} onPick={(i) => { setDrawer(false); go(i); }} />
       <TermSheet />
 
-      <main class="content">
+      <main class="content" key={project.id}>
         {wizard && <WizardStrip project={project} onGo={(t) => go(t)} onChange={refreshWizard} />}
         {activeTreatments(r).length > 0 && (
           <div class="whatif-strip" role="status">
             <span>{S.treat.whatIf}</span>
             <span class="whatif-strip__btns">
-              {tab !== 'tuning' && <button type="button" class="btn btn--small btn--ghost" onClick={() => go('tuning')}>{S.treat.whatIfOpen}</button>}
+              {(tab !== 'tuning' || route.tuning !== 'treatment') && <button type="button" class="btn btn--small btn--ghost" onClick={() => go('tuning/treatment')}>{S.treat.whatIfOpen}</button>}
               <button type="button" class="btn btn--small" onClick={() => onRoom({ ...r, treatmentsOn: false })}>{S.treat.whatIfOff}</button>
             </span>
           </div>
@@ -209,12 +121,12 @@ export function App() {
         {tab === 'modes' && (
           <>
             <div class="screen modes-switch">
-              <Segmented label={S.modes.title} value={modesView} options={[{ value: 'list' as const, label: S.modesView.list }, { value: 'field' as const, label: S.modesView.field }, { value: 'overview' as const, label: S.modesView.overview }]} onChange={setModes} />
+              <SectionNav label="Раздел анализа" value={modesView} options={[{ value: 'overview', label: S.modesView.overview }, { value: 'list', label: S.modesView.list }, { value: 'field', label: S.modesView.field }]} onChange={setModes} />
             </div>
             {modesView === 'list' && <ModesScreen room={r} modes={modes} fMax={fMax} reverb={reverb} />}
             {modesView === 'field' && <FieldScreen project={project} modes={modes} onSetup={onSetup} />}
             {modesView === 'overview' && (
-              <OverviewScreen project={project} modes={modes} reverb={reverb} onGo={(t, f) => { if (t === 'field') { if (f) setFieldFocus(f); setModes('field'); } else go(t as Tab); }} />
+              <OverviewScreen project={project} modes={modes} reverb={reverb} onGo={(t, f) => { if (t === 'field') { if (f) setFieldFocus(f); setModes('field'); } else go(t); }} />
             )}
           </>
         )}
@@ -232,7 +144,9 @@ export function App() {
             onGo={(t) => go(t)}
           />
         </div>
-        {tab === 'tuning' && <TuningScreen project={project} modes={modes} onSetup={onSetup} onRoom={(room) => onRoom(room)} />}
+        <RetainedSection active={tab === 'tuning'}>
+          <TuningScreen project={project} modes={modes} onSetup={onSetup} onRoom={(room) => onRoom(room)} view={route.tuning} active={tab === 'tuning'} onGo={go} />
+        </RetainedSection>
         {tab === 'projects' && (
           <ProjectsScreen
             project={project}
@@ -240,7 +154,9 @@ export function App() {
             onRename={(name) => touch({ name }, false)}
           />
         )}
-        {tab === 'measure' && <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={(t: Tab) => go(t)} />}
+        <RetainedSection active={tab === 'measure'}>
+          <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} />
+        </RetainedSection>
         {tab === 'voice' && <VoiceScreen project={project} onVoice={onVoice} />}
         {tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} />}
         {tab === 'sync' && <SyncScreen project={project} onReplace={(p: Project) => setProject(p)} />}
