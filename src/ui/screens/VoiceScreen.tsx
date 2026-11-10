@@ -4,9 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import type { Heatmap } from '../../core/field';
 import { shownTreatments } from '../../core/treatments';
+import { computeReverb } from '../../core/reverb';
 import {
   evaluateVoice, facingAngle, facingName, facingScores, relativeSide, spotAllowed, voiceContext, voiceGrade,
-  VOICE_BAND, VOICE_DEFAULTS, FACINGS, type MicPattern, type VoiceMap, type VoiceSettings, type VoiceSpot,
+  VOICE_BAND, VOICE_DEFAULTS, FACINGS, type MicPattern, type VoiceMap, type VoiceSettings, type VoiceSpot, type VoiceGoal,
 } from '../../core/voice';
 import { compute, type ComputeJob } from '../compute';
 import { Details, Note, NumberField, Panel, Segmented } from '../components/Fields';
@@ -28,27 +29,39 @@ export function VoiceScreen({ project, onVoice }: Props) {
   const v = project.voice ?? VOICE_DEFAULTS;
   const set = (patch: Partial<VoiceSettings>) => onVoice({ ...v, ...patch });
   const t = S.voice;
+  const [goal, setGoalState] = useState<VoiceGoal>(() => {
+    try { return localStorage.getItem('ra-voice-map-goal') === 'room' ? 'room' : 'flatness'; } catch { return 'flatness'; }
+  });
+  const setGoal = (next: VoiceGoal) => {
+    setGoalState(next);
+    try { localStorage.setItem('ra-voice-map-goal', next); } catch { /* retain session choice */ }
+  };
+  const roomGoal = goal === 'room';
+  const reverb = useMemo(() => computeReverb(room), [room]);
   // всё, что влияет на карту, кроме места исполнителя
   const calc = useMemo(() => ({ ...v, spot: null }), [v.mic, v.distance, v.posture, v.mouthZ, v.fLo, v.fHi]); // eslint-disable-line react-hooks/exhaustive-deps
   const bandOk = v.fHi >= 2 * v.fLo;
 
   // карта — в воркере, с небольшой задержкой, пока меняют поля
-  const [map, setMap] = useState<VoiceMap | null>(null);
+  const [mapResult, setMapResult] = useState<{ room: typeof room; settings: VoiceSettings; data: VoiceMap } | null>(null);
+  const map = mapResult?.room === room && mapResult.settings === calc && mapResult.data.goal === goal && bandOk ? mapResult.data : null;
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const job = useRef<ComputeJob<VoiceMap> | null>(null);
   useEffect(() => {
-    if (!bandOk) return;
     // прежний расчёт больше не нужен: его результат не покажем
     job.current?.cancel();
     job.current = null;
+    setError(null);
+    if (!bandOk) { setBusy(false); return; }
     setBusy(true);
     const tm = setTimeout(() => {
-      const j = compute<VoiceMap>('voiceMap', { room, settings: calc });
+      const j = compute<VoiceMap>('voiceMap', { room, settings: calc, goal });
       job.current = j;
-      j.promise.then((m) => { if (job.current === j) { setMap(m); setBusy(false); } }).catch(() => { if (job.current === j) setBusy(false); });
+      j.promise.then((m) => { if (job.current === j) { setMapResult({ room, settings: calc, data: m }); setBusy(false); } }).catch((e) => { if (job.current === j) { setError((e as Error).message); setBusy(false); } });
     }, 250);
-    return () => clearTimeout(tm);
-  }, [room, calc, bandOk]);
+    return () => { clearTimeout(tm); job.current?.cancel(); job.current = null; };
+  }, [room, calc, bandOk, goal]);
   useEffect(() => () => job.current?.cancel(), []);
 
   const ctx = useMemo(() => (bandOk ? voiceContext(room, calc) : null), [room, calc, bandOk]);
@@ -59,7 +72,8 @@ export function VoiceScreen({ project, onVoice }: Props) {
   }, [spot, map]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ev = useMemo(() => (ctx && spot ? evaluateVoice(ctx, spot) : null), [ctx, spot?.x, spot?.y, spot?.facing]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dirs = useMemo(() => (ctx && spot ? facingScores(ctx, spot.x, spot.y) : null), [ctx, spot?.x, spot?.y]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dirs = useMemo(() => (ctx && spot ? facingScores(ctx, spot.x, spot.y, goal) : null), [ctx, spot?.x, spot?.y, goal]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selectedScore = ev ? roomGoal ? ev.roomDb : ev.score : null;
   const bestDir = useMemo(() => {
     if (!dirs) return null;
     let i = -1;
@@ -73,7 +87,7 @@ export function VoiceScreen({ project, onVoice }: Props) {
   const standAt = (x: number, y: number, facing?: number) => {
     if (!ctx) return;
     if (facing != null && spotAllowed(room, x, y, facing, v)) { setCant(false); set({ spot: { x, y, facing } }); return; }
-    const sc = facingScores(ctx, x, y);
+    const sc = facingScores(ctx, x, y, goal);
     let i = -1;
     sc.forEach((s, k) => { if (Number.isFinite(s) && (i < 0 || s < sc[i])) i = k; });
     if (i < 0) { setCant(true); return; }
@@ -90,9 +104,9 @@ export function VoiceScreen({ project, onVoice }: Props) {
 
   const heat: Heatmap | null = map ? {
     kind: 'voice', x0: map.x0, y0: map.y0, step: map.step, nx: map.nx, ny: map.ny, scores: map.scores, allowed: map.allowed,
-    best: map.best.map((b) => ({ pos: { x: b.x, y: b.y }, score: b.score })), current: ev?.score ?? map.min, min: map.min, max: map.max, elapsedMs: 0,
-    // разница в доли децибела уже слышна в голосе: шкала уже, чем для баса
-    minSpan: 0.6,
+    best: map.best.map((b) => ({ pos: { x: b.x, y: b.y }, score: b.score })), current: selectedScore ?? map.min, min: map.min, max: map.max, elapsedMs: 0,
+    // Display contrast only; these spans are not thresholds of audibility or quality.
+    minSpan: roomGoal ? 3 : 0.6,
   } : null;
   const fin = map ? Array.from(map.scores).filter(Number.isFinite).sort((a, b) => a - b) : [];
   const flatRoom = fin.length > 0 && fin[Math.floor(fin.length * 0.75)] - fin[0] < 0.15;
@@ -138,7 +152,11 @@ export function VoiceScreen({ project, onVoice }: Props) {
       </Panel>
 
       <Panel title={t.mapTitle}>
-        <p class="map-help__line small">{t.mapLine}</p>
+        <Segmented label="Цель карты" value={goal} onChange={setGoal} options={[
+          { value: 'flatness', label: 'Ровнее спектр' }, { value: 'room', label: 'Меньше комнаты' },
+        ]} />
+        <h3 class="subhead">{roomGoal ? 'Вклад комнаты в микрофоне' : 'Ровность спектра в микрофоне'}</h3>
+        <p class="map-help__line small">{roomGoal ? t.roomMapLine : t.mapLine}</p>
         <PlanView
           depth={room.depth}
           width={room.width}
@@ -154,13 +172,15 @@ export function VoiceScreen({ project, onVoice }: Props) {
           wallMarks={wallMarks}
           onMove={(_, pos) => { if (spot) standAt(pos.x, pos.y, spot.facing); }}
           onTap={(pos) => standAt(pos.x, pos.y)}
-          keyNotes={{ heat: t.mapLine, best: t.keyBest }}
+          keyNotes={{ heat: roomGoal ? t.roomMapLine : t.mapLine, best: t.keyBest }}
           label="План комнаты: где встать с микрофоном"
         />
-        {heat && <HeatLegend hm={heat} hint={t.legend} />}
+        {heat && <HeatLegend hm={heat} hint={roomGoal ? t.roomLegend : t.legend} />}
         <p class="progress-text small" role="status" aria-live="polite">
           {busy && <><span class="spinner" aria-hidden="true" /> {t.computing}</>}
         </p>
+        {error && <Note tone="warn">{error}</Note>}
+        {map && map.best.length === 0 && <Note>Нет доступных мест: проверьте размеры комнаты и зоны мебели.</Note>}
         {cant && <Note tone="warn">{t.cantStand}</Note>}
         {spot && (
           <div class="voice-facing">
@@ -177,15 +197,15 @@ export function VoiceScreen({ project, onVoice }: Props) {
                 {t.bestHere}
               </button>
             </div>
-            {bestDir && ev && (bestDir.spread < 0.1
+            {bestDir && selectedScore != null && (bestDir.spread < 0.1
               ? <p class="muted small">{t.facingFree}</p>
-              : ev.score - bestDir.score > 0.05 && <p class="small">{t.facingBest(facingName(bestDir.facing), fmt(ev.score - bestDir.score, 1))}</p>)}
+              : selectedScore - bestDir.score > 0.05 && <p class="small">{roomGoal ? t.roomFacingBest(facingName(bestDir.facing), fmt(selectedScore - bestDir.score, 1)) : t.facingBest(facingName(bestDir.facing), fmt(selectedScore - bestDir.score, 1))}</p>)}
           </div>
         )}
       </Panel>
 
       <Panel title={t.scorePanel}>
-        <div class="score score--key score-block">
+        <div class="score score--key score-block" data-testid="voice-flatness">
           <div class="score__main">
             <span class="score__value">{ev ? fmt(ev.score, 1) : '…'}</span>
             <span class="score__unit">дБ</span>
@@ -195,16 +215,29 @@ export function VoiceScreen({ project, onVoice }: Props) {
             <span class="score__label">{t.scoreTitle}</span>
             <span class="small">{ev ? t.scoreExplain(fmt(ev.score, 1)) : ''}</span>
             {grade && <span class={`score__grade is-${grade}`}>{t.grade[grade]}</span>}
-            {map && <span class="muted small">{t.bestScore(fmt(map.min, 1))}</span>}
-            {flatRoom && <span class="muted small">{t.flat}</span>}
+            <span class="muted small">Ровный спектр не означает отсутствие реверберации.</span>
           </div>
-          {ev && (
-            <div class="score__second">
-              <span>{t.roomLevel(fmt(-ev.roomDb, 0))}</span>
-              <span class="muted small">{t.roomHint}</span>
-            </div>
-          )}
         </div>
+        <div class="voice-metrics">
+          <section class="voice-metric" aria-label="Вклад комнаты" data-testid="voice-room-level">
+            <h3>Вклад комнаты</h3>
+            <strong class="voice-metric__value">{ev ? fmt(ev.roomDb, 1) : '…'} дБ</strong>
+            <p class="small">{ev ? t.roomLevel(ev.roomDb) : 'Относительно прямого голоса.'}</p>
+            <p class="muted small">{t.roomHint} Полоса {fmt(v.fLo, 0)}–{fmt(v.fHi, 0)} Гц.</p>
+          </section>
+          <section class="voice-metric" aria-label="Время реверберации" data-testid="voice-reverb">
+            <h3>Время реверберации</h3>
+            <strong class="voice-metric__value">{fmt(reverb.tMid, 2)} с</strong>
+            <p class="small">Расчётное RT60, среднее на 500 и 1000 Гц.</p>
+            <p class="muted small">Характеристика комнаты: перемещение микрофона её не меняет. Зависит от заданных материалов и обстановки.</p>
+            <Details summary="RT60 по частотам">
+              <ul class="plain-list small">{reverb.bands.map((f, i) => <li key={f}>{fmt(f, 0)} Гц — {fmt(reverb.used[i], 2)} с</li>)}</ul>
+            </Details>
+          </section>
+        </div>
+        <h3 class="subhead">{roomGoal ? 'Места с меньшим вкладом комнаты' : 'Места с более ровным спектром'}</h3>
+        {map && map.best.length > 0 && <p class="small" data-testid="voice-map-best">{t.bestScore(fmt(map.min, 1))} · {roomGoal ? 'вклад комнаты' : 'неровность спектра'}</p>}
+        {flatRoom && <p class="muted small">{t.flat}</p>}
         <ul class="best-list">
           {(map?.best ?? []).map((b, i) => (
             <li key={i}>
@@ -240,6 +273,7 @@ export function VoiceScreen({ project, onVoice }: Props) {
           </ul>
           <Details summary={t.how}>
             <p class="small">{t.howText}</p>
+            <p class="small">Цель «Ровнее спектр» сравнивает неровность АЧХ. Цель «Меньше комнаты» сравнивает среднюю энергию отражений и позднего хвоста относительно прямого голоса по тем же полосам. Это разные критерии; ровный спектр может сочетаться с заметной реверберацией.</p>
           </Details>
         </Panel>
       )}

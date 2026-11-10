@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  evaluateVoice, facingName, micGain, micREE, normalizeVoice, relativeSide, spotAllowed, voiceBands, voiceContext, voiceDir, voiceMap, voicePaths,
+  evaluateVoice, facingAngle, facingName, facingScores, micGain, micREE, normalizeVoice, relativeSide, spotAllowed, voiceBands, voiceContext, voiceDir, voiceMap, voicePaths,
   VOICE_DEFAULTS, type VoiceSettings,
 } from '../../src/core/voice';
 import { emptyRoom } from '../../src/state/project';
@@ -101,6 +101,39 @@ describe('пути звука к микрофону', () => {
 });
 
 describe('карта мест', () => {
+  it('новая цель использует существующий roomDb, выбирает минимум и сохраняет допустимость мест', () => {
+    const settings = { ...S, distance: 0.6 };
+    const ctx = voiceContext(room, settings);
+    const flat = voiceMap(room, settings);
+    const lessRoom = voiceMap(room, settings, undefined, 'room');
+    expect(flat.goal).toBe('flatness');
+    expect(lessRoom.goal).toBe('room');
+    expect(lessRoom.allowed).toEqual(flat.allowed);
+    expect(lessRoom.scores).not.toEqual(flat.scores);
+    for (const b of lessRoom.best) {
+      const scores = facingScores(ctx, b.x, b.y, 'room');
+      scores.forEach((score, i) => {
+        if (Number.isFinite(score)) expect(score).toBeCloseTo(evaluateVoice(ctx, { x: b.x, y: b.y, facing: facingAngle(i) }).roomDb, 10);
+      });
+      expect(b.score).toBeCloseTo(Math.min(...scores.filter(Number.isFinite)), 5);
+      expect(evaluateVoice(ctx, b).roomDb).toBeCloseTo(b.score, 5);
+    }
+    expect(lessRoom.best[0].score).toBe(lessRoom.min);
+    // Calling the second goal must not mutate the legacy context or change the default.
+    expect(voiceMap(room, settings, undefined, 'flatness')).toEqual(flat);
+    expect(facingScores(ctx, 1, 1)).toEqual(facingScores(ctx, 1, 1, 'flatness'));
+  });
+
+  it('оба режима возвращают пустую карту, когда вся комната занята мебелью', () => {
+    const occupied = { ...room, zones: [{ id: 'all', kind: 'furniture' as const, x0: 0, x1: room.depth, y0: 0, y1: room.width, canSit: false }] };
+    for (const goal of ['flatness', 'room'] as const) {
+      const map = voiceMap(occupied, S, undefined, goal);
+      expect(map.best).toEqual([]);
+      expect(Array.from(map.allowed).every(v => v === 0)).toBe(true);
+      expect(Array.from(map.scores).every(Number.isNaN)).toBe(true);
+    }
+  });
+
   it('у стен и в мебели не встать; лучшие места разнесены; направление — одно из 16', () => {
     const r: Room = { ...room, zones: [{ id: 'z', kind: 'furniture', x0: 0, x1: 1, y0: 0, y1: 1.2, canSit: true }] };
     const m = voiceMap(r, S);

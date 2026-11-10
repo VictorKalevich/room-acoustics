@@ -4,6 +4,7 @@ import type { Room, Opening, Extension, WallId, AcousticModel, WallFeature } fro
 import { validateExtension, validateSlope, wallLength } from '../../../core/geometry';
 import { openingAsItem, toRoomItem, type WallItem, type WallItemKind } from '../../../core/wallItems';
 import { NumberField, Panel, SelectField, Note } from '../../components/Fields';
+import { ActionMenu } from '../../components/ActionMenu';
 import { S } from '../../strings';
 
 const WALLS: WallId[] = ['front', 'back', 'left', 'right'];
@@ -28,8 +29,15 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
   const setExt = (id: string, patch: Partial<Extension>) => {
     onRoom({ ...room, extensions: exts.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
   };
+  // Starting dimensions only: existing/imported items are never resized here.
+  const fitSpan = (wall: WallId, width: number, offset: number) => {
+    const length = wallLength(room, wall);
+    const fittedWidth = Math.min(width, length);
+    const a0 = Math.max(0, Math.min(offset, length - fittedWidth));
+    return { a0, a1: a0 + fittedWidth };
+  };
   const addOpening = () =>
-    onRoom({ ...room, openings: [...openings, { id: makeId(), wall: 'right', a0: Math.min(1, room.depth - 1), a1: Math.min(2, room.depth), height: Math.min(2.1, room.height) }] });
+    onRoom({ ...room, openings: [...openings, { id: makeId(), wall: 'right', ...fitSpan('right', 0.9, 1), height: Math.min(2.1, room.height) }] });
   const addNiche = () =>
     onRoom({
       ...room,
@@ -66,9 +74,10 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
   };
   const addFeature = (kind: WallFeature['kind']) => {
     const L = wallLength(room, 'left');
+    const bottom = Math.min(0.9, Math.max(0, room.height - 1.4));
     const f: WallFeature = kind === 'window'
-      ? { id: makeId(), kind, wall: 'left', a0: Math.max(0, L / 2 - 0.6), a1: Math.min(L, L / 2 + 0.6), bottom: 0.9, top: Math.min(room.height, 2.3) }
-      : { id: makeId(), kind, wall: 'back', a0: 0.3, a1: Math.min(room.width, 1.2), bottom: 0, top: Math.min(room.height, 2.1) };
+      ? { id: makeId(), kind, wall: 'left', ...fitSpan('left', 1.3, (L - 1.3) / 2), bottom, top: Math.min(room.height, bottom + 1.4) }
+      : { id: makeId(), kind, wall: 'back', ...fitSpan('back', 0.8, 0.3), bottom: 0, top: Math.min(room.height, 2) };
     onRoom({ ...room, features: [...feats, f] });
   };
   /** Смена вида элемента стены (если распознан неверно): арка ↔ дверь ↔ окно. */
@@ -129,31 +138,8 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
           </div>
         );
       })}
-      {openings.map((o, i) => (
-        <div key={o.id} class="zone-card">
-          <div class="zone-card__head">
-            <SelectField
-              label={`${S.openings.opening} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
-              value={o.wall}
-              options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))}
-              onChange={(v) => setOpening(o.id, { wall: v as WallId })}
-            />
-            <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, openings: openings.filter((x) => x.id !== o.id) })}>
-              {S.openings.remove}
-            </button>
-          </div>
-          <p class="muted small">{S.openings.offsetLine(o.wall, S.openings.what.opening)}</p>
-          <div class="grid-3">
-            <NumberField compact id={`${o.id}-a0`} label={S.openings.offset} value={o.a0} unit="м" min={0} max={50} onChange={(v) => setOpening(o.id, { a0: v, a1: v + (o.a1 - o.a0) })} />
-            <NumberField compact id={`${o.id}-a1`} label={S.openings.widthAlong} value={span(o.a0, o.a1)} unit="м" min={0.1} max={50} onChange={(v) => setOpening(o.id, { a1: o.a0 + v })} />
-            <NumberField compact id={`${o.id}-h`} label={S.openings.height} value={o.height} unit="м" min={0.3} max={20} onChange={(v) => setOpening(o.id, { height: v })} />
-          </div>
-          {kindSelect(o.id, openingAsItem(o), 'arch')}
-        </div>
-      ))}
       <div class="btn-row">
         <button type="button" class="btn" aria-label="Добавить коридор" onClick={addCorridor}>{S.openings.addCorridor}</button>
-        <button type="button" class="btn" aria-label="Добавить проём" onClick={addOpening}>{S.openings.addOpening}</button>
         <button type="button" class="btn" aria-label="Добавить нишу" onClick={addNiche}>{S.shape.addNiche}</button>
       </div>
       <p class="muted small">{S.shape.nicheHint}</p>
@@ -175,33 +161,58 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
 
       <h3 class="subhead">{S.openings.featuresTitle}</h3>
       <p class="muted small">{S.openings.featuresIntro}</p>
-      {feats.map((f, i) => (
-        <div key={f.id} class="zone-card">
-          <div class="zone-card__head">
-            <SelectField
-              label={`${f.kind === 'window' ? S.openings.window : S.openings.door} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
-              value={f.wall}
-              options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))}
-              onChange={(v) => setFeature(f.id, { wall: v as WallId })}
-            />
-            <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, features: feats.filter((x) => x.id !== f.id) })}>
-              {S.openings.remove}
-            </button>
+      <div class="wall-items">
+        {openings.map((o, i) => (
+          <div key={o.id} class="zone-card">
+            <div class="zone-card__head">
+              <SelectField
+                label={`${S.openings.opening} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
+                value={o.wall}
+                options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))}
+                onChange={(v) => setOpening(o.id, { wall: v as WallId })}
+              />
+              <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, openings: openings.filter((x) => x.id !== o.id) })}>
+                {S.openings.remove}
+              </button>
+            </div>
+            <p class="muted small">{S.openings.offsetLine(o.wall, S.openings.what.opening)}</p>
+            <div class="grid-3">
+              <NumberField compact id={`${o.id}-a0`} label={S.openings.offset} value={o.a0} unit="м" min={0} max={50} onChange={(v) => setOpening(o.id, { a0: v, a1: v + (o.a1 - o.a0) })} />
+              <NumberField compact id={`${o.id}-a1`} label={S.openings.widthAlong} value={span(o.a0, o.a1)} unit="м" min={0.1} max={50} onChange={(v) => setOpening(o.id, { a1: o.a0 + v })} />
+              <NumberField compact id={`${o.id}-h`} label={S.openings.height} value={o.height} unit="м" min={0.3} max={20} onChange={(v) => setOpening(o.id, { height: v })} />
+            </div>
+            {kindSelect(o.id, openingAsItem(o), 'arch')}
           </div>
-          <p class="muted small">{S.openings.offsetLine(f.wall, S.openings.what[f.kind])}</p>
-          <div class="grid-2">
-            <NumberField compact id={`${f.id}-a0`} label={S.openings.offset} value={f.a0} unit="м" min={0} max={50} onChange={(v) => setFeature(f.id, { a0: v, a1: v + (f.a1 - f.a0) })} />
-            <NumberField compact id={`${f.id}-a1`} label={S.openings.widthAlong} value={span(f.a0, f.a1)} unit="м" min={0.1} max={50} onChange={(v) => setFeature(f.id, { a1: f.a0 + v })} />
-            {f.kind === 'window' && <NumberField compact id={`${f.id}-b`} label={S.openings.bottom} value={f.bottom} unit="м" min={0} max={10} onChange={(v) => setFeature(f.id, { bottom: v })} />}
-            <NumberField compact id={`${f.id}-t`} label={f.kind === 'window' ? S.openings.top : S.openings.height} value={f.top} unit="м" min={0.3} max={20} onChange={(v) => setFeature(f.id, { top: v })} />
+        ))}
+        {feats.map((f, i) => (
+          <div key={f.id} class="zone-card">
+            <div class="zone-card__head">
+              <SelectField
+                label={`${f.kind === 'window' ? S.openings.window : S.openings.door} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
+                value={f.wall}
+                options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))}
+                onChange={(v) => setFeature(f.id, { wall: v as WallId })}
+              />
+              <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, features: feats.filter((x) => x.id !== f.id) })}>
+                {S.openings.remove}
+              </button>
+            </div>
+            <p class="muted small">{S.openings.offsetLine(f.wall, S.openings.what[f.kind])}</p>
+            <div class="grid-2">
+              <NumberField compact id={`${f.id}-a0`} label={S.openings.offset} value={f.a0} unit="м" min={0} max={50} onChange={(v) => setFeature(f.id, { a0: v, a1: v + (f.a1 - f.a0) })} />
+              <NumberField compact id={`${f.id}-a1`} label={S.openings.widthAlong} value={span(f.a0, f.a1)} unit="м" min={0.1} max={50} onChange={(v) => setFeature(f.id, { a1: f.a0 + v })} />
+              {f.kind === 'window' && <NumberField compact id={`${f.id}-b`} label={S.openings.bottom} value={f.bottom} unit="м" min={0} max={10} onChange={(v) => setFeature(f.id, { bottom: v })} />}
+              <NumberField compact id={`${f.id}-t`} label={f.kind === 'window' ? S.openings.top : S.openings.height} value={f.top} unit="м" min={0.3} max={20} onChange={(v) => setFeature(f.id, { top: v })} />
+            </div>
+            {kindSelect(f.id, f, f.kind)}
           </div>
-          {kindSelect(f.id, f, f.kind)}
-        </div>
-      ))}
-      <div class="btn-row">
-        <button type="button" class="btn" aria-label="Добавить окно" onClick={() => addFeature('window')}>{S.openings.addWindow}</button>
-        <button type="button" class="btn" aria-label="Добавить дверь" onClick={() => addFeature('door')}>{S.openings.addDoor}</button>
+        ))}
       </div>
+      <ActionMenu label={S.openings.addOpening} actions={[
+        { label: S.openings.window, onSelect: () => addFeature('window') },
+        { label: S.openings.door, onSelect: () => addFeature('door') },
+        { label: 'Проём без двери', onSelect: addOpening },
+      ]} />
       <SelectField
         label={S.model.title}
         value={room.model ?? 'auto'}

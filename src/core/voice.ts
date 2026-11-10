@@ -593,6 +593,7 @@ export function spotAllowed(room: Room, x: number, y: number, facing: number, s:
 }
 
 export interface VoiceMap {
+  goal: VoiceGoal;
   x0: number; y0: number; step: number; nx: number; ny: number;
   /** Лучшая оценка в узле (по всем направлениям); NaN — здесь не встать. */
   scores: Float32Array;
@@ -606,8 +607,16 @@ export interface VoiceMap {
 
 export const facingAngle = (i: number) => (i * 2 * Math.PI) / FACINGS;
 
+/** Only the ranking changes; both metrics use the existing acoustic calculation. */
+export type VoiceGoal = 'flatness' | 'room';
+function voiceMapScore(p: Float64Array, refl: Float64Array, goal: VoiceGoal): number {
+  return goal === 'room'
+    ? 10 * Math.log10(refl.reduce((sum, value) => sum + value, 0) / refl.length)
+    : std(Array.from(p, (w) => 10 * Math.log10(w)));
+}
+
 /** Карта: в каждом узле — лучшее из 16 направлений. */
-export function voiceMap(room: Room, s: VoiceSettings, onProgress?: (v: number) => void): VoiceMap {
+export function voiceMap(room: Room, s: VoiceSettings, onProgress?: (v: number) => void, goal: VoiceGoal = 'flatness'): VoiceMap {
   const ctx = voiceContext(room, s);
   const area = room.depth * room.width;
   const step = Math.max(0.15, Math.ceil(Math.sqrt(area / 320) * 20) / 20);
@@ -623,8 +632,8 @@ export function voiceMap(room: Room, s: VoiceSettings, onProgress?: (v: number) 
         const phi = facingAngle(q);
         if (!spotAllowed(room, x, y, phi, s)) continue;
         const g = geometry(ctx, x, y, phi);
-        const { p } = bandPower(ctx, voicePaths(ctx, x, y, phi), modalGain(ctx, g, psiS));
-        const v = std(Array.from(p, (w) => 10 * Math.log10(w)));
+        const { p, refl } = bandPower(ctx, voicePaths(ctx, x, y, phi), modalGain(ctx, g, psiS));
+        const v = voiceMapScore(p, refl, goal);
         if (v < best) { best = v; bf = phi; }
       }
       if (Number.isFinite(best)) { scores[i * ny + j] = best; facing[i * ny + j] = bf; allowed[i * ny + j] = 1; }
@@ -640,7 +649,7 @@ export function voiceMap(room: Room, s: VoiceSettings, onProgress?: (v: number) 
     if (best.length === 3) break;
   }
   const fin = nodes.map((n) => n.v);
-  return { x0, y0, step, nx, ny, scores, facing, allowed, best, min: fin.length ? fin[0] : 0, max: fin.length ? fin[fin.length - 1] : 0 };
+  return { goal, x0, y0, step, nx, ny, scores, facing, allowed, best, min: fin.length ? fin[0] : 0, max: fin.length ? fin[fin.length - 1] : 0 };
 }
 
 /** Направление взгляда словами: к какой стене или в какой угол. */
@@ -664,18 +673,18 @@ export function relativeSide(spot: VoiceSpot, p: Vec3, surface: VoiceSurface): '
 }
 
 /** Оценки всех 16 направлений в одном месте (NaN — так не встать: микрофон у стены). */
-export function facingScores(ctx: VoiceCtx, x: number, y: number): number[] {
+export function facingScores(ctx: VoiceCtx, x: number, y: number, goal: VoiceGoal = 'flatness'): number[] {
   const g0 = geometry(ctx, x, y, 0);
   const psiS = ctx.modal ? shapes(ctx.modal, g0.S) : undefined;
   return Array.from({ length: FACINGS }, (_, q) => {
     const phi = facingAngle(q);
     if (!spotAllowed(ctx.room, x, y, phi, ctx.s)) return NaN;
-    const { p } = bandPower(ctx, voicePaths(ctx, x, y, phi), modalGain(ctx, geometry(ctx, x, y, phi), psiS));
-    return std(Array.from(p, (w) => 10 * Math.log10(w)));
+    const { p, refl } = bandPower(ctx, voicePaths(ctx, x, y, phi), modalGain(ctx, geometry(ctx, x, y, phi), psiS));
+    return voiceMapScore(p, refl, goal);
   });
 }
 
-/** Словесная оценка неровности: до 0,5 дБ — почти не окрашивает, до 1 — слегка, дальше — заметно. */
+/** Степень неровности спектра; не оценивает количество реверберации. */
 export function voiceGrade(v: number): 'good' | 'mid' | 'bad' {
   return v < 0.5 ? 'good' : v < 1 ? 'mid' : 'bad';
 }

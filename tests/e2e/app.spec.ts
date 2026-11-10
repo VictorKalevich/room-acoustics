@@ -448,7 +448,8 @@ test('014: «Очистить» на экране комнаты; модель �
   await model.scrollIntoViewIfNeeded();
   await expect(model.locator('canvas')).toBeVisible();
   // окно: отступ и ширина; при сдвиге ширина сохраняется
-  await page.getByRole('button', { name: 'Добавить окно' }).click();
+  await page.getByRole('button', { name: 'Добавить проём', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Окно', exact: true }).click();
   const win = page.locator('.zone-card').filter({ hasText: 'Окно 1' });
   await expect(win).toContainText('от угла у стены с колонками до ближнего края окна');
   await win.getByLabel('Ширина', { exact: true }).fill('1,5');
@@ -513,7 +514,8 @@ test('015: отражения от передней и задней стен; э
   await page.getByRole('button', { name: 'Комната' }).click();
   await page.getByLabel('Глубина', { exact: true }).fill('4');
   await page.getByLabel('Ширина', { exact: true }).fill('3');
-  await page.getByRole('button', { name: 'Добавить окно' }).click();
+  await page.getByRole('button', { name: 'Добавить проём', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Окно', exact: true }).click();
   const win = page.locator('.zone-card').filter({ hasText: 'Окно 1' });
   await win.getByLabel('Отступ', { exact: true }).fill('0');
   await win.getByLabel('Ширина', { exact: true }).fill('4');

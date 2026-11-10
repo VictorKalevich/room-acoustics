@@ -33,7 +33,7 @@ function run(job: Job) {
       case 'modes': result = waveSystemModes(p.room, p.fMax, progress); break;
       case 'field': result = computeField(p, progress); break;
       case 'subFilters': result = optimizeSubFilters(p.room, p.sources, p.constraints, p.setup); break;
-      case 'voiceMap': result = voiceMap(p.room, p.settings, progress); break;
+      case 'voiceMap': result = voiceMap(p.room, p.settings, progress, p.goal); break;
       default: throw new Error(`Неизвестная задача ${type}`);
     }
     const fr = result as { energy?: Float32Array; mask?: Uint8Array };

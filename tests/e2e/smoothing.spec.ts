@@ -71,12 +71,12 @@ test('legacy sitting project keeps mouth height without the posture switch', asy
   await page.getByRole('button', { name: 'Открыть', exact: true }).click();
   await page.getByRole('button', { name: 'Открыть меню' }).click();
   await page.getByRole('button', { name: /Место для записи/ }).click();
-  await expect(page.getByLabel('Высота рта / микрофона', { exact: true })).toHaveValue('123,5');
+  await expect(page.getByLabel('Высота микрофона', { exact: true })).toHaveValue('123,5');
   await expect(page.getByRole('radio', { name: /^(Сидя|Стоя)$/ })).toHaveCount(0);
-  await page.getByLabel('Высота рта / микрофона', { exact: true }).fill('145');
+  await page.getByLabel('Высота микрофона', { exact: true }).fill('145');
   await page.getByLabel('От рта до микрофона', { exact: true }).focus();
   await expect(page.locator('.score__value:visible').first()).not.toHaveText('…');
   await page.waitForTimeout(500); // autosave debounce
   await page.reload();
-  await expect(page.getByLabel('Высота рта / микрофона', { exact: true })).toHaveValue('145');
+  await expect(page.getByLabel('Высота микрофона', { exact: true })).toHaveValue('145');
 });
