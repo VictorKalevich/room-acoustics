@@ -91,7 +91,14 @@ npm run build       # статическая сборка в dist/
 
 Структура: `src/core` — расчётное ядро (без DOM), `src/scan` — импорт и распознавание скана,
 `src/workers` — фоновые расчёты, `src/ui` — интерфейс. Спецификации и планы — в
-`specs/001-room-acoustics-mvp/` и `specs/002-manual-placement-tuning/`, принципы проекта — в `.specify/memory/constitution.md`.
+[индексе Spec Kit](specs/README.md), актуальное поведение — в
+[specs/current-state.md](specs/current-state.md), принципы — в
+[конституции](.specify/memory/constitution.md), решения — в [журнале](specs/decisions.md).
+
+При завершении каждой фичи обновляются Spec Kit и связанные документы, если задача
+дополняет или заменяет прежние требования. Правило закреплено в [AGENTS.md](AGENTS.md)
+и [CLAUDE.md](CLAUDE.md). Обсуждаемые, но не реализованные идеи отмечены отдельно
+в [specs/deferred.md](specs/deferred.md).
 
 ## Публикация на GitHub Pages
 

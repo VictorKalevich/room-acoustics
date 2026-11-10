@@ -1,5 +1,8 @@
 # Implementation Plan: Акустический калькулятор комнаты (MVP)
 
+Исторический план этапа 001, не полная схема нынешнего UI. Актуальная навигация и
+ответственность модулей — в [014](../014-ui-refactor/spec.md), обзор — в [индексе](../README.md).
+
 **Branch**: `001-room-acoustics-mvp` | **Date**: 2026-11-07 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/001-room-acoustics-mvp/spec.md`
