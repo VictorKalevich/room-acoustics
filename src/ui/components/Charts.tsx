@@ -25,11 +25,11 @@ interface Line {
  * АЧХ в точке прослушивания: комната, цель (без комнаты), базовая для сравнения.
  * yRange — своя шкала с нулём на 0 дБ (например, голос относительно прямого звука), иначе — по среднему, 33 дБ.
  */
-export function ResponseChart({ lines, fLo, fHi, yRange, yTicks: yt }: { lines: Line[]; fLo: number; fHi: number; yRange?: [number, number]; yTicks?: number[] }) {
+export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks: yt }: { lines: Line[]; referenceLines?: Line[]; fLo: number; fHi: number; yRange?: [number, number]; yTicks?: number[] }) {
   const W = 340, H = 210, l = 34, r = 10, t = 12, b = 26;
   const x = logScale(fLo, fHi, l, W - r);
   // центрируем по цели
-  const all = lines.flatMap((ln) => ln.db).filter((v) => Number.isFinite(v));
+  const all = (referenceLines ?? lines).flatMap((ln) => ln.db).filter((v) => Number.isFinite(v));
   const mean = all.reduce((a, v) => a + v, 0) / Math.max(1, all.length);
   const ref = yRange ? 0 : Math.round(mean / 5) * 5;
   const yMin = yRange ? yRange[0] : ref - 18;

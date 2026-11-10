@@ -316,7 +316,7 @@ export const S = {
     } as Record<'cardioid' | 'supercardioid', string>,
     posture: 'Положение',
     postures: { standing: 'Стоя', sitting: 'Сидя' } as Record<'standing' | 'sitting', string>,
-    mouthZ: 'Высота рта над полом',
+    mouthZ: 'Высота рта / микрофона',
     distance: 'От рта до микрофона',
     band: 'Частоты, которые учитываются',
     bandFrom: 'Нижняя частота',

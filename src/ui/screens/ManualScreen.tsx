@@ -13,7 +13,7 @@ import { isWave } from '../../core/geometry';
 import { useSetupEval } from '../useEval';
 import { compute, type ComputeJob } from '../compute';
 import { PlanView, HeatLegend, type PlanItem, type PlanMark } from '../components/PlanView';
-import { ResponseChart } from '../components/Charts';
+import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { NumberField, Panel, Segmented, Note, Details } from '../components/Fields';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -218,7 +218,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
         <h3 class="subhead">{S.manual.responseHere}</h3>
         {evalCur ? (
           <>
-            <ResponseChart
+            <SmoothedResponseChart screen="placement-manual"
               fLo={evalCur.fLo}
               fHi={evalCur.fHi}
               lines={[

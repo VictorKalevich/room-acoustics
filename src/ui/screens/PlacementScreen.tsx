@@ -13,7 +13,7 @@ import { PlanView, HeatLegend } from '../components/PlanView';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
 import type { Heatmap } from '../../core/field';
 import { isFlat } from '../../core/objective';
-import { ResponseChart } from '../components/Charts';
+import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { S } from '../strings';
 import { Term } from '../components/Term';
 import { fmt, fmtInt } from '../format';
@@ -245,7 +245,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             <button type="button" class="btn" onClick={() => openManual(current)}>{S.manual.openManual}</button>
             <Positions p={current} />
             <h3 class="subhead">{S.placement.response}</h3>
-            <ResponseChart
+            <SmoothedResponseChart screen="placement-auto"
               fLo={result.fLo}
               fHi={result.fHi}
               lines={[

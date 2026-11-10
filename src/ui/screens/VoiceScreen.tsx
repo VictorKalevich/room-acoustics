@@ -5,13 +5,13 @@ import type { Project } from '../../state/project';
 import type { Heatmap } from '../../core/field';
 import { shownTreatments } from '../../core/treatments';
 import {
-  evaluateVoice, facingAngle, facingName, facingScores, MOUTH_Z, relativeSide, spotAllowed, voiceContext, voiceGrade,
-  VOICE_BAND, VOICE_DEFAULTS, FACINGS, type MicPattern, type Posture, type VoiceMap, type VoiceSettings, type VoiceSpot,
+  evaluateVoice, facingAngle, facingName, facingScores, relativeSide, spotAllowed, voiceContext, voiceGrade,
+  VOICE_BAND, VOICE_DEFAULTS, FACINGS, type MicPattern, type VoiceMap, type VoiceSettings, type VoiceSpot,
 } from '../../core/voice';
 import { compute, type ComputeJob } from '../compute';
 import { Details, Note, NumberField, Panel, Segmented } from '../components/Fields';
 import { HeatLegend, PlanView, type PlanMark, type WallMark } from '../components/PlanView';
-import { ResponseChart } from '../components/Charts';
+import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { S } from '../strings';
 import { fmt } from '../format';
 
@@ -120,16 +120,11 @@ export function VoiceScreen({ project, onVoice }: Props) {
         <p class="small">{t.intro}</p>
         <Segmented label={t.mic} value={v.mic} options={(['cardioid', 'supercardioid'] as MicPattern[]).map((m) => ({ value: m, label: t.mics[m] }))} onChange={(mic) => set({ mic })} />
         <p class="muted small">{t.micHint[v.mic]}</p>
-        <Segmented
-          label={t.posture}
-          value={v.posture}
-          options={(['standing', 'sitting'] as Posture[]).map((p) => ({ value: p, label: t.postures[p] }))}
-          onChange={(posture) => set({ posture, mouthZ: MOUTH_Z[posture] })}
-        />
         <div class="grid-2">
-          <NumberField compact id="voice-mouth" label={t.mouthZ} value={v.mouthZ} unit="м" min={0.6} max={2.2} onChange={(mouthZ) => set({ mouthZ })} />
+          <NumberField compact id="voice-mouth" label={t.mouthZ} value={v.mouthZ * 100} unit="см" digits={1} min={60} max={220} onChange={(cm) => set({ mouthZ: cm / 100 })} />
           <NumberField compact id="voice-dist" label={t.distance} value={Math.round(v.distance * 100)} unit="см" digits={0} min={5} max={60} onChange={(cm) => set({ distance: cm / 100 })} />
         </div>
+        <p class="muted small">Микрофон расположен на высоте рта. Для записи сидя или стоя укажите нужную высоту.</p>
         <span class="range-row__label">{t.band}</span>
         <div class="grid-2">
           <NumberField compact id="voice-flo" label={t.bandFrom} value={v.fLo} unit="Гц" digits={0} min={20} max={2000} onChange={(fLo) => set({ fLo })} />
@@ -225,7 +220,7 @@ export function VoiceScreen({ project, onVoice }: Props) {
         {ev && (
           <>
             <h3 class="subhead">{t.response}</h3>
-            <ResponseChart fLo={v.fLo} fHi={v.fHi} yRange={[-6, 6]} yTicks={[-5, 0, 5]} lines={[{ f: ev.f, db: ev.db, cls: 'is-room' }]} />
+            <SmoothedResponseChart screen="voice" fLo={v.fLo} fHi={v.fHi} yRange={[-6, 6]} yTicks={[-5, 0, 5]} lines={[{ f: ev.f, db: ev.db, cls: 'is-room' }]} />
             <p class="muted small">{t.responseHint(fmt(v.fLo, 0), fmt(v.fHi, 0))}</p>
           </>
         )}

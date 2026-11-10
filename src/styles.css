@@ -725,6 +725,15 @@ line.chart__grid { stroke: var(--line); stroke-width: 1; }
 
 /* Shared workspaces: navigation, context and collapsible room sections. */
 .retained-section:not([hidden]) { display: contents; }
+.smoothed-chart { min-width: 0; }
+.chart-controls { margin: 12px 0; }
+.chart-controls .segmented { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); }
+.chart-controls .segmented button { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.smoothing-slider { display: block; width: 100%; height: 44px; accent-color: var(--accent); margin: 4px 0 0; }
+.smoothing-stops { display: grid; gap: 2px; }
+.smoothing-stops button { min-width: 0; min-height: 44px; padding: 5px 2px; font-size: 13px; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; cursor: pointer; }
+.smoothing-stops button.is-on { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+.smoothing-ends { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; }
 .section-nav { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--surface); margin-bottom: 14px; }
 .section-nav--four { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (min-width: 600px) { .section-nav--four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
