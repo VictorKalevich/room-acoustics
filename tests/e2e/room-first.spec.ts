@@ -22,7 +22,7 @@ test.describe('комнаты ещё нет', () => {
     // меню: только то, что работает без комнаты
     await page.getByRole('button', { name: 'Открыть меню' }).click();
     const menu = page.getByRole('navigation', { name: 'Меню' });
-    await expect(menu.getByRole('button', { name: /Импорт и экспорт/ })).toBeVisible();
+    await expect(menu.getByRole('button', { name: /Проекты/ })).toBeVisible();
     await expect(menu.getByRole('button', { name: /Помощник и словарь/ })).toBeVisible();
     await expect(menu.getByRole('button', { name: /Измерения/ })).toHaveCount(0);
     await expect(menu.getByRole('button', { name: /Отчёт/ })).toHaveCount(0);

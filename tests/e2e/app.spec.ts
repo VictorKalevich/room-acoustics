@@ -138,8 +138,8 @@ test('003: коридор за аркой — моды системы и вол�
   await expect(page.locator('.model-tag').first()).toContainText('волновая');
 });
 
-test('версия приложения видна на экране «Проекты»', async ({ page }) => {
-  await page.goto('/#projects');
+test('версия приложения видна в «О приложении» (024: больше не повторяется на «Проектах»)', async ({ page }) => {
+  await page.goto('/#about');
   await expect(page.locator('.app-version')).toContainText(/Версия от .*\(\w+\)/);
 });
 
@@ -167,8 +167,9 @@ test('004: экран 3D — поле, способы показа, порог �
   await expect(page.locator('.plan__field rect').first()).toBeVisible();
   await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   await expect(page.locator('.modes-table')).toBeVisible();
-  await page.getByRole('button', { name: 'Проекты' }).click();
-  await expect(page.locator('.app-version')).toBeVisible();
+  await page.getByRole('button', { name: 'Открыть меню' }).click();
+  await page.locator('.drawer__item', { hasText: 'Проекты' }).click();
+  await expect(page.locator('#pname')).toBeVisible();
 });
 
 test('005: меню слева открывает новые разделы', async ({ page }) => {
@@ -176,7 +177,7 @@ test('005: меню слева открывает новые разделы', as
   for (const [item, check] of [
     ['Измерения', '.screen >> text=Замер свипом'],
     ['Отчёт', '.report__title'],
-    ['Импорт и экспорт', 'text=Синхронизация через Файлы'],
+    ['Проекты', '#pname'],
     ['Помощник и словарь', 'text=Словарь терминов'],
     ['О приложении', '.app-version'],
   ] as const) {
@@ -229,13 +230,15 @@ test('аудит: свои фильтры сабвуфера — возможн�
   await expect(page.locator('.subf').getByRole('button', { name: 'Применено' })).toBeVisible();
 });
 
-test('аудит: синхронизация — открыть файл другого проекта', async ({ page }) => {
+test('аудит: синхронизация — открыть файл другого проекта (старый адрес #sync ведёт в «Проекты»)', async ({ page }) => {
   await page.goto('/#sync');
   // файл с другим проектом (минимальный корректный)
   const file = JSON.stringify({ format: 'room-acoustics-project', version: 4, project: { id: 'other', name: 'Дача', updatedAt: '2026-11-01T10:00:00.000Z', room: { depth: 6, width: 4.5, height: 2.7 } } });
   await page.locator('input[accept=".json,application/json"]').setInputFiles({ name: 'dacha.roomacoustics.json', mimeType: 'application/json', buffer: Buffer.from(file) });
-  await expect(page.getByText('В файле другой проект — «Дача»')).toBeVisible();
-  await page.getByRole('button', { name: 'Открыть', exact: true }).click();
+  // 024: несохранённый текущий проект — предупреждение перед заменой
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText('Открыть проект «Дача» из файла?');
+  await dialog.getByRole('button', { name: 'Открыть проект' }).click();
   await expect(page.locator('.topbar__room')).toContainText('Дача, 6,00 × 4,50 × 2,70');
 });
 

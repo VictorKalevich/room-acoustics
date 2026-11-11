@@ -31,7 +31,7 @@ export const componentFamilies = [
 export const controlSkins = {
   button: [
     '.btn', '.segmented button', '.tabs button', '.section-nav button', '.tabbar button',
-    '.topbar__menu', '.topbar__projects', '.drawer__item', '.sheet__close', '.update-banner__close',
+    '.topbar__menu', '.drawer__item', '.sheet__close', '.update-banner__close',
     '.term', '.chip', '.play-btn', '.hrange__thumb', '.smoothing-stops button', '.action-menu__popup > button',
   ],
   input: [

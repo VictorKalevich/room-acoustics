@@ -205,17 +205,8 @@ export const loadDraft = () =>
     d ? normalizeProject(d) : undefined,
   );
 
-export function downloadProject(p: Project) {
-  const blob = new Blob([serializeProject(p)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${p.name.replace(/[\\/:*?"<>|]+/g, '_') || 'room'}${FILE_EXT}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
+/** Имя файла проекта по названию (024: экспорт идёт через «Поделиться» → «Сохранить в Файлы» или скачивание). */
+export const projectFileName = (p: Project) => `${p.name.replace(/[\\/:*?"<>|]+/g, '_') || 'room'}${FILE_EXT}`;
 
 // ---------- Скан проекта (020) ----------
 

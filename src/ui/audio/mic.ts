@@ -119,11 +119,12 @@ export function playBuffer(x: Float32Array, delay = 0.4): Promise<void> {
 }
 
 /** Отдать файл: «Поделиться» (на iPhone — сохранить в Файлы, AirDrop) или обычное скачивание. */
-export async function shareFile(data: BlobPart, name: string, type: string): Promise<void> {
+/** Передать файл через «Поделиться» (на iPhone — «Сохранить в Файлы») или скачать. false — пользователь отменил (024). */
+export async function shareFile(data: BlobPart, name: string, type: string): Promise<boolean> {
   const file = new File([data], name, { type });
   const nav = navigator as Navigator & { canShare?: (d: unknown) => boolean };
   if (nav.canShare?.({ files: [file] })) {
-    try { await nav.share({ files: [file], title: name }); return; } catch (e) { if ((e as Error).name === 'AbortError') return; }
+    try { await nav.share({ files: [file], title: name }); return true; } catch (e) { if ((e as Error).name === 'AbortError') return false; }
   }
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');
@@ -133,4 +134,5 @@ export async function shareFile(data: BlobPart, name: string, type: string): Pro
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return true;
 }

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Room } from '../core/types';
 import { useProject } from './useProject';
-import type { Project } from '../state/project';
 import { computeReverb } from '../core/reverb';
 import { computeModes } from '../core/modes';
 import { RoomScreen } from './screens/RoomScreen';
@@ -23,11 +22,9 @@ import { HelpScreen } from './screens/HelpScreen';
 import { MeasureScreen } from './screens/MeasureScreen';
 import { ReportScreen } from './screens/ReportScreen';
 import { VoiceScreen } from './screens/VoiceScreen';
-import { SyncScreen } from './screens/SyncScreen';
 import { OverviewScreen } from './screens/OverviewScreen';
 import { PlacementFirst, RoomFirst } from './screens/Gates';
-import { AboutPanel } from './screens/ProjectsScreen';
-import { ProblemReport } from './components/ProblemReport';
+import { AboutScreen } from './screens/AboutScreen';
 import { setFieldFocus } from './screens/FieldScreen';
 import { S } from './strings';
 import { fmt } from './format';
@@ -40,7 +37,7 @@ import { activeTreatments } from '../core/treatments';
  */
 const NEEDS_ROOM: Tab[] = ['modes', 'placement', 'tuning', 'measure', 'voice', 'report'];
 
-/** Вкладки нижней панели по порядку зависимостей (022); «Проекты» — кнопка в верхней панели. */
+/** Вкладки нижней панели по порядку зависимостей (022); «Проекты» — в меню (024, раньше — кнопка в верхней панели). */
 const BAR: ('room' | 'placement' | 'modes' | 'tuning' | 'voice')[] = ['room', 'placement', 'modes', 'tuning', 'voice'];
 const TITLES: Record<Tab, string> = {
   room: S.room.title,
@@ -51,7 +48,6 @@ const TITLES: Record<Tab, string> = {
   measure: S.drawer.items.measure,
   voice: S.drawer.items.voice,
   report: S.drawer.items.report,
-  sync: S.drawer.items.sync,
   help: S.drawer.items.help,
   about: S.drawer.items.about,
 };
@@ -59,7 +55,7 @@ const TITLES: Record<Tab, string> = {
 export function App() {
   const { route, go } = useNavigation();
   const { tab, placement: placementMode, analysis: modesView } = route;
-  // 023: «Проекты» возвращают туда, откуда их открыли (кнопка «← Назад» и повторное нажатие «Проекты»)
+  // 023: «Проекты» возвращают туда, откуда их открыли (кнопка «← Назад»)
   const lastTab = useRef<Tab>(tab === 'projects' ? 'room' : tab);
   useEffect(() => { if (tab !== 'projects') lastTab.current = tab; }, [tab]);
   const back = () => go(lastTab.current);
@@ -99,15 +95,6 @@ export function App() {
               {project.name}{roomReady ? `, ${fmt(r.depth, 2)} × ${fmt(r.width, 2)} × ${fmt(r.height, 2)} м` : ''}
             </span>
           </div>
-          <button
-            type="button"
-            class={`topbar__projects${tab === 'projects' ? ' is-on' : ''}`}
-            aria-current={tab === 'projects' ? 'page' : undefined}
-            onClick={() => (tab === 'projects' ? back() : go('projects'))}
-          >
-            <TabIcon tab="projects" />
-            <span>{S.tabs.projects}</span>
-          </button>
         </div>
       </header>
 
@@ -183,9 +170,8 @@ export function App() {
         </RetainedSection>}
         {roomReady && tab === 'voice' && <VoiceScreen project={project} onVoice={onVoice} />}
         {roomReady && tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} onPlacement={toPlacement} />}
-        {tab === 'sync' && <SyncScreen project={project} onReplace={(p: Project) => setProject(p)} />}
         {tab === 'help' && <HelpScreen project={project} onGo={(t) => go(t)} onWizard={refreshWizard} />}
-        {tab === 'about' && <div class="screen"><AboutPanel /><ProblemReport project={project} /></div>}
+        {tab === 'about' && <AboutScreen project={project} />}
       </main>
 
       <MiniPlayer />
@@ -209,7 +195,6 @@ function TabIcon({ tab }: { tab: Tab }) {
     placement: 'M5 4h4v5H5z M15 4h4v5h-4z M12 19.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M7 9l5 6 5-6',
     tuning: 'M5 4v16 M12 4v16 M19 4v16 M3 15h4 M10 8h4 M17 13h4',
     voice: 'M10 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M3.5 21v-1.5a6.5 6.5 0 0 1 13 0V21 M18.2 5.5a1.5 1.5 0 0 1 3 0v3a1.5 1.5 0 0 1-3 0z M19.7 10v3.5',
-    projects: 'M4 6h6l2 2h8v11H4z',
   };
   return (
     <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">

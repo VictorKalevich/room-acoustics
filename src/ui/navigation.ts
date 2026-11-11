@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
-export type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects' | 'measure' | 'voice' | 'report' | 'sync' | 'help' | 'about';
+export type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects' | 'measure' | 'voice' | 'report' | 'help' | 'about';
 export type AnalysisView = 'overview' | 'list' | 'field';
 export type TuningView = 'sub' | 'eq' | 'treatment';
 export type MeasureView = 'sweep' | 'clap' | 'rta' | 'compare';
@@ -11,7 +11,7 @@ export const ROOM_STEPS: RoomStep[] = ['size', 'walls', 'floor', 'furniture'];
 export type Destination = Tab | 'analysis' | 'analysis/list' | 'placement/auto' | 'field' | 'overview' | 'manual' | 'room/overview' | `room/${RoomStep}` | `tuning/${TuningView}` | `measure/${MeasureView}`;
 export interface Route { tab: Tab; analysis: AnalysisView; placement: 'auto' | 'manual'; tuning: TuningView; measure: MeasureView; room: RoomView }
 const INITIAL: Route = { tab: 'room', analysis: 'overview', placement: 'auto', tuning: 'sub', measure: 'sweep', room: 'overview' };
-const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects', 'measure', 'voice', 'report', 'sync', 'help', 'about'];
+const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects', 'measure', 'voice', 'report', 'help', 'about'];
 
 /** Old bookmarks remain valid; view selection is UI state, never project data. */
 export function resolveRoute(hash: string, previous: Route = INITIAL): Route {
@@ -20,6 +20,8 @@ export function resolveRoute(hash: string, previous: Route = INITIAL): Route {
   if (path === 'modes' || path === 'analysis/list') return { ...previous, tab: 'modes', analysis: 'list' };
   if (path === 'field') return { ...previous, tab: 'modes', analysis: 'field' };
   if (path === 'manual') return { ...previous, tab: 'placement', placement: 'manual' };
+  // 024: «Импорт и экспорт» объединён с «Проектами»
+  if (path === 'sync') return { ...previous, tab: 'projects' };
   if (path === 'placement' || path === 'placement/auto') return { ...previous, tab: 'placement', placement: 'auto' };
   const [tab, section] = path.split('/');
   if (tab === 'room') return { ...previous, tab, room: ROOM_STEPS.includes(section as RoomStep) ? section as RoomStep : 'overview' };

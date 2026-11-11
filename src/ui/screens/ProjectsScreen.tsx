@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { newProject } from '../../state/project';
-import { deleteProject, deleteScan, downloadProject, listProjects, parseProjectFile, saveProject, storageAvailable } from '../../state/storage';
+import { deleteProject, deleteScan, listProjects, parseProjectFile, projectFileName, saveProject, serializeProject, storageAvailable } from '../../state/storage';
+import { shareFile } from '../audio/mic';
 import { ConfirmSheet, Panel, Note } from '../design-system';
 import { S } from '../strings';
-import { BUILD, checkForUpdate, getStatus, onStatus, type UpdateStatus } from '../updates';
 import { fmt } from '../format';
 import { dropRoomDraft, loadRoomDraft } from '../roomDraft';
 import type { Destination } from '../navigation';
@@ -20,17 +20,25 @@ interface Props {
 
 /** Что заменит текущий проект (023): новый, сохранённый из списка или открытый из файла. */
 type Replace = { kind: 'new' } | { kind: 'open'; p: Project } | { kind: 'import'; p: Project };
+type Msg = { text: string; tone: 'good' | 'warn'; at: 'project' | 'file' };
+
+/** Последний экспорт в файл — отметка на устройстве; ключ прежнего экрана «Импорт и экспорт» (024). */
+const exportKey = (id: string) => `ra-sync-${id}`;
+const readExport = (id: string) => { try { return localStorage.getItem(exportKey(id)); } catch { return null; } };
+const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 
 /**
- * Проекты. 023: «← Назад» возвращает на прежний экран; «Сохранить» и «Экспорт» — только у созданной
- * комнаты; «Новый проект» рядом с «Сохранить»; файл проекта — отдельной строкой. «Новый проект», «Открыть»
- * из списка и «Импорт» спрашивают, если введённое в текущем проекте пропадёт.
+ * Проекты — всё о файлах проекта, по группам (024): «Текущий проект» (название, «Сохранить», «Новый проект»),
+ * «Импорт и экспорт» (перенос файлом, бывший одноимённый экран меню), «Сохранённые». Открывается из меню.
+ * 023: «← Назад» возвращает на прежний экран; «Сохранить» и «Экспорт» — только у созданной комнаты;
+ * «Новый проект», «Открыть» и «Импорт» спрашивают, если введённое в текущем проекте пропадёт.
  */
 export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: Props) {
   const [list, setList] = useState<Project[]>([]);
   const [canStore, setCanStore] = useState(true);
-  const [msg, setMsg] = useState<{ text: string; tone: 'good' | 'warn' } | null>(null);
+  const [msg, setMsg] = useState<Msg | null>(null);
   const [ask, setAsk] = useState<Replace | null>(null);
+  const [lastExport, setLastExport] = useState(() => readExport(project.id));
   const fileInput = useRef<HTMLInputElement>(null);
 
   const ready = project.roomReady;
@@ -48,7 +56,7 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
     dropRoomDraft(project.id);
     if (!savedCopy && next.id !== project.id) void deleteScan(project.id).catch(() => undefined);
     onReplace(next);
-    if (r.kind === 'import') setMsg({ text: S.projects.imported, tone: 'good' });
+    if (r.kind === 'import') setMsg({ text: S.projects.imported, tone: 'good', at: 'file' });
   };
   // спросить, только если введённое пропадёт: комната задана частично или созданная комната не сохранена
   const replace = (r: Replace) => (partial || unsaved ? setAsk(r) : replaceNow(r));
@@ -61,20 +69,34 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
   const save = async () => {
     try {
       await saveProject({ ...project, updatedAt: new Date().toISOString() });
-      setMsg({ text: S.projects.saved, tone: 'good' });
+      setMsg({ text: S.projects.saved, tone: 'good', at: 'project' });
       refresh();
     } catch {
-      setMsg({ text: S.projects.storageOff, tone: 'warn' });
+      setMsg({ text: S.projects.storageOff, tone: 'warn', at: 'project' });
     }
+  };
+
+  // 024: экспорт — через «Поделиться» (на iPhone «Сохранить в Файлы» → iCloud Drive), на компьютере — скачивание
+  const exportFile = async () => {
+    if (!(await shareFile(serializeProject(project), projectFileName(project), 'application/json'))) return;
+    const now = new Date().toISOString();
+    try { localStorage.setItem(exportKey(project.id), now); } catch { /* без хранилища — только до перезапуска */ }
+    setLastExport(now);
+    setMsg({ text: S.projects.exported, tone: 'good', at: 'file' });
   };
 
   const importFile = async (f: File) => {
     try {
-      replace({ kind: 'import', p: parseProjectFile(await f.text()) });
+      const p = parseProjectFile(await f.text());
+      // 024: в файле более старая версия этого же проекта — спросить всегда, как прежний «Импорт и экспорт»
+      if (p.id === project.id && p.updatedAt < project.updatedAt) setAsk({ kind: 'import', p });
+      else replace({ kind: 'import', p });
     } catch (e) {
-      setMsg({ text: (e as Error).message, tone: 'warn' });
+      setMsg({ text: (e as Error).message, tone: 'warn', at: 'file' });
     }
   };
+
+  const note = (at: Msg['at']) => msg?.at === at && <Note tone={msg.tone}>{msg.text}</Note>;
 
   return (
     <div class="screen">
@@ -88,6 +110,7 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
             <input id="pname" value={project.name} onInput={(e) => onRename((e.target as HTMLInputElement).value)} />
           </div>
         </div>
+        <p class="muted small">{S.projects.changed(fmtDate(project.updatedAt))}</p>
         <div class="btn-row">
           <button type="button" class="btn btn--primary" onClick={save} disabled={!canStore || !ready}>{S.projects.save}</button>
           <button type="button" class="btn btn--tonal" onClick={() => replace({ kind: 'new' })}>{S.projects.newProject}</button>
@@ -100,11 +123,20 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
             </div>
           </>
         )}
-        <h3 class="subhead">{S.projects.file}</h3>
+        {note('project')}
+        {!canStore && <Note tone="warn">{S.projects.storageOff}</Note>}
+      </Panel>
+
+      <Panel title={S.projects.file}>
         <div class="btn-row">
           <button type="button" class="btn" onClick={() => fileInput.current?.click()}><ImportIcon /> {S.projects.importFile}</button>
-          <button type="button" class="btn" disabled={!ready} onClick={() => downloadProject(project)}><ExportIcon /> {S.projects.exportFile}</button>
+          <button type="button" class="btn" disabled={!ready} onClick={() => void exportFile()}><ExportIcon /> {S.projects.exportFile}</button>
         </div>
+        {lastExport && <p class="muted small">{S.projects.lastExport(fmtDate(lastExport))}</p>}
+        {note('file')}
+        <p class="small">{S.projects.fileIntro}</p>
+        <ol class="small steps-list">{S.projects.fileSteps.map((t, ki) => <li key={ki}>{t}</li>)}</ol>
+        <p class="muted small">{S.projects.fileNote}</p>
         <input
           ref={fileInput}
           type="file"
@@ -116,9 +148,6 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
             (e.target as HTMLInputElement).value = '';
           }}
         />
-        {msg && <Note tone={msg.tone}>{msg.text}</Note>}
-        {!canStore && <Note tone="warn">{S.projects.storageOff}</Note>}
-        {ask && <ReplaceSheet ask={ask} project={project} partial={partial} onCancel={() => setAsk(null)} onConfirm={() => replaceNow(ask)} />}
       </Panel>
 
       <Panel title={S.projects.list}>
@@ -150,50 +179,32 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
           </ul>
         )}
       </Panel>
-
-      <AboutPanel />
-
-      <Panel title={S.projects.install}>
-        <p class="small">{S.projects.installText}</p>
-        <p class="muted small">{S.projects.privacy}</p>
-      </Panel>
+      {ask && <ReplaceSheet ask={ask} project={project} partial={partial} unsaved={unsaved} onCancel={() => setAsk(null)} onConfirm={() => replaceNow(ask)} />}
     </div>
   );
 }
 
-/** Предупреждение перед заменой текущего проекта (023). */
-function ReplaceSheet({ ask, project, partial, onCancel, onConfirm }: {
-  ask: Replace; project: Project; partial: boolean; onCancel: () => void; onConfirm: () => void;
+/** Предупреждение перед заменой текущего проекта (023; 024 — версия того же проекта из файла). */
+function ReplaceSheet({ ask, project, partial, unsaved, onCancel, onConfirm }: {
+  ask: Replace; project: Project; partial: boolean; unsaved: boolean; onCancel: () => void; onConfirm: () => void;
 }) {
   const T = S.projects;
-  // тот же проект из списка: откроется сохранённая версия, пропадут изменения после сохранения
-  const revert = ask.kind === 'open' && ask.p.id === project.id && !partial;
-  const title = ask.kind === 'new' ? T.newTitle : revert ? T.revertTitle : ask.kind === 'open' ? T.openTitle(ask.p.name) : T.importTitle(ask.p.name);
-  const text = revert ? T.revertText : partial ? T.leavePartial : T.leaveUnsaved;
-  const confirm = ask.kind === 'new' ? T.newConfirm : revert ? T.revertConfirm : T.openConfirm;
+  const loss = partial ? T.leavePartial : unsaved ? T.leaveUnsaved : '';
+  if (ask.kind === 'new') return <ConfirmSheet title={T.newTitle} text={loss} confirm={T.newConfirm} cancel={T.cancel} onCancel={onCancel} onConfirm={onConfirm} />;
+  const same = ask.p.id === project.id;
+  let title: string, text: string, confirm = T.openConfirm;
+  if (ask.kind === 'open' && same && !partial) {
+    // тот же проект из списка: откроется сохранённая версия, пропадут изменения после сохранения
+    title = T.revertTitle; text = T.revertText; confirm = T.revertConfirm;
+  } else if (ask.kind === 'import' && same) {
+    const f = fmtDate(ask.p.updatedAt), c = fmtDate(project.updatedAt);
+    title = T.sameTitle;
+    text = [ask.p.updatedAt < project.updatedAt ? T.sameOlder(f, c) : T.sameOther(f, c), loss].filter(Boolean).join(' ');
+  } else {
+    title = ask.kind === 'open' ? T.openTitle(ask.p.name) : T.importTitle(ask.p.name);
+    text = loss;
+  }
   return <ConfirmSheet title={title} text={text} confirm={confirm} cancel={T.cancel} onCancel={onCancel} onConfirm={onConfirm} />;
-}
-
-export function AboutPanel() {
-  const [st, setSt] = useState<UpdateStatus>(getStatus());
-  useEffect(() => onStatus(setSt), []);
-  const d = new Date(BUILD.time);
-  const date = Number.isNaN(d.getTime())
-    ? BUILD.time
-    : d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const text = st === 'idle' ? null : S.projects.status[st];
-  return (
-    <Panel title={S.projects.about}>
-      <p class="small app-version">{S.projects.version(date, BUILD.sha)}</p>
-      <p class="muted small">{S.projects.autoUpdate}</p>
-      <div class="btn-row">
-        <button type="button" class="btn" disabled={st === 'unsupported' || st === 'checking' || st === 'updating'} onClick={() => void checkForUpdate(true)}>
-          {S.projects.check}
-        </button>
-      </div>
-      {text && <Note tone={st === 'error' ? 'warn' : 'good'}>{text}</Note>}
-    </Panel>
-  );
 }
 
 // Значки файла проекта (023)

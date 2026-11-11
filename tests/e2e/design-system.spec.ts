@@ -4,7 +4,7 @@ import { controlSkins } from '../../src/ui/design-system/registry';
 test('all screens use registered control skins and shared text in both themes', async ({ page }) => {
   for (const theme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: theme as 'light' | 'dark' });
-    for (const route of ['room', 'room/size', 'room/walls', 'room/floor', 'room/furniture', 'voice', 'placement', 'manual', 'analysis', 'modes', 'field', 'tuning/sub', 'tuning/eq', 'tuning/treatment', 'measure/sweep', 'measure/clap', 'measure/rta', 'measure/compare', 'projects', 'report', 'sync', 'help', 'about']) {
+    for (const route of ['room', 'room/size', 'room/walls', 'room/floor', 'room/furniture', 'voice', 'placement', 'manual', 'analysis', 'modes', 'field', 'tuning/sub', 'tuning/eq', 'tuning/treatment', 'measure/sweep', 'measure/clap', 'measure/rta', 'measure/compare', 'projects', 'report', 'help', 'about']) {
       // Different query forces a document load, so the audit cannot inspect a retained previous route.
       await page.goto(`/?design-audit=${encodeURIComponent(route)}#${route}`);
       await expect(page.locator('.topbar__title')).toBeVisible();

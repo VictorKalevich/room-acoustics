@@ -12,9 +12,13 @@ describe('navigation compatibility', () => {
     expect(resolveRoute('#analysis')).toMatchObject({ tab: 'modes', analysis: 'overview' });
   });
   it('round trips specific workspace links', () => {
-    for (const path of ['room', 'room/size', 'room/walls', 'room/floor', 'room/furniture', 'analysis', 'modes', 'field', 'manual', 'placement', 'tuning/sub', 'tuning/eq', 'tuning/treatment', 'measure/sweep', 'measure/clap', 'measure/rta', 'measure/compare', 'voice', 'projects', 'sync', 'report', 'help', 'about']) {
+    for (const path of ['room', 'room/size', 'room/walls', 'room/floor', 'room/furniture', 'analysis', 'modes', 'field', 'manual', 'placement', 'tuning/sub', 'tuning/eq', 'tuning/treatment', 'measure/sweep', 'measure/clap', 'measure/rta', 'measure/compare', 'voice', 'projects', 'report', 'help', 'about']) {
       expect(routePath(resolveRoute(`#${path}`))).toBe(path);
     }
+  });
+  it('opens «Проекты» for the old «Импорт и экспорт» address (024)', () => {
+    expect(resolveRoute('#sync')).toMatchObject({ tab: 'projects' });
+    expect(routePath(resolveRoute('#sync'))).toBe('projects');
   });
   it('opens room overview for the old address and unknown room steps (019)', () => {
     expect(resolveRoute('#room')).toMatchObject({ tab: 'room', room: 'overview' });

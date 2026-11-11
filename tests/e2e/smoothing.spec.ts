@@ -62,13 +62,13 @@ test('smoothing changes only the curve, not the score, map or worker calculation
 });
 
 test('legacy sitting project keeps mouth height without the posture switch', async ({ page }) => {
-  await page.goto('/#sync');
+  await page.goto('/#projects');
   const file = JSON.stringify({ format: 'room-acoustics-project', version: 5, project: {
     id: 'height-check', name: 'Высота', updatedAt: '2026-11-10T10:00:00Z', room: { depth: 4, width: 3, height: 2.7 },
     voice: { posture: 'sitting', mouthZ: 1.235, distance: 0.2, fLo: 80, fHi: 12000 },
   } });
   await page.locator('input[accept=".json,application/json"]').setInputFiles({ name: 'height.json', mimeType: 'application/json', buffer: Buffer.from(file) });
-  await page.getByRole('button', { name: 'Открыть', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Открыть проект' }).click();
   // 022: «Место для записи» — вкладка «Голос» нижней панели
   await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Голос' }).click();
   await expect(page.getByLabel('Высота микрофона', { exact: true })).toHaveValue('123,5');

@@ -467,9 +467,6 @@ td.num { text-align: right; }
 .hrange__label { position: absolute; right: 30px; top: 50%; transform: translateY(-50%); font-size: var(--text-caption); font-weight: var(--weight-semibold); color: var(--ink); white-space: nowrap; background: var(--surface); border-radius: var(--space-6); padding: 0 var(--space-4); }
 .modes-switch { margin-bottom: var(--space-4); }
 .topbar__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.topbar__projects { flex: none; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); border: 0; background: none; color: var(--muted); font: inherit; font-size: var(--text-micro); min-width: 52px; min-height: var(--touch-min); cursor: pointer; padding: var(--space-4); border-radius: var(--r-control); }
-.topbar__projects.is-on { color: var(--accent); }
-.topbar__projects .icon { width: 24px; height: 24px; }
 .modes-switch .field__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .modes-switch .field { margin: 0; }
 
