@@ -69,8 +69,8 @@ test('legacy sitting project keeps mouth height without the posture switch', asy
   } });
   await page.locator('input[accept=".json,application/json"]').setInputFiles({ name: 'height.json', mimeType: 'application/json', buffer: Buffer.from(file) });
   await page.getByRole('button', { name: 'Открыть', exact: true }).click();
-  await page.getByRole('button', { name: 'Открыть меню' }).click();
-  await page.getByRole('button', { name: /Место для записи/ }).click();
+  // 022: «Место для записи» — вкладка «Голос» нижней панели
+  await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Голос' }).click();
   await expect(page.getByLabel('Высота микрофона', { exact: true })).toHaveValue('123,5');
   await expect(page.getByRole('radio', { name: /^(Сидя|Стоя)$/ })).toHaveCount(0);
   await page.getByLabel('Высота микрофона', { exact: true }).fill('145');

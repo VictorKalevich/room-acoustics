@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { EMPTY_STATE, finishRoomSteps, roomOnlyState, scanToSteps } from './helpers';
 
 // Сквозные сценарии quickstart.md в эмуляции iPhone.
 // Перед запуском: npm run fixtures (создаёт tests/fixtures/out/sample-room.obj).
@@ -27,12 +28,35 @@ test('US2: подбор расстановки за ≤ 10 с, лучший не
   await expect(page.locator('.score__delta')).toContainText(/ровнее|как базовая/);
 });
 
-test('US3: загрузка скана и распознавание размеров', async ({ page }) => {
-  await page.goto('/#room');
-  await page.setInputFiles('#scan-file', 'tests/fixtures/out/sample-room.obj');
-  // 020: скан применяется сразу, как «Применить размеры»
-  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50', { timeout: 30_000 });
-  await expect(page.getByTestId('scan-summary')).toContainText('sample-room.obj');
+test.describe('скан с нового проекта', () => {
+  test.use({ storageState: EMPTY_STATE });
+
+  test('US3: загрузка скана и распознавание размеров', async ({ page }) => {
+    await page.goto('/#room');
+    // 022: скан ведёт в те же шаги, что и ручной ввод; размеры — из скана
+    await scanToSteps(page, 'tests/fixtures/out/sample-room.obj');
+    await expect(page.getByLabel('Глубина', { exact: true })).toHaveValue('5');
+    await expect(page.getByLabel('Ширина', { exact: true })).toHaveValue('4');
+    await expect(page.getByLabel('Высота', { exact: true })).toHaveValue('2,5');
+    await finishRoomSteps(page);
+    await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
+    await expect(page.getByTestId('scan-summary')).toContainText('sample-room.obj');
+  });
+
+  test('003: скан с коридором — найдены арка и коридор', async ({ page }) => {
+    await page.goto('/#room');
+    await scanToSteps(page, 'tests/fixtures/out/sample-corridor.obj');
+    await finishRoomSteps(page);
+    await expect(page.locator('.topbar__room')).toContainText(/5,00 × (3,99|4,00)/);
+    await expect(page.getByTestId('scan-summary')).toContainText('коридоров и ниш — 1');
+    // 022: «Поправить границы комнаты» — в группе «Изменить комнату»
+    await page.getByRole('button', { name: 'Поправить границы комнаты' }).click();
+    await expect(page.locator('.layout-editor')).toBeVisible();
+    await expect(page.getByText(/Коридор за .* стеной/)).toBeVisible();
+    await page.getByRole('button', { name: 'Применить размеры' }).click();
+    await expect(page.locator('.topbar__room')).toContainText(/5,00 × (3,99|4,00)/);
+    await expect(page.getByTestId('scan-summary')).toContainText('коридоров и ниш — 1');
+  });
 });
 
 test('US3: неподдерживаемый файл — понятная ошибка', async ({ page }) => {
@@ -112,20 +136,6 @@ test('003: коридор за аркой — моды системы и вол�
   await page.getByRole('radio', { name: 'Вручную' }).click();
   await expect(page.locator('.best-list li').first()).toBeVisible({ timeout: 40_000 });
   await expect(page.locator('.model-tag').first()).toContainText('волновая');
-});
-
-test('003: скан с коридором — найдены арка и коридор', async ({ page }) => {
-  await page.goto('/#room');
-  await page.setInputFiles('#scan-file', 'tests/fixtures/out/sample-corridor.obj');
-  // 020: применено сразу; коридор — в модели, подробности — в «Поправить границы комнаты»
-  await expect(page.locator('.topbar__room')).toContainText(/5,00 × (3,99|4,00)/, { timeout: 30_000 });
-  await expect(page.getByTestId('scan-summary')).toContainText('коридоров и ниш — 1');
-  await page.getByRole('button', { name: 'Поправить границы комнаты' }).click();
-  await expect(page.locator('.layout-editor')).toBeVisible();
-  await expect(page.getByText(/Коридор за .* стеной/)).toBeVisible();
-  await page.getByRole('button', { name: 'Применить размеры' }).click();
-  await expect(page.locator('.topbar__room')).toContainText(/5,00 × (3,99|4,00)/);
-  await expect(page.getByTestId('scan-summary')).toContainText('коридоров и ниш — 1');
 });
 
 test('версия приложения видна на экране «Проекты»', async ({ page }) => {
@@ -229,7 +239,10 @@ test('аудит: синхронизация — открыть файл дру�
   await expect(page.locator('.topbar__room')).toContainText('Дача, 6,00 × 4,50 × 2,70');
 });
 
-test('UX: найденный вариант становится текущей расстановкой, другой — по кнопке', async ({ page }) => {
+test.describe('места ещё не выбраны', () => {
+  test.use({ storageState: roomOnlyState });
+
+  test('UX: найденный вариант становится текущей расстановкой, другой — по кнопке', async ({ page }) => {
   await page.goto('/#placement');
   await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
   await expect(page.getByText('Это текущая расстановка')).toBeVisible({ timeout: 15_000 });
@@ -238,6 +251,7 @@ test('UX: найденный вариант становится текущей 
   await expect(page.getByText('Это текущая расстановка')).toBeVisible();
   await page.getByRole('button', { name: 'Дальше: «Настройка»' }).click();
   await expect(page.locator('.topbar__title')).toHaveText('Настройка');
+  });
 });
 
 test('UX: предложенный план обработки не меняет расчёты, пока не включён; включённый — виден на всех экранах', async ({ page }) => {
@@ -518,7 +532,12 @@ test('014: «Очистить» на экране комнаты; модель �
   // ручная настройка идёт по шагам: по адресу «Стены» открывается первый шаг
   await page.goto('/#room/walls');
   await expect(page.getByRole('heading', { name: 'Шаг 1 из 4: Размеры' })).toBeVisible();
-  await expect(page.getByLabel('Глубина', { exact: true })).toHaveValue('4');
+  // 022: при ручном вводе размеры пустые, «Далее» — после всех трёх
+  await expect(page.getByLabel('Глубина', { exact: true })).toHaveValue('');
+  await expect(page.getByRole('button', { name: /Далее/ })).toBeDisabled();
+  await page.getByLabel('Глубина', { exact: true }).fill('4');
+  await page.getByLabel('Ширина', { exact: true }).fill('3');
+  await page.getByLabel('Высота', { exact: true }).fill('2,7');
   await page.getByRole('button', { name: /Далее/ }).click();
   await page.getByRole('radio', { name: 'Левая', exact: true }).click();
   await expect(page.locator('.zone-card:visible')).toHaveCount(0);
@@ -533,8 +552,8 @@ test('015: отражения от передней и задней стен; э
   await expect(list).toContainText('передняя стена');
   await expect(list).toContainText('задняя стена');
   // «Запись голоса» — пункт меню слева
-  await page.getByRole('button', { name: 'Открыть меню' }).click();
-  await page.getByRole('button', { name: /Место для записи/ }).click();
+  // 022: «Место для записи» — вкладка «Голос» нижней панели
+  await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Голос' }).click();
   await expect(page.locator('.topbar__title')).toHaveText('Место для записи');
   const plan = page.locator('svg.plan:visible');
   await expect(plan.locator('.plan__heat rect').first()).toBeAttached({ timeout: 20_000 });
@@ -569,8 +588,8 @@ test('015: отражения от передней и задней стен; э
   const win = page.locator('.zone-card').filter({ hasText: 'Окно 1' });
   await win.getByLabel('Отступ', { exact: true }).fill('0');
   await win.getByLabel('Ширина', { exact: true }).fill('4');
-  await page.getByRole('button', { name: 'Открыть меню' }).click();
-  await page.getByRole('button', { name: /Место для записи/ }).click();
+  // 022: «Место для записи» — вкладка «Голос» нижней панели
+  await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Голос' }).click();
   // 021: изменения конструктора сохраняются по вопросу при уходе
   await page.getByRole('alertdialog').getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.locator('.topbar__room')).toContainText('4,00 × 3,00');

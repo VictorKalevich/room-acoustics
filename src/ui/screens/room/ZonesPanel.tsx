@@ -1,7 +1,7 @@
 // Зоны, где нельзя ставить колонки и слушателя (двери, окна, проходы). Мебель с 019 правится
-// на шаге «Мебель» конструктора; здесь — остальные зоны и герметичность комнаты.
+// на шаге «Мебель» конструктора; здесь — остальные зоны. Герметичность с 022 — на шаге «Стены».
 import { makeId } from '../../../state/project';
-import type { Room, Zone, ZoneKind, Leakage } from '../../../core/types';
+import type { Room, Zone, ZoneKind } from '../../../core/types';
 import { NumberField, Panel, SelectField } from '../../design-system';
 import { S } from '../../strings';
 
@@ -28,7 +28,7 @@ export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
     onRoom({ ...room, zones: [...all, z] });
   };
   return (
-    <Panel title={S.furniture.otherZones} collapseKey="ra-room-zones" summary={`Зон: ${zones.length} · ${S.zones.leakages[room.leakage ?? 'typical']}`}>
+    <Panel title={S.furniture.otherZones} collapseKey="ra-room-zones" summary={`Зон: ${zones.length}`}>
       <p class="small">{S.zones.intro}</p>
       {zones.length === 0 && <p class="muted small">{S.zones.none}</p>}
       {zones.map((z, i) => (
@@ -57,13 +57,6 @@ export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
         </div>
       ))}
       <button type="button" class="btn" onClick={add}>{S.zones.add}</button>
-      <SelectField
-        label={S.zones.leakage}
-        value={room.leakage ?? 'typical'}
-        options={(['sealed', 'typical', 'door', 'open'] as Leakage[]).map((k) => ({ value: k, label: S.zones.leakages[k] }))}
-        onChange={(v) => onRoom({ ...room, leakage: v as Leakage })}
-      />
-      <p class="muted small">{S.zones.leakageHint}</p>
     </Panel>
   );
 }

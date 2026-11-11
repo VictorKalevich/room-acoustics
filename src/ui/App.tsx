@@ -25,7 +25,7 @@ import { ReportScreen } from './screens/ReportScreen';
 import { VoiceScreen } from './screens/VoiceScreen';
 import { SyncScreen } from './screens/SyncScreen';
 import { OverviewScreen } from './screens/OverviewScreen';
-import { RoomFirst } from './screens/RoomFirst';
+import { PlacementFirst, RoomFirst } from './screens/Gates';
 import { AboutPanel } from './screens/ProjectsScreen';
 import { ProblemReport } from './components/ProblemReport';
 import { setFieldFocus } from './screens/FieldScreen';
@@ -34,11 +34,14 @@ import { fmt } from './format';
 import { consumeJustUpdated } from './updates';
 import { activeTreatments } from '../core/treatments';
 
-/** Экраны с расчётами: пока комната не создана, на них — «Сначала создайте комнату» (021). */
+/**
+ * Экраны с расчётами: пока комната не создана, на них — «Сначала создайте комнату» (021). С 022 до создания
+ * комнаты этих разделов нет ни в нижней панели, ни в меню; заглушка остаётся для старых ссылок.
+ */
 const NEEDS_ROOM: Tab[] = ['modes', 'placement', 'tuning', 'measure', 'voice', 'report'];
 
-/** Вкладки нижней панели; «Проекты» — кнопка в верхней панели. */
-const BAR: ('room' | 'modes' | 'placement' | 'tuning')[] = ['room', 'modes', 'placement', 'tuning'];
+/** Вкладки нижней панели по порядку зависимостей (022); «Проекты» — кнопка в верхней панели. */
+const BAR: ('room' | 'placement' | 'modes' | 'tuning' | 'voice')[] = ['room', 'placement', 'modes', 'tuning', 'voice'];
 const TITLES: Record<Tab, string> = {
   room: S.room.title,
   modes: S.tabs.modes,
@@ -74,10 +77,13 @@ export function App() {
 
   const r = project.room;
   const roomReady = project.roomReady;
+  // 022: места колонок, сабвуфера и слушателя выбраны (подбор, вручную или «Колонки стоят так»)
+  const placed = !!project.current.placed;
+  const toPlacement = (m: 'auto' | 'manual') => go(m === 'manual' ? 'manual' : 'placement/auto');
   const title = tab === 'room' && route.room !== 'overview' ? S.editor.title : TITLES[tab];
   if (!ready) return <div class="screen"><p role="status">Открываем проект…</p></div>;
   return (
-    <div class="app">
+    <div class={`app${roomReady ? '' : ' app--start'}`}>
       <header class="topbar">
         <div class="topbar__inner">
           <button type="button" class="topbar__menu" aria-label={S.drawer.open} aria-expanded={drawer} onClick={() => setDrawer(true)}>
@@ -108,7 +114,7 @@ export function App() {
         </div>
       )}
 
-      <Drawer open={drawer} current={tab} onClose={() => setDrawer(false)} onPick={(i) => { setDrawer(false); go(i); }} />
+      <Drawer open={drawer} current={tab} roomReady={roomReady} onClose={() => setDrawer(false)} onPick={(i) => { setDrawer(false); go(i); }} />
       <TermSheet />
 
       <main class="content" key={project.id}>
@@ -135,10 +141,10 @@ export function App() {
               <SectionNav label="Раздел анализа" value={modesView} options={[{ value: 'overview', label: S.modesView.overview }, { value: 'list', label: S.modesView.list }, { value: 'field', label: S.modesView.field }]} onChange={setModes} />
             </div>
             {modesView === 'list' && <ModesScreen room={r} modes={modes} fMax={fMax} reverb={reverb} />}
-            {modesView === 'field' && <FieldScreen project={project} modes={modes} onSetup={onSetup} />}
-            {modesView === 'overview' && (
+            {modesView === 'field' && (placed ? <FieldScreen project={project} modes={modes} onSetup={onSetup} /> : <PlacementFirst onGo={toPlacement} />)}
+            {modesView === 'overview' && (placed ? (
               <OverviewScreen project={project} modes={modes} reverb={reverb} onGo={(t, f) => { if (t === 'field') { if (f) setFieldFocus(f); setModes('field'); } else go(t); }} />
-            )}
+            ) : <PlacementFirst onGo={toPlacement} />)}
           </>
         )}
         {roomReady && <div hidden={tab !== 'placement'}>
@@ -155,9 +161,10 @@ export function App() {
             onGo={(t) => go(t)}
           />
         </div>}
-        {roomReady && <RetainedSection active={tab === 'tuning'}>
+        {roomReady && placed && <RetainedSection active={tab === 'tuning'}>
           <TuningScreen project={project} modes={modes} onSetup={onSetup} onRoom={(room) => onRoom(room)} view={route.tuning} active={tab === 'tuning'} onGo={go} />
         </RetainedSection>}
+        {roomReady && !placed && tab === 'tuning' && <PlacementFirst onGo={toPlacement} />}
         {tab === 'projects' && (
           <ProjectsScreen
             project={project}
@@ -166,10 +173,10 @@ export function App() {
           />
         )}
         {roomReady && <RetainedSection active={tab === 'measure'}>
-          <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} />
+          <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} onPlacement={toPlacement} />
         </RetainedSection>}
         {roomReady && tab === 'voice' && <VoiceScreen project={project} onVoice={onVoice} />}
-        {roomReady && tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} />}
+        {roomReady && tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} onPlacement={toPlacement} />}
         {tab === 'sync' && <SyncScreen project={project} onReplace={(p: Project) => setProject(p)} />}
         {tab === 'help' && <HelpScreen project={project} onGo={(t) => go(t)} onWizard={refreshWizard} />}
         {tab === 'about' && <div class="screen"><AboutPanel /><ProblemReport project={project} /></div>}
@@ -177,14 +184,14 @@ export function App() {
 
       <MiniPlayer />
 
-      <nav class="tabbar" aria-label="Разделы">
+      {roomReady && <nav class="tabbar" aria-label="Разделы">
         {BAR.map((t, ki) => (
           <button key={ki} type="button" class={t === tab ? 'is-on' : ''} aria-current={t === tab ? 'page' : undefined} onClick={() => go(t)}>
             <TabIcon tab={t} />
             <span>{S.tabs[t]}</span>
           </button>
         ))}
-      </nav>
+      </nav>}
     </div>
   );
 }
@@ -195,6 +202,7 @@ function TabIcon({ tab }: { tab: Tab }) {
     modes: 'M3 19h18 M6 19V7 M10 19v-7 M14 19V5 M18 19v-9',
     placement: 'M5 4h4v5H5z M15 4h4v5h-4z M12 19.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M7 9l5 6 5-6',
     tuning: 'M5 4v16 M12 4v16 M19 4v16 M3 15h4 M10 8h4 M17 13h4',
+    voice: 'M10 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M3.5 21v-1.5a6.5 6.5 0 0 1 13 0V21 M18.2 5.5a1.5 1.5 0 0 1 3 0v3a1.5 1.5 0 0 1-3 0z M19.7 10v3.5',
     projects: 'M4 6h6l2 2h8v11H4z',
   };
   return (

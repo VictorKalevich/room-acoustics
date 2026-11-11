@@ -25,15 +25,24 @@ export function sameLayout(a: Layout, b: Layout, tol = 1e-3): boolean {
  * (подобрана для прежних мест). Имя, id и замер остаются.
  */
 export function setupFromPlacement(current: Setup, p: Placement): Setup {
-  return { ...current, ...placementLayout(p), subSettings: p.subSettings ?? {}, crossoverHz: null };
+  return { ...current, ...placementLayout(p), subSettings: p.subSettings ?? {}, crossoverHz: null, placed: true };
 }
 
 /**
- * После подбора лучший вариант сразу становится текущим, если своей расстановки ещё нет
- * (стоит исходная по умолчанию). Иначе ручную расстановку пользователя не трогаем.
+ * После подбора лучший вариант сразу становится текущим, если места ещё не выбраны (стоят исходные по умолчанию).
+ * Иначе расстановку пользователя не трогаем. 022: признак хранится у расстановки — прежнее сравнение с местами
+ * по умолчанию не работало, когда размеры комнаты отличались от комнаты нового проекта.
  */
-export function shouldAdoptBest(current: Setup, defaults: Setup, best: Placement | undefined): best is Placement {
-  return !!best && sameLayout(current, defaults);
+export function shouldAdoptBest(current: Setup, best: Placement | undefined): best is Placement {
+  return !!best && !current.placed;
+}
+
+/**
+ * Изменение мест пользователем (перетаскивание, координаты, вариант, «Колонки стоят так») — места выбраны.
+ * Настройки сабвуфера, кроссовер и замер места не меняют.
+ */
+export function markPlaced(prev: Setup, next: Setup): Setup {
+  return next.placed || sameLayout(prev, next) ? next : { ...next, placed: true };
 }
 
 /** Сколько прошлых замеров хранится у расстановки для сравнения «до и после». */

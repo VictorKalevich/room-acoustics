@@ -1,5 +1,7 @@
 import type { Constraints, Covering, Room, SourceSpec, SurfaceId, PlacementResult, Setup, Treatment, Vec3, Zone } from '../core/types';
 import { baselinePositions } from '../core/placement';
+import { clampToRoom } from '../core/system';
+import { sameLayout } from './variant';
 import { rotateExtension, rotateOpening, validateExtension, validateSlope } from '../core/geometry';
 import type { DetectSummary } from '../scan/detect';
 import type { VoiceSettings } from '../core/voice';
@@ -118,7 +120,7 @@ export function defaultConstraints(room: Room): Constraints {
 /** Расстановка по умолчанию — базовый вариант. */
 export function defaultSetup(room: Room, sources: SourceSpec[], c: Constraints, name = 'Текущая'): Setup {
   const b = baselinePositions(room, sources, c);
-  return { id: makeId(), name, listener: b.listener, positions: b.positions, subSettings: {}, crossoverHz: null, measurement: null };
+  return { id: makeId(), name, listener: b.listener, positions: b.positions, subSettings: {}, crossoverHz: null, measurement: null, placed: false };
 }
 
 /** Приводит расстановку к текущему набору источников: добавляет недостающие, убирает лишние. */
@@ -167,6 +169,23 @@ export function legacyRoomReady(room: Room, raw: {
   const surfaces = (Object.keys(base.materials) as (keyof Room['materials'])[]).some((k) => room.materials[k] !== base.materials[k]);
   const used = !!raw.result || !!raw.voice || !!raw.current?.measurement || (raw.setups ?? []).length > 0;
   return objects || !!room.slope || surfaces || room.furnishing !== base.furnishing || !!room.furnitureList || used;
+}
+
+/**
+ * Проекты до 022 не хранили признак «места выбраны». Не выбраны — если стоят места по умолчанию: для этой
+ * комнаты или места по умолчанию новой (5 × 4 м) либо очищенной комнаты, сдвинутые внутрь стен при смене
+ * размеров (так они оставались до 022). Расстановка с замером считается выбранной.
+ */
+export function legacyPlaced(cur: Setup, room: Room, sources: SourceSpec[], c: Constraints): boolean {
+  if (cur.measurement) return true;
+  const stretched = (base: Room) => {
+    const d = syncSetup(defaultSetup(base, sources, defaultConstraints(base)), room, sources, c);
+    return {
+      listener: clampToRoom(room, d.listener, 0.1),
+      positions: Object.fromEntries(Object.entries(d.positions).map(([k, v]) => [k, clampToRoom(room, v)])),
+    };
+  };
+  return ![defaultSetup(room, sources, c), stretched(defaultRoom()), stretched(emptyRoom())].some((d) => sameLayout(cur, d));
 }
 
 export function makeId(): string {

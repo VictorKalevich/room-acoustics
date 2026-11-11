@@ -23,8 +23,13 @@ import { RetainedSection } from '../components/RetainedSection';
 import { MeasurePanel } from './measure/MeasurePanel';
 import type { Destination, MeasureView } from '../navigation';
 import { useActiveView } from '../useActiveView';
+import { PlacementFirst } from './Gates';
 
-interface Props { project: Project; onSetup: (s: Setup) => void; onRoom: (r: Room) => void; onGo: (t: Destination) => void; view: MeasureView; active: boolean }
+interface Props {
+  project: Project; onSetup: (s: Setup) => void; onRoom: (r: Room) => void; onGo: (t: Destination) => void; view: MeasureView; active: boolean;
+  /** 022: свип и сравнение привязаны к расстановке — пока места не выбраны, переход к расстановке. */
+  onPlacement: (m: 'auto' | 'manual') => void;
+}
 
 const F1 = 10, F2 = 1000, T = 6;
 const CAL_KEY = 'ra-mic-cal';
@@ -33,7 +38,9 @@ function loadCal(): { name: string; f: number[]; db: number[] } | null {
   try { return JSON.parse(localStorage.getItem(CAL_KEY) ?? 'null'); } catch { return null; }
 }
 
-export function MeasureScreen({ project, onSetup, onRoom, onGo, view, active }: Props) {
+export function MeasureScreen({ project, onSetup, onRoom, onGo, view, active, onPlacement }: Props) {
+  const placed = !!project.current.placed;
+  const gated = !placed && (view === 'sweep' || view === 'compare');
   const [cal, setCal] = useState(loadCal());
   const [err, setErr] = useState<string | null>(null);
   const calInput = useRef<HTMLInputElement>(null);
@@ -47,7 +54,8 @@ export function MeasureScreen({ project, onSetup, onRoom, onGo, view, active }: 
         { value: 'rta', label: 'Анализатор', hint: 'Спектр в реальном времени' },
         { value: 'compare', label: 'Сравнение и REW', hint: 'Импорт, история, модель' },
       ]} />
-      <div hidden={view === 'compare'}>
+      {gated && <PlacementFirst inline onGo={onPlacement} />}
+      <div hidden={view === 'compare' || gated}>
       <Panel>
         <p class="small">{S.measure.intro}</p>
         <Note>{S.measure.micNote}</Note>
@@ -77,13 +85,13 @@ export function MeasureScreen({ project, onSetup, onRoom, onGo, view, active }: 
         {err && <Note tone="warn">{err}</Note>}
       </Panel>
       </div>
-      <RetainedSection active={view === 'sweep'}><SweepTool project={project} onSetup={onSetup} onGo={onGo} applyCal={applyCal} active={active && view === 'sweep'} /></RetainedSection>
+      {placed && <RetainedSection active={view === 'sweep'}><SweepTool project={project} onSetup={onSetup} onGo={onGo} applyCal={applyCal} active={active && view === 'sweep'} /></RetainedSection>}
       <RetainedSection active={view === 'clap'}><ClapTool project={project} active={active && view === 'clap'} /></RetainedSection>
       <RetainedSection active={view === 'rta'}><RtaTool project={project} applyCal={applyCal} active={active && view === 'rta'} /></RetainedSection>
-      <RetainedSection active={view === 'compare'}>
+      {placed && <RetainedSection active={view === 'compare'}>
         <MeasurePanel project={project} onSetup={onSetup} onRoom={onRoom} />
         <div class="btn-row"><button type="button" class="btn" onClick={() => onGo('tuning/eq')}>Открыть эквалайзер</button></div>
-      </RetainedSection>
+      </RetainedSection>}
     </div>
   );
 }

@@ -5,8 +5,9 @@
 // переходами между шагами, «Сохранить» внизу каждого шага и вопросом при уходе с несохранёнными изменениями.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
-import { makeId } from '../../../state/project';
-import type { Covering, FurnitureType, ReverbResult, Room, WallId, Zone } from '../../../core/types';
+import { makeId, rotateRoom } from '../../../state/project';
+import type { AcousticModel, Covering, FurnitureType, Leakage, ReverbResult, Room, WallId, Zone } from '../../../core/types';
+import { SURFACES } from '../../../core/types';
 import { FURNISHING_LABEL, MATERIALS } from '../../../core/materials';
 import {
   FURNITURE, FURNITURE_ORDER, contribution, fitCovering, fitRect, furnitureAbsorption, furnitureType, isAcoustic,
@@ -23,7 +24,9 @@ import { ShapePanel, SlopeBlock, WallItemsPanel } from './OpeningsPanel';
 import { ZonesPanel } from './ZonesPanel';
 import { ROOM_STEPS, setLeaveGuard, type RoomStep } from '../../navigation';
 import { useViewState } from '../../useViewState';
-import { draftDiffers, dropRoomDraft, loadRoomDraft, saveRoomDraft, withOutside } from '../../roomDraft';
+import { DIMS, draftDiffers, dropRoomDraft, loadRoomDraft, saveRoomDraft, withOutside, type DimKey, type RoomDraft } from '../../roomDraft';
+import { requestScanFix } from '../../scanFix';
+import { RotateIcon } from './icons';
 import { S } from '../../strings';
 import { fmt } from '../../format';
 import type { Furnishing } from '../../../core/types';
@@ -46,20 +49,28 @@ type FitResult = ReturnType<typeof fitRoomObjects>;
 
 export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
   const wizard = !project.roomReady;
+  // 022: комната из скана проходит те же шаги; размеры у неё уже есть, при ручном вводе — пустые до ввода
+  const isScan = !!project.scanInfo;
+  const manualNew = wizard && !isScan;
   const [stored] = useState(() => loadRoomDraft(project.id));
   /** null — черновика нет, на экране сохранённая комната. */
   const [draft, setDraft] = useState<Room | null>(stored?.room ?? null);
   const [reached, setReached] = useState<RoomStep>(stored?.reached ?? 'size');
+  const [entered, setEntered] = useState<DimKey[]>(stored?.entered ?? []);
+  const [touched, setTouched] = useState<string[]>(stored?.touched ?? []);
   const [saved, setSaved] = useState(false);
   const [askReset, setAskReset] = useState(false);
   const [leave, setLeave] = useState<{ proceed: () => void } | null>(null);
   const [fitAsk, setFitAsk] = useState<{ fit: FitResult; after?: () => void } | null>(null);
 
-  // поля, которые меняются вне конструктора (обработка, калибровка), всегда берутся из проекта
+  // поля, которые меняются вне конструктора (обработка, подстройка), всегда берутся из проекта
   const room = useMemo(() => (draft ? withOutside(draft, project.room) : project.room), [draft, project.room]);
   const reverb = useMemo(() => computeReverb(room), [room]);
   const outside = useMemo(() => { const f = fitRoomObjects(room); return f.removed.length + f.trimmed.length; }, [room]);
   const dirty = draft !== null && draftDiffers(draft, project.room);
+  const dimsOk = !manualNew || DIMS.every((k) => entered.includes(k));
+  /** Пометка «по умолчанию» у нетронутых материалов и обстановки — только в ручной настройке. */
+  const isDefault = wizard ? (key: string) => !touched.includes(key) : undefined;
 
   const index = ROOM_STEPS.indexOf(step);
   const reachedIndex = ROOM_STEPS.indexOf(reached);
@@ -67,17 +78,40 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
   const shown = wizard && index > reachedIndex ? reached : step;
   useEffect(() => { if (shown !== step) onStep(shown); }, [shown, step]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const persist = (r: Room, extra: Partial<RoomDraft> = {}) =>
+    saveRoomDraft(project.id, { room: r, reached, entered, touched, ...extra });
   const edit = (r: Room) => {
+    const prev = draft ?? project.room;
+    const t = new Set(touched);
+    for (const sf of SURFACES) if (r.materials[sf] !== prev.materials[sf]) t.add(`mat.${sf}`);
+    if (r.furnishing !== prev.furnishing) t.add('furnishing');
+    if (r.leakage !== prev.leakage) t.add('leakage');
+    const nextTouched = [...t];
+    setTouched(nextTouched);
     setDraft(r);
     setSaved(false);
-    saveRoomDraft(project.id, { room: r, reached });
+    persist(r, { touched: nextTouched });
+  };
+  /** Размер, введённый при ручной настройке. */
+  const enterDim = (k: DimKey, v: number) => {
+    const r = { ...(draft ?? project.room), [k]: v };
+    const e = entered.includes(k) ? entered : [...entered, k];
+    setEntered(e);
+    setDraft(r);
+    setSaved(false);
+    persist(r, { entered: e });
+  };
+  const forget = () => {
+    dropRoomDraft(project.id);
+    setDraft(null);
+    setReached('size');
+    setEntered([]);
+    setTouched([]);
   };
 
   const commit = (r: Room, after?: () => void) => {
     onRoom(r, { roomReady: true });
-    dropRoomDraft(project.id);
-    setDraft(null);
-    setReached('size');
+    forget();
     setFitAsk(null);
     if (after) after();
     else if (wizard) onBack();
@@ -91,20 +125,34 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
   };
   const reset = () => {
     setAskReset(false);
-    dropRoomDraft(project.id);
-    setDraft(null);
-    setReached('size');
+    forget();
     setSaved(false);
     if (wizard) onStep('size');
   };
   const next = () => {
+    if (!dimsOk) return;
     const to = ROOM_STEPS[index + 1];
     const far = ROOM_STEPS.indexOf(to) > reachedIndex ? to : reached;
     const r = draft ?? project.room;
     setDraft(r);
     setReached(far);
-    saveRoomDraft(project.id, { room: r, reached: far });
+    persist(r, { reached: far });
     onStep(to);
+  };
+  /** Скан при ручной проверке: колонки у другой стены — поворот сразу в проекте (комната ещё не создана). */
+  const rotate = () => {
+    const r = rotateRoom(room);
+    const info = project.scanInfo;
+    onRoom(r, info ? { scanInfo: { ...info, rotation: ((info.rotation ?? 0) + 1) % 4 } } : {});
+    setDraft(r);
+    persist(r);
+  };
+  /** Поправить границы: введённое на шагах уходит в комнату проекта, блок поправки — на экране «Комната». */
+  const fixBounds = () => {
+    onRoom(room);
+    forget();
+    requestScanFix();
+    onBack();
   };
 
   // уход из конструктора с несохранёнными изменениями: «Сохранить» / «Не сохранять» / «Остаться».
@@ -123,10 +171,10 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
 
   const steps = (
     <>
-      {shown === 'size' && <SizeStep room={room} onRoom={edit} />}
-      {shown === 'walls' && <WallsStep pid={project.id} room={room} onRoom={edit} />}
-      {shown === 'floor' && <FloorStep room={room} onRoom={edit} />}
-      {shown === 'furniture' && <FurnitureStep pid={project.id} room={room} reverb={reverb} onRoom={edit} />}
+      {shown === 'size' && <SizeStep room={room} onRoom={edit} entered={manualNew ? entered : null} onDim={enterDim} />}
+      {shown === 'walls' && <WallsStep pid={project.id} room={room} onRoom={edit} isDefault={isDefault} />}
+      {shown === 'floor' && <FloorStep room={room} onRoom={edit} isDefault={isDefault} />}
+      {shown === 'furniture' && <FurnitureStep pid={project.id} room={room} reverb={reverb} onRoom={edit} isDefault={isDefault} />}
     </>
   );
   const i = ROOM_STEPS.indexOf(shown);
@@ -137,7 +185,16 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
       </div>
       {wizard ? (
         <Panel title={S.editor.wizardStep(i + 1, S.editor.stepLabels[shown])}>
-          <p class="muted small">{S.editor.wizardIntro}</p>
+          <p class="muted small">{!isScan ? S.editor.wizardIntro : shown === 'size' ? S.editor.scanIntro(project.scanInfo?.fileName ?? '') : S.editor.scanStepIntro}</p>
+          {isScan && shown === 'size' && (
+            <>
+              <p class="small">{S.editor.scanWall}</p>
+              <div class="btn-row">
+                <button type="button" class="btn" onClick={rotate}><RotateIcon /> {S.room.rotate}</button>
+                <button type="button" class="btn" onClick={fixBounds}>{S.scan.fix}</button>
+              </div>
+            </>
+          )}
         </Panel>
       ) : (
         <>
@@ -149,13 +206,14 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
       {steps}
       <Panel>
         {outside > 0 && <Note tone="warn">{S.editor.outside(outside)}</Note>}
+        {!dimsOk && shown === 'size' && <Note>{S.editor.dimsNeeded}</Note>}
         {saved && !dirty && <p class="small" role="status">{S.editor.saved}</p>}
         {wizard ? (
           <>
             <div class="btn-row">
               {i > 0 && <button type="button" class="btn" onClick={() => onStep(ROOM_STEPS[i - 1])}>← {S.editor.prev}</button>}
               {i < ROOM_STEPS.length - 1
-                ? <button type="button" class="btn btn--primary" onClick={next}>{S.editor.next} →</button>
+                ? <button type="button" class="btn btn--primary" disabled={!dimsOk} onClick={next}>{S.editor.next} →</button>
                 : <button type="button" class="btn btn--primary" onClick={() => save()}>{S.editor.save}</button>}
             </div>
             <div class="btn-row">
@@ -177,7 +235,7 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
       {leave && (
         <ConfirmSheet title={S.editor.leaveTitle} text={S.editor.leaveText} tone="primary"
           confirm={S.editor.save} cancel={S.editor.leaveStay}
-          extra={{ label: S.editor.leaveDiscard, onClick: () => { const go = leave.proceed; setLeave(null); dropRoomDraft(project.id); setDraft(null); go(); } }}
+          extra={{ label: S.editor.leaveDiscard, onClick: () => { const go = leave.proceed; setLeave(null); forget(); go(); } }}
           onCancel={() => setLeave(null)}
           onConfirm={() => { const go = leave.proceed; setLeave(null); save(go); }} />
       )}
@@ -220,19 +278,27 @@ function FitList({ title, items }: { title: string; items: FitItem[] }) {
   );
 }
 
-/** Шаг «Размеры»: размеры, температура, коридоры и ниши, модель (поля перенесены без изменений). */
-function SizeStep({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
+/**
+ * Шаг «Размеры»: размеры, коридоры и ниши, модель; в «Дополнительно» — температура и модель расчёта (022).
+ * entered — ручная настройка новой комнаты: поле пустое, пока размер не введён; план и форма — после всех трёх.
+ */
+function SizeStep({ room, onRoom, entered, onDim }: { room: Room; onRoom: (r: Room) => void; entered: DimKey[] | null; onDim: (k: DimKey, v: number) => void }) {
   const set = (patch: Partial<Room>) => onRoom({ ...room, ...patch });
+  const val = (k: DimKey) => (entered && !entered.includes(k) ? NaN : room[k]);
+  const dim = (k: DimKey) => (v: number) => (entered ? onDim(k, v) : set({ [k]: v }));
+  const ready = !entered || DIMS.every((k) => entered.includes(k));
   return (
     <>
       <Panel class="panel--hero">
-        <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} />
+        {ready
+          ? <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} />
+          : <p class="muted small">{S.editor.planAfterDims}</p>}
         <div class="dims">
-          <NumberField id="room-depth" label={S.room.depth} hint={S.room.depthHint} value={room.depth} unit="м" min={1} max={50} onChange={(v) => set({ depth: v })} />
-          <NumberField label={S.room.width} hint={S.room.widthHint} value={room.width} unit="м" min={1} max={50} onChange={(v) => set({ width: v })} />
-          <NumberField label={S.room.height} value={room.height} unit="м" min={1} max={20} onChange={(v) => set({ height: v })} />
+          <NumberField id="room-depth" label={S.room.depth} hint={S.room.depthHint} value={val('depth')} unit="м" min={1} max={50} onChange={dim('depth')} />
+          <NumberField label={S.room.width} hint={S.room.widthHint} value={val('width')} unit="м" min={1} max={50} onChange={dim('width')} />
+          <NumberField label={S.room.height} value={val('height')} unit="м" min={1} max={20} onChange={dim('height')} />
         </div>
-        <Details summary={S.room.temperature}>
+        <Details summary={S.editor.advanced}>
           <NumberField
             label={S.room.temperature}
             value={room.temperatureC}
@@ -243,9 +309,16 @@ function SizeStep({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
             hint={S.room.speed(fmt(speedOfSound(room.temperatureC), 1))}
             onChange={(v) => set({ temperatureC: v })}
           />
+          <SelectField
+            label={S.model.title}
+            value={room.model ?? 'auto'}
+            options={(['auto', 'modal', 'wave'] as AcousticModel[]).map((m) => ({ value: m, label: S.model[m] }))}
+            onChange={(v) => set({ model: v as AcousticModel })}
+          />
+          <p class="muted small">{S.model.hint}</p>
         </Details>
       </Panel>
-      <ShapePanel room={room} onRoom={onRoom} />
+      {ready && <ShapePanel room={room} onRoom={onRoom} />}
     </>
   );
 }
@@ -260,7 +333,7 @@ function useCoverings(room: Room, onRoom: (r: Room) => void) {
 }
 
 /** Шаг «Стены»: выбор стены, развёртка, материал, окна/двери/проёмы, ковры и шторы этой стены. */
-function WallsStep({ pid, room, onRoom }: { pid: string; room: Room; onRoom: (r: Room) => void }) {
+function WallsStep({ pid, room, onRoom, isDefault }: { pid: string; room: Room; onRoom: (r: Room) => void; isDefault?: (key: string) => boolean }) {
   const [wall, setWall] = useViewState<WallId>(pid, 'room.wall', 'front');
   const covers = (room.coverings ?? []).filter((c) => c.surface === wall);
   const edit = useCoverings(room, onRoom);
@@ -271,6 +344,7 @@ function WallsStep({ pid, room, onRoom }: { pid: string; room: Room; onRoom: (r:
         <WallView room={room} wall={wall} />
         <p class="muted small">{S.editor.wallView}</p>
         <SelectField label={S.editor.wallMaterial} value={room.materials[wall]} options={materialOptions}
+          hint={isDefault?.(`mat.${wall}`) ? S.editor.byDefault : undefined}
           onChange={(v) => onRoom({ ...room, materials: { ...room.materials, [wall]: v } })} />
       </Panel>
       <WallItemsPanel room={room} onRoom={onRoom} wall={wall} />
@@ -285,7 +359,26 @@ function WallsStep({ pid, room, onRoom }: { pid: string; room: Room; onRoom: (r:
           { label: S.coverings.curtain, onSelect: () => edit.add(newCurtain(room, wall, makeId())) },
         ]} />
       </Panel>
+      <LeakagePanel room={room} onRoom={onRoom} isDefault={isDefault} />
     </>
+  );
+}
+
+/** Герметичность комнаты (022: с шага «Мебель» перенесена сюда, к дверям и проёмам). */
+function LeakagePanel({ room, onRoom, isDefault }: { room: Room; onRoom: (r: Room) => void; isDefault?: (key: string) => boolean }) {
+  const cal = room.calibration;
+  return (
+    <Panel title={S.editor.leakageTitle}>
+      <SelectField
+        label={S.zones.leakage}
+        value={room.leakage ?? 'typical'}
+        options={(['sealed', 'typical', 'door', 'open'] as Leakage[]).map((k) => ({ value: k, label: S.zones.leakages[k] }))}
+        hint={isDefault?.('leakage') ? S.editor.byDefault : undefined}
+        onChange={(v) => onRoom({ ...room, leakage: v as Leakage })}
+      />
+      <p class="muted small">{S.zones.leakageHint}</p>
+      {cal?.source && cal.leakageBefore && <Note>{S.editor.leakageCalibrated(cal.source, S.zones.leakages[cal.leakageBefore])}</Note>}
+    </Panel>
   );
 }
 
@@ -327,7 +420,7 @@ function CoveringCard({ room, c, index, onChange, onRemove }: { room: Room; c: C
 }
 
 /** Шаг «Пол и потолок»: материал пола, ковры на плане (мебель — контуром), потолок и скос. */
-function FloorStep({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
+function FloorStep({ room, onRoom, isDefault }: { room: Room; onRoom: (r: Room) => void; isDefault?: (key: string) => boolean }) {
   const rugs = (room.coverings ?? []).filter((c) => c.surface === 'floor');
   const edit = useCoverings(room, onRoom);
   return (
@@ -335,6 +428,7 @@ function FloorStep({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) 
       <Panel class="panel--hero" title={S.editor.floor}>
         <PlanView depth={room.depth} width={room.width} zones={room.zones} rugs={rugs} extensions={room.extensions} openings={room.openings} features={room.features} slope={room.slope} label={S.editor.floorPlan} />
         <SelectField label={S.editor.floorMaterial} value={room.materials.floor} options={materialOptions}
+          hint={isDefault?.('mat.floor') ? S.editor.byDefault : undefined}
           onChange={(v) => onRoom({ ...room, materials: { ...room.materials, floor: v } })} />
       </Panel>
       <Panel title={S.editor.rugs}>
@@ -347,6 +441,7 @@ function FloorStep({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) 
       </Panel>
       <Panel title={S.editor.ceiling}>
         <SelectField label={S.editor.ceilingMaterial} value={room.materials.ceiling} options={materialOptions}
+          hint={isDefault?.('mat.ceiling') ? S.editor.byDefault : undefined}
           onChange={(v) => onRoom({ ...room, materials: { ...room.materials, ceiling: v } })} />
         <SlopeBlock room={room} onRoom={onRoom} />
       </Panel>
@@ -355,7 +450,7 @@ function FloorStep({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) 
 }
 
 /** Шаг «Мебель»: план сверху, обстановка (общая оценка и список), предметы, прочие зоны. */
-function FurnitureStep({ pid, room, reverb, onRoom }: { pid: string; room: Room; reverb: ReverbResult; onRoom: (r: Room) => void }) {
+function FurnitureStep({ pid, room, reverb, onRoom, isDefault }: { pid: string; room: Room; reverb: ReverbResult; onRoom: (r: Room) => void; isDefault?: (key: string) => boolean }) {
   const zones = room.zones ?? [];
   const items = zones.filter((z) => z.kind === 'furniture');
   const [selected, setSelected] = useViewState<string | null>(pid, 'room.furniture', null);
@@ -384,15 +479,16 @@ function FurnitureStep({ pid, room, reverb, onRoom }: { pid: string; room: Room;
         <p class="muted small">{S.furniture.intro}</p>
       </Panel>
       <Panel title={S.furniture.furnishing}>
+        {/* 022: явный выбор способа вместо галочки «Указать мебель списком» */}
+        <Segmented label={S.furniture.mode} value={room.furnitureList ? 'list' : 'general'}
+          options={[{ value: 'general', label: S.furniture.modeGeneral }, { value: 'list', label: S.furniture.modeList }]}
+          onChange={(v) => onRoom({ ...room, furnitureList: v === 'list' })} />
+        <p class="muted small">{room.furnitureList ? S.furniture.listHint : S.furniture.generalHint}</p>
         <SelectField label={S.furniture.level} value={room.furnishing}
           options={(Object.keys(FURNISHING_LABEL) as Furnishing[]).map((k) => ({ value: k, label: FURNISHING_LABEL[k] }))}
+          hint={isDefault?.('furnishing') ? S.editor.byDefault : undefined}
           onChange={(v) => onRoom({ ...room, furnishing: v as Furnishing })} />
-        <p class="muted small">{S.furniture.furnishingHint}</p>
-        <label class="check">
-          <input type="checkbox" checked={!!room.furnitureList} onChange={(e) => onRoom({ ...room, furnitureList: (e.target as HTMLInputElement).checked })} />
-          <span>{S.furniture.list}</span>
-        </label>
-        <p class="muted small">{S.furniture.listHint}</p>
+        <p class="muted small">{room.furnitureList ? S.furniture.levelBass : S.furniture.furnishingHint}</p>
         <p class="small" role="status">{S.furniture.rtNow(fmt(reverb.tMid, 2))}</p>
         <Details summary={S.furniture.whyTitle}>
           {S.furniture.why.map((t, ki) => <p key={ki} class="small">{t}</p>)}

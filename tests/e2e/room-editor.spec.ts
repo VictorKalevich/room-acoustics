@@ -74,13 +74,13 @@ test('без списка ковры и мебель не меняют RT60; с�
   await page.getByRole('button', { name: 'Добавить мебель', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Диван сложенный', exact: true }).click();
   const sofa = page.locator('.zone-card').filter({ has: page.getByLabel('Что это 1', { exact: true }) });
-  await expect(sofa).toContainText('Учтётся в RT60, если включить «Указать мебель списком»');
+  await expect(sofa).toContainText('Учтётся в RT60, если выбрать обстановку «Списком предметов»');
   const status = page.getByText(/^RT60 на 500–1000 Гц:/);
   await expect(status).toHaveText('RT60 на 500–1000 Гц: 0,51 с');
   // шкаф не влияет ни в каком режиме
   await page.getByRole('button', { name: 'Добавить мебель', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Шкаф (МДФ)', exact: true }).click();
-  await page.getByLabel('Указать мебель списком').check();
+  await page.getByRole('radio', { name: 'Списком предметов' }).click();
   await expect(sofa).toContainText(/Вклад в поглощение: (сильно|заметно)/);
   await expect(status).not.toHaveText('RT60 на 500–1000 Гц: 0,51 с');
   const listed = await status.textContent();

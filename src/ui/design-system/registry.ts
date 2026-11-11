@@ -1,16 +1,16 @@
 /** Inventory of visual families. A CSS class is also a public design-system API.
  * Domain views compose these styles; they do not need a wrapper for every span. */
 export const componentFamilies = [
-  ['Каркас', '.screen · .content · .topbar · .tabbar · .drawer'],
+  ['Каркас', '.screen · .content · .topbar · .tabbar (вкладки по числу пунктов) · .app--start (без нижней панели) · .drawer'],
   ['Панели', 'Panel · .panel · .panel--hero · .panel--collapsible'],
-  ['Поля', 'NumberField · SelectField · .field · .field--compact · .field--error'],
+  ['Поля', 'NumberField (пустое — NaN) · SelectField (hint) · .field · .field--compact · .field--error'],
   ['Переключатели', 'Segmented · .segmented · .tabs · .segmented--wrap'],
   ['Навигация разделов', 'SectionNav · .section-nav'],
   ['Кнопки', '.btn · --primary · --ghost · --danger · --small · --wide'],
   ['Выбор действия', 'ActionMenu · .action-menu'],
   ['Флажки и фильтры', '.check · .chip · .plan-layers · .smoothing-stops'],
   ['Ползунки', '.smoothing-slider · .freq-slider · .hrange · .miniplayer__vol'],
-  ['Сообщения', 'Note · CalculationStatus · .note · .progress · .spinner'],
+  ['Сообщения', 'Note · CalculationStatus · RoomFirst/PlacementFirst (закрытый экран) · .note · .progress · .spinner'],
   ['Раскрытие', 'Details · .details · .setup-card'],
   ['Шторки', 'ConfirmSheet (danger/primary, cancel, extra, список .plain-list) · .sheet · .sheet-backdrop · .sheet__close'],
   ['Карточки объектов', '.zone-card · .zone-card.is-selected · .wall-items · .found-opening · .problem'],

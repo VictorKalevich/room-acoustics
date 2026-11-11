@@ -50,7 +50,13 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
     if (!m) return;
     setBusy(true);
     compute<CalibrationResult>('calibrate', { room, sources, constraints: c, setup: current, measurement: m }).promise
-      .then((r) => { setCal(r); setBusy(false); onRoom({ ...room, leakage: r.leakage, calibration: { dampingScale: r.dampingScale, model: DAMPING_MODEL } }); })
+      .then((r) => {
+        setCal(r);
+        setBusy(false);
+        // 022: запоминаем, по какому замеру подстроено и какая герметичность была выбрана до подстройки
+        const leakageBefore = room.calibration?.leakageBefore ?? room.leakage;
+        onRoom({ ...room, leakage: r.leakage, calibration: { dampingScale: r.dampingScale, model: DAMPING_MODEL, source: m.name, leakageBefore } });
+      })
       .catch((e) => { setError(e.message); setBusy(false); });
   };
 
@@ -95,7 +101,7 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
           <div class="btn-row">
             <button type="button" class="btn btn--primary" onClick={runCal} disabled={busy}>{busy ? S.tuning.calibrating : S.tuning.calibrate}</button>
             {room.calibration && (
-              <button type="button" class="btn btn--ghost" onClick={() => { onRoom({ ...room, calibration: null }); setCal(null); }}>{S.tuning.resetCalibration}</button>
+              <button type="button" class="btn btn--ghost" onClick={() => { onRoom({ ...room, calibration: null, leakage: room.calibration?.leakageBefore ?? room.leakage }); setCal(null); }}>{S.tuning.resetCalibration}</button>
             )}
           </div>
           {cal && (

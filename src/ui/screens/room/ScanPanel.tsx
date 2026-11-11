@@ -3,6 +3,9 @@
 // комнаты»; в остальное время здесь показывается модель комнаты проекта — та же, по которой идут расчёты.
 // 021: пока комната не создана, блок появляется только на время разбора файла (выбор — в «С чего начать»);
 // у комнаты, настроенной вручную, это просто «3D-модель» без упоминаний скана.
+// 022: применённый скан ведёт в те же шаги, что и ручной ввод («Сохранить» в конце создаёт комнату);
+// при уверенности ниже 50 % сначала открывается «Поправить границы комнаты»; сама кнопка поправки —
+// в группе «Изменить комнату» и на шаге «Размеры», здесь — блок поправки (по просьбе requestScanFix).
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
@@ -20,6 +23,8 @@ import { S } from '../../strings';
 import { fmt, fmtInt } from '../../format';
 import { logError } from '../../../state/errlog';
 import { dropRoomDraft } from '../../roomDraft';
+import { onScanFixRequest } from '../../scanFix';
+import type { Destination } from '../../navigation';
 
 type ScanState =
   | { phase: 'idle' }
@@ -46,7 +51,7 @@ const NAMES: ScanNames = {
   id: makeId,
 };
 
-export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom: (room: Room, extra?: Partial<Project>) => void; onGo?: (t: 'placement' | 'room/walls') => void }) {
+export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom: (room: Room, extra?: Partial<Project>) => void; onGo?: (t: Destination) => void }) {
   const [state, setState] = useState<ScanState>({ phase: 'idle' });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [det, setDet] = useState<DetectResult | null>(null);
@@ -170,10 +175,11 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
       ...reset,
       scanInfo: { ...summaryOf(d, l), rotation: 0 },
       constraints: { ...(reset?.constraints ?? project.constraints), ...zoneFor(room) },
-      // комната создана; незаконченная ручная настройка больше не нужна
-      roomReady: true,
+      // 022: комната ещё не создана — её проверяют по тем же шагам, что и при ручном вводе, и сохраняют
+      roomReady: false,
     });
     dropRoomDraft(project.id);
+    onGo?.('room/size');
     applied.current = { choice: c, units: d.units };
     persist(l, d, init, c, u);
   };
@@ -190,6 +196,8 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
     });
     applied.current = { choice: c, units: d.units };
     persist(l, d, init, c, u);
+    // поправка во время проверки по шагам — назад к шагам
+    if (!project.roomReady) onGo?.('room/size');
   };
 
   const onFile = async (file: File) => {
@@ -224,8 +232,13 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
         setEditing(true);
         return;
       }
+      if (r.det.confidence < 0.5) {
+        // 022: неуверенное распознавание — сначала проверить границы, потом применить
+        setProblem(S.scan.lowFirst(Math.round(r.det.confidence * 100)));
+        setEditing(true);
+        return;
+      }
       applyFirst(l, r.det, r.initial, r.choice, 'auto');
-      setJustApplied(true);
     } catch (e) {
       logError('scan', e, `${file.name}, ${Math.round(file.size / 1024)} КБ`);
       setState({ phase: 'error', message: (e as Error).message || S.errors.generic });
@@ -282,11 +295,12 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
   const apply = () => {
     const c = choice();
     if (!c || !loaded || !det || !initial || rectProblem) return;
-    if (problem || !hasScan) applyFirst(loaded, det, initial, c, units);
+    const first = !!problem || !hasScan;
+    if (first) applyFirst(loaded, det, initial, c, units);
     else applyFix(loaded, det, initial, c, units);
     setProblem(null);
     setEditing(false);
-    setJustApplied(true);
+    setJustApplied(!first && project.roomReady);
   };
 
   /** «Отмена»: новый скан с ошибкой — забыть; поправка — закрыть без изменений (применённое не трогается). */
@@ -302,6 +316,12 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
       showChoice(applied.current.choice);
     }
   };
+
+  // просьба открыть поправку (группа «Изменить комнату», шаг «Размеры»)
+  useEffect(() => onScanFixRequest(() => {
+    void openEditor();
+    requestAnimationFrame(() => document.getElementById('scan-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }));
 
   const busy = state.phase === 'loading' || state.phase === 'detecting';
   const model = project.room;
@@ -322,7 +342,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
       />
   );
   // комнаты ещё нет и файл не разбирается — выбор файла в «С чего начать», здесь только поле выбора
-  if (!ready && !busy && !editing && state.phase !== 'error') return fileInput;
+  if (!ready && !busy && !editing && !missing && state.phase !== 'error') return fileInput;
   return (
     <Panel title={hasScan || !ready ? S.room.scan : S.room.model3d} id="scan-panel">
       {fileInput}
@@ -349,16 +369,8 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
               count('window'), count('door'), (model.openings ?? []).length, (model.zones ?? []).filter((z) => z.kind === 'furniture').length, (model.extensions ?? []).length)}
           </p>
           {project.scanInfo!.confidence < 0.5 && <Note tone="warn">{S.scan.lowConfidence}</Note>}
-          {justApplied && (
-            <>
-              <Note tone="good">{S.room.appliedNext}</Note>
-              <div class="btn-row">
-                {onGo && <button type="button" class="btn btn--primary" onClick={() => onGo('placement')}>{S.room.toPlacement}</button>}
-                {onGo && <button type="button" class="btn" onClick={() => onGo('room/walls')}>{S.editor.open}</button>}
-              </div>
-            </>
-          )}
-          <button type="button" class="btn" disabled={busy} onClick={() => void openEditor()}>{S.scan.fix}</button>
+          {/* 022: после первого скана — шаги проверки и «Что дальше» на обзоре; здесь — только итог поправки */}
+          {justApplied && <Note tone="good">{S.room.applied}</Note>}
         </>
       )}
 

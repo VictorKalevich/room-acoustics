@@ -1,7 +1,7 @@
 // Локальное хранение проектов (IndexedDB) и файл проекта (contracts/project-file.md).
 import { normalizeVoice } from '../core/voice';
 import type { Project } from './project';
-import { defaultConstraints, defaultRoom, defaultSetup, defaultSources, defaultSub, legacyRoomReady, makeId, syncSetup, validateRoom, validateSources } from './project';
+import { defaultConstraints, defaultRoom, defaultSetup, defaultSources, defaultSub, legacyPlaced, legacyRoomReady, makeId, syncSetup, validateRoom, validateSources } from './project';
 import { fitRoomObjects } from '../core/fitRoom';
 import type { FurnitureType, Measurement, Room, Setup, SourceSpec } from '../core/types';
 import { DAMPING_MODEL, SURFACES } from '../core/types';
@@ -55,6 +55,11 @@ export function normalizeRoom(rawRoom: any, fit = true): Room {
   if (room.calibration && !(room.calibration.dampingScale > 0)) room.calibration = null;
   // множитель, подобранный для прежней модели затухания, к новой не подходит — подстройку нужно повторить
   if (room.calibration && room.calibration.model !== DAMPING_MODEL) room.calibration = null;
+  if (room.calibration && room.calibration.leakageBefore !== undefined && !['sealed', 'typical', 'door', 'open'].includes(room.calibration.leakageBefore)) {
+    const { leakageBefore: _bad, ...rest } = room.calibration;
+    void _bad;
+    room.calibration = rest;
+  }
   if (!Array.isArray(room.openings)) room.openings = [];
   if (!Array.isArray(room.extensions)) room.extensions = [];
   room.treatments = Array.isArray(room.treatments)
@@ -129,7 +134,11 @@ export function normalizeProject(raw: any): Project {
     scanInfo: raw.scanInfo ?? null,
     result: raw.result ?? null,
     selectedIndex: typeof raw.selectedIndex === 'number' ? raw.selectedIndex : 0,
-    current: fixSetup(raw.current, 'Текущая'),
+    current: (() => {
+      const cur = fixSetup(raw.current, 'Текущая');
+      // 022: признак «места выбраны»; у проектов до 022 — по тому, стоят ли места по умолчанию
+      return { ...cur, placed: typeof raw.current?.placed === 'boolean' ? raw.current.placed : legacyPlaced(cur, room, sources, constraints) };
+    })(),
     setups: Array.isArray(raw.setups) ? raw.setups.map((s: any) => fixSetup(s, s?.name ?? 'Вариант')) : [],
     ...(raw.voice ? { voice: normalizeVoice(raw.voice) } : {}),
     roomReady: typeof raw.roomReady === 'boolean' ? raw.roomReady : legacyRoomReady(room, raw),

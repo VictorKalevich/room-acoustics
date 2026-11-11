@@ -98,7 +98,7 @@ CalculationStatus, ConfirmSheet. Старые пути components/Fields и др
 | Семейство | Канонические варианты |
 | --- | --- |
 | Кнопки | btn, primary, ghost, danger; small/wide — размеры; disabled/is-rec — состояния |
-| Поля | NumberField/SelectField; обычное/compact/error; field__box для текста и textarea |
+| Поля | NumberField/SelectField; обычное/compact/error; подсказка hint у SelectField, пустое NumberField (NaN) — 022; field__box для текста и textarea |
 | Одиночный выбор | Segmented; tabs использует тот же визуальный стиль, но допускает прокрутку |
 | Навигация | SectionNav с пояснением; отдельные tabbar и drawer для переходов между разделами |
 | Множественный выбор | check; chip с is-on; plan-layers — вариант с отметкой включения |
@@ -106,6 +106,7 @@ CalculationStatus, ConfirmSheet. Старые пути components/Fields и др
 | Контейнеры | Panel; collapsible/hero; zone-card; setup-card для общих настроек |
 | Состояния | Note info/good/warn; CalculationStatus; progress/spinner; status badges |
 | Раскрытие/диалоги | Details; ConfirmSheet (danger/primary, своя отмена, третье действие, список — 021); общая sheet и close для терминов/подтверждений |
+| Закрытые экраны | RoomFirst, PlacementFirst (022): Panel с пояснением и кнопками перехода |
 | Предметные виды | План, графики, 3D/сканы, score/stat, таблицы, списки, отчёт, аудио |
 | Развёртка стены | WallView: стена изнутри комнаты, окна, двери, проёмы, ковры, шторы, мебель у стены (019) |
 
@@ -170,6 +171,19 @@ CalculationStatus, ConfirmSheet. Старые пути components/Fields и др
   Panel с `.btn-row` (основная — `btn--primary`, «Сбросить черновик» — ghost); предупреждение об
   объектах за стенами — Note `warn`, несохранённые правки — Note `info`. «Сначала создайте комнату»
   — Panel с основной кнопкой. Новых стилей, текстовых ролей и отступов не потребовалось.
+
+## Что добавлено в 022
+
+- **SelectField** — необязательная подсказка `hint` (та же роль `.field__hint`, что у NumberField, связана через
+  `aria-describedby`). Используется для пометки «Значение по умолчанию — если у вас другое, выберите».
+- **NumberField** показывает пустое поле при значении `NaN` (размеры комнаты при ручном вводе до ввода).
+- **Нижняя панель** раскладывает столько вкладок, сколько пунктов (`grid-auto-flow: column`), — сейчас пять;
+  на 320 px подписи помещаются. **`.app--start`** — экран без нижней панели (комната ещё не создана): нижний
+  отступ контента без высоты панели.
+- **Закрытые экраны** «Сначала создайте комнату» и «Сначала выберите расстановку» (`screens/Gates.tsx`) собраны
+  из Panel и `.btn-row`; внутри других экранов (отчёт, измерения) — та же Panel.
+- **«Что учтено в расчётах»** на обзоре комнаты — существующая таблица `.report-table` с заголовком `.subhead`.
+- Новых текстовых ролей и отступов не потребовалось.
 
 ## Обязательный порядок дальнейшей работы
 

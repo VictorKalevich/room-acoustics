@@ -126,6 +126,14 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
     <div class="screen">
       <Panel class="panel--hero">
         {header}
+        {!current.placed && (
+          <>
+            <Note>{S.manual.notPlaced}</Note>
+            <div class="btn-row">
+              <button type="button" class="btn btn--primary" onClick={() => onSetup({ ...current, placed: true })}>{S.manual.keepPlaces}</button>
+            </div>
+          </>
+        )}
         <Segmented
           label={S.manual.find}
           value={effMode}

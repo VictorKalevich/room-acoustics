@@ -3,7 +3,7 @@ import { shownTreatments } from '../../core/treatments';
 import { MapModeHelp } from '../components/MapModeHelp';
 import { ScoreBlock } from '../components/ScoreBlock';
 import type { Project } from '../../state/project';
-import { defaultSetup, validateSources } from '../../state/project';
+import { validateSources } from '../../state/project';
 import type { BassObjective, Constraints, PlacementResult, SourceSpec, Placement, Setup } from '../../core/types';
 import { NumberField, Panel, Segmented, Note, Details } from '../design-system';
 import { SystemSettings } from './placement/SystemSettings';
@@ -64,7 +64,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
         onResult(r, 0);
         // своей расстановки ещё нет (стоит исходная) — лучший вариант сразу становится текущим:
         // по нему считаются «Настройка», «Обзор», 3D и замер
-        if (shouldAdoptBest(project.current, defaultSetup(room, sources, c), r.best[0])) applyVariant(r.best[0]);
+        if (shouldAdoptBest(project.current, r.best[0])) applyVariant(r.best[0]);
         requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       })
       .catch((e) => { setRunning(false); setError(e.message || S.errors.generic); });

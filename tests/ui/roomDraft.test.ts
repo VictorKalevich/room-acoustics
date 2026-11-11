@@ -19,9 +19,12 @@ describe('черновик конструктора (021)', () => {
   it('поля вне конструктора берутся из проекта и не делают черновик изменённым', async () => {
     const { draftDiffers, withOutside } = await draft();
     const saved: Room = { ...defaultRoom(), treatmentsOn: false, treatments: [] };
-    const d: Room = { ...saved, treatmentsOn: true, leakage: 'sealed' };
-    expect(withOutside(d, saved)).toMatchObject({ treatmentsOn: false, leakage: saved.leakage });
+    const d: Room = { ...saved, treatmentsOn: true, calibration: { dampingScale: 1.2 } };
+    expect(withOutside(d, saved)).toMatchObject({ treatmentsOn: false, calibration: saved.calibration });
     expect(draftDiffers(d, saved)).toBe(false);
+    // герметичность правится в конструкторе (022)
+    expect(withOutside({ ...saved, leakage: 'sealed' }, saved).leakage).toBe('sealed');
+    expect(draftDiffers({ ...saved, leakage: 'sealed' }, saved)).toBe(true);
     expect(draftDiffers({ ...d, depth: 6 }, saved)).toBe(true);
   });
 

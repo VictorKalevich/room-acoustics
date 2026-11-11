@@ -5,11 +5,17 @@ import { loadDraft, saveDraft } from '../state/storage';
 import type { Constraints, Room, Setup, SourceSpec } from '../core/types';
 import type { VoiceSettings } from '../core/voice';
 import { clampToRoom } from '../core/system';
+import { baselinePositions } from '../core/placement';
+import { markPlaced } from '../state/variant';
 import { setBeforeReload } from './updates';
 
-/** Приводит расстановку к текущим источникам и размерам комнаты. */
-function fitSetup(s: Setup, p: Project): Setup {
-  const synced = syncSetup(s, p.room, p.sources, p.constraints);
+/**
+ * Приводит расстановку к текущим источникам и размерам комнаты. 022: пока места текущей расстановки не выбраны,
+ * они — места по умолчанию для этой комнаты (а не места комнаты нового проекта, сдвинутые внутрь стен).
+ */
+function fitSetup(s: Setup, p: Project, current = false): Setup {
+  const base = current && !s.placed ? { ...s, ...baselinePositions(p.room, p.sources, p.constraints) } : s;
+  const synced = syncSetup(base, p.room, p.sources, p.constraints);
   return {
     ...synced,
     listener: clampToRoom(p.room, synced.listener, 0.1),
@@ -44,8 +50,9 @@ export function useProject() {
     return () => clearTimeout(t);
   }, [project, ready]);
 
-  const touch = (p: Partial<Project>, invalidate = true) =>
+  const touch = (patch: Partial<Project> | ((prev: Project) => Partial<Project>), invalidate = true) =>
     setProject((prev) => {
+      const p = typeof patch === 'function' ? patch(prev) : patch;
       const next: Project = {
         ...prev,
         ...p,
@@ -54,7 +61,7 @@ export function useProject() {
         result: p.result !== undefined ? p.result : invalidate && prev.result ? { ...prev.result, stale: true } : prev.result,
       };
       if (p.room || p.sources || p.constraints || p.current) {
-        next.current = fitSetup(next.current, next);
+        next.current = fitSetup(next.current, next, true);
         if (p.room || p.sources) next.setups = next.setups.map((x) => fitSetup(x, next));
       }
       return next;
@@ -64,7 +71,8 @@ export function useProject() {
     touch({ ...extra, room, constraints: fitConstraints(extra.constraints ?? project.constraints, room) });
   const onSources = (sources: SourceSpec[]) => touch({ sources });
   const onConstraints = (constraints: Constraints) => touch({ constraints });
-  const onSetup = (current: Setup) => touch({ current }, false);
+  // изменение мест пользователем — места выбраны (022)
+  const onSetup = (current: Setup) => touch((prev) => ({ current: markPlaced(prev.current, current) }), false);
   const onSetups = (setups: Setup[]) => touch({ setups }, false);
   const onVoice = (voice: VoiceSettings) => touch({ voice }, false);
   return { project, setProject, ready, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice };

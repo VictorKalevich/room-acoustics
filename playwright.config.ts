@@ -14,8 +14,9 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   projects: [
-    // 021: расчёты открываются, когда комната создана; проверки начинают с готовой комнаты из room.setup.ts.
-    // Сценарии первого запуска сбрасывают состояние сами: test.use({ storageState: EMPTY }).
+    // 021/022: расчёты открываются, когда комната создана и места выбраны; проверки начинают с готовой комнаты
+    // и выбранных мест из room.setup.ts. Сценарии первого запуска сбрасывают состояние сами
+    // (test.use({ storageState: { cookies: [], origins: [] } })), сценарии без выбранных мест берут <проект>-room.json.
     {
       name: 'setup',
       testMatch: /room\.setup\.ts/,
@@ -29,14 +30,14 @@ export default defineConfig({
     {
       name: 'iphone',
       // Эмуляция iPhone в Chromium (работает везде, в том числе в контейнере и на сервере GitHub)
-      use: { ...devices['iPhone 15 Pro'], browserName: 'chromium', channel: process.env.PLAYWRIGHT_CHROMIUM_CHANNEL || undefined, trace: 'retain-on-failure', storageState: 'tests/e2e/.auth/setup.json' },
+      use: { ...devices['iPhone 15 Pro'], browserName: 'chromium', channel: process.env.PLAYWRIGHT_CHROMIUM_CHANNEL || undefined, trace: 'retain-on-failure', storageState: 'tests/e2e/.auth/iphone.json' },
       dependencies: ['setup'],
     },
     {
       name: 'iphone-safari',
       // Тот же iPhone на движке Safari (WebKit): npm run e2e:safari на компьютере.
       // Первый раз: npx playwright install webkit
-      use: { ...devices['iPhone 15 Pro'], trace: 'retain-on-failure', storageState: 'tests/e2e/.auth/setup-safari.json' },
+      use: { ...devices['iPhone 15 Pro'], trace: 'retain-on-failure', storageState: 'tests/e2e/.auth/iphone-safari.json' },
       dependencies: ['setup-safari'],
     },
   ],

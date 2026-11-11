@@ -15,11 +15,17 @@ import { S } from '../strings';
 import { fmt } from '../format';
 import { BUILD } from '../updates';
 import { modeWhere } from '../../core/modes';
+import { PlacementFirst } from './Gates';
 
-interface Props { project: Project; modes: Mode[]; reverb: ReverbResult }
+interface Props {
+  project: Project; modes: Mode[]; reverb: ReverbResult;
+  /** 022: разделы о расстановке — после выбора мест; до этого — переход к расстановке. */
+  onPlacement?: (m: 'auto' | 'manual') => void;
+}
 
-export function ReportScreen({ project, modes, reverb }: Props) {
+export function ReportScreen({ project, modes, reverb, onPlacement }: Props) {
   const { room, sources, constraints: c, current } = project;
+  const placed = !!current.placed;
   const { ev, busy } = useSetupEval(room, sources, c, current, 48);
   const o = useMemo(() => buildOverview(room, sources, current, ev, modes, reverb), [room, sources, current, ev, modes, reverb]);
   const eq = useMemo(() => (ev ? designEq(ev.response.f, ev.response.db, ev.response.target) : null), [ev]);
@@ -66,7 +72,12 @@ export function ReportScreen({ project, modes, reverb }: Props) {
         </table>
       </Panel>
 
-      <Panel title={S.report.score}>
+      {!placed && (
+        <div class="no-print">
+          <PlacementFirst inline onGo={(m) => onPlacement?.(m)} />
+        </div>
+      )}
+      {placed && <Panel title={S.report.score}>
         <p class="report__score"><strong>{o.score}</strong> / 100</p>
         <table class="report-table">
           <tbody>{o.subs.map((s) => <tr key={s.id}><th>{S.overview.subs[s.id]}</th><td>{s.value} — {s.note}</td></tr>)}</tbody>
@@ -75,9 +86,9 @@ export function ReportScreen({ project, modes, reverb }: Props) {
         <ul class="plain-list small">
           {o.problems.slice(0, 10).map((p, ki) => <li key={ki}><strong>[{S.overview.sev[p.severity]}]</strong> {p.title}. {p.detail}</li>)}
         </ul>
-      </Panel>
+      </Panel>}
 
-      <Panel title={S.report.placement}>
+      {placed && <Panel title={S.report.placement}>
         <PlanView depth={room.depth} width={room.width} items={items} seats={ev?.seats ?? []} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} showKey={false} />
         <table class="report-table">
           <thead><tr><th>{S.report.what}</th><th>{S.report.fromFront}</th><th>{S.report.fromLeft}</th><th>{S.report.heightCol}</th></tr></thead>
@@ -88,9 +99,9 @@ export function ReportScreen({ project, modes, reverb }: Props) {
           </tbody>
         </table>
         {ev && <p class="small">{S.report.flatness(fmt(ev.score, 1), fmt(ev.fLo, 0), fmt(ev.fHi, 0))}</p>}
-      </Panel>
+      </Panel>}
 
-      {subs.length > 0 && (
+      {placed && subs.length > 0 && (
         <Panel title={S.report.subs}>
           <table class="report-table">
             <thead><tr><th>{S.report.what}</th><th>{S.tuning.delay}</th><th>{S.tuning.phase}</th><th>{S.tuning.gain}</th></tr></thead>
@@ -105,7 +116,7 @@ export function ReportScreen({ project, modes, reverb }: Props) {
         </Panel>
       )}
 
-      {eq && eq.filters.length > 0 && (
+      {placed && eq && eq.filters.length > 0 && (
         <Panel title={S.report.eq}>
           <table class="report-table">
             <thead><tr><th>№</th><th>{S.report.freq}</th><th>Q</th><th>{S.report.gainCol}</th></tr></thead>
@@ -134,7 +145,7 @@ export function ReportScreen({ project, modes, reverb }: Props) {
         </Panel>
       )}
 
-      {current.measurement && (
+      {placed && current.measurement && (
         <Panel title={S.report.measurement}>
           <p class="small">{current.measurement.name}, {new Date(current.measurement.importedAt).toLocaleDateString('ru-RU')}. {room.calibration ? S.report.calibrated(fmt(room.calibration.dampingScale, 2)) : ''}</p>
         </Panel>

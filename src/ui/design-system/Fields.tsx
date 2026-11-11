@@ -121,18 +121,21 @@ export function SelectField(p: {
   value: string;
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
+  /** Подсказка под списком (022: например, «значение по умолчанию» в ручной настройке комнаты). */
+  hint?: string;
 }) {
   const id = `select-${useId()}`;
   return (
     <div class="field">
       <label for={id}>{p.label}</label>
       <div class="field__box field__box--select">
-        <select id={id} value={p.value} onChange={(e) => p.onChange((e.target as HTMLSelectElement).value)}>
+        <select id={id} value={p.value} aria-describedby={p.hint ? `${id}-hint` : undefined} onChange={(e) => p.onChange((e.target as HTMLSelectElement).value)}>
           {p.options.map((o, ki) => (
             <option key={ki} value={o.value}>{o.label}</option>
           ))}
         </select>
       </div>
+      {p.hint && <p class="field__hint" id={`${id}-hint`}>{p.hint}</p>}
     </div>
   );
 }

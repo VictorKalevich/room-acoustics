@@ -13,4 +13,7 @@ writeFileSync(`${out}/sample-corridor.obj`, toOBJ(cor));
 // 020: «комната» 70 × 60 м — распознаётся, но таких размеров не бывает: скан не применяется, открывается поправка
 const hall = makeRoomScan({ depth: 70, width: 60, height: 3, noise: 0.01, furniture: false, openings: false });
 writeFileSync(`${out}/sample-hall.obj`, toOBJ(hall));
+// 022: без потолка и с нишей — распознаётся неуверенно (< 50 %): сначала открывается «Поправить границы»
+const low = makeRoomScan({ depth: 5, width: 4, height: 2.5, noise: 0.01, ceiling: false, lShape: true });
+writeFileSync(`${out}/sample-low.obj`, toOBJ(low));
 console.log('Готово:', `${out}/sample-room.obj`, `${out}/sample-room-cm.stl`);

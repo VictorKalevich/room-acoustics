@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Placement, Treatment } from '../../src/core/types';
 import { defaultSetup, newProject } from '../../src/state/project';
-import { placementLayout, sameLayout, setupFromPlacement, shouldAdoptBest } from '../../src/state/variant';
+import { markPlaced, placementLayout, sameLayout, setupFromPlacement, shouldAdoptBest } from '../../src/state/variant';
 import { activeTreatments } from '../../src/core/treatments';
 
 const p = newProject();
@@ -54,11 +54,19 @@ describe('варианты расстановки', () => {
     expect(setupFromPlacement(cur, variant(0.5)).subSettings).toEqual({});
   });
 
-  it('лучший вариант становится текущим, только пока стоит исходная расстановка', () => {
+  it('лучший вариант становится текущим, только пока места не выбраны', () => {
     const best = variant(0.4);
-    expect(shouldAdoptBest(def, def, best)).toBe(true);
-    expect(shouldAdoptBest(setupFromPlacement(def, variant(0.2)), def, best)).toBe(false);
-    expect(shouldAdoptBest(def, def, undefined)).toBe(false);
+    expect(shouldAdoptBest(def, best)).toBe(true);
+    expect(shouldAdoptBest(setupFromPlacement(def, variant(0.2)), best)).toBe(false);
+    expect(shouldAdoptBest(def, undefined)).toBe(false);
+  });
+
+  it('места выбраны после изменения мест; настройки сабвуфера и замер места не выбирают (022)', () => {
+    expect(def.placed).toBe(false);
+    expect(setupFromPlacement(def, variant(0.2)).placed).toBe(true);
+    expect(markPlaced(def, { ...def, listener: { ...def.listener, x: def.listener.x + 0.3 } }).placed).toBe(true);
+    expect(markPlaced(def, { ...def, crossoverHz: 90 }).placed).toBe(false);
+    expect(markPlaced(def, { ...def, placed: true }).placed).toBe(true);
   });
 });
 

@@ -1,7 +1,7 @@
-// Элементы комнаты (019 разделил прежнюю панель): форма (коридоры, ниши, модель), скос потолка,
+// Элементы комнаты (019 разделил прежнюю панель): форма (коридоры, ниши; модель расчёта с 022 — в «Дополнительно»), скос потолка,
 // окна, двери и проёмы выбранной стены. Логика правки одна — useRoomItems.
 import { makeId } from '../../../state/project';
-import type { Room, Opening, Extension, WallId, AcousticModel, WallFeature } from '../../../core/types';
+import type { Room, Opening, Extension, WallId, WallFeature } from '../../../core/types';
 import { validateExtension, validateSlope, wallLength } from '../../../core/geometry';
 import { openingAsItem, toRoomItem, type WallItem, type WallItemKind } from '../../../core/wallItems';
 import { NumberField, Panel, SelectField, Note } from '../../design-system';
@@ -159,14 +159,6 @@ export function ShapePanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
         <button type="button" class="btn" aria-label="Добавить нишу" onClick={addNiche}>{S.shape.addNiche}</button>
       </div>
       <p class="muted small">{S.shape.nicheHint}</p>
-
-      <SelectField
-        label={S.model.title}
-        value={room.model ?? 'auto'}
-        options={(['auto', 'modal', 'wave'] as AcousticModel[]).map((m) => ({ value: m, label: S.model[m] }))}
-        onChange={(v) => onRoom({ ...room, model: v as AcousticModel })}
-      />
-      <p class="muted small">{S.model.hint}</p>
     </Panel>
   );
 }
