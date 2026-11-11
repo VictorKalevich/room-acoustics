@@ -13,8 +13,6 @@ interface Props {
   project: Project;
   onReplace: (p: Project) => void;
   onRename: (name: string) => void;
-  /** 023: назад, на экран, с которого открыли «Проекты». */
-  onBack: () => void;
   onGo: (t: Destination) => void;
 }
 
@@ -29,11 +27,12 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'n
 
 /**
  * Проекты — всё о файлах проекта, по группам (024): «Текущий проект» (название, «Сохранить», «Новый проект»),
- * «Импорт и экспорт» (перенос файлом, бывший одноимённый экран меню), «Сохранённые». Открывается из меню.
- * 023: «← Назад» возвращает на прежний экран; «Сохранить» и «Экспорт» — только у созданной комнаты;
+ * «Импорт и экспорт» (перенос файлом, бывший одноимённый экран меню), «Сохранённые». Открывается из меню;
+ * вернуться — нижней панелью или пунктом меню «Начать» (025; «← Назад» из 023 убрана).
+ * 023: «Сохранить» и «Экспорт» — только у созданной комнаты;
  * «Новый проект», «Открыть» и «Импорт» спрашивают, если введённое в текущем проекте пропадёт.
  */
-export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: Props) {
+export function ProjectsScreen({ project, onReplace, onRename, onGo }: Props) {
   const [list, setList] = useState<Project[]>([]);
   const [canStore, setCanStore] = useState(true);
   const [msg, setMsg] = useState<Msg | null>(null);
@@ -100,9 +99,6 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
 
   return (
     <div class="screen">
-      <div class="btn-row">
-        <button type="button" class="btn btn--ghost btn--small" onClick={onBack}>← {S.projects.back}</button>
-      </div>
       <Panel title={S.projects.current}>
         <div class="field">
           <label for="pname">{S.projects.name}</label>

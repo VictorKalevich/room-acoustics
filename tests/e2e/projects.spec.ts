@@ -16,14 +16,16 @@ const newProject = (page: Page) => page.getByRole('button', { name: 'Новый 
 test.describe('комнаты ещё нет', () => {
   test.use({ storageState: EMPTY_STATE });
 
-  test('без комнаты сохранить и экспортировать нельзя; «← Назад» возвращает', async ({ page }) => {
+  test('без комнаты сохранить и экспортировать нельзя; «Создать комнату» ведёт на старт', async ({ page }) => {
     await page.goto('/#room');
     await projects(page);
     await expect(save(page)).toBeDisabled();
     await expect(exportFile(page)).toBeDisabled();
     await expect(page.getByText(/Сохранить и экспортировать проект можно, когда комната создана/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Импорт', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: /Назад/ }).click();
+    // 025: «← Назад» убрана — вернуться можно пунктом меню «Начать» или ссылкой на комнату
+    await expect(page.getByRole('button', { name: /Назад/ })).toHaveCount(0);
+    await page.getByRole('button', { name: /Создать комнату/ }).click();
     await expect(page.locator('.start-card')).toBeVisible();
     // пустой проект: «Новый проект» без вопроса
     await projects(page);
@@ -32,7 +34,7 @@ test.describe('комнаты ещё нет', () => {
     await expect(page.locator('.start-card')).toBeVisible();
   });
 
-  test('начатая настройка: назад — к тому же шагу; «Новый проект» предупреждает, «Отмена» сохраняет введённое', async ({ page }) => {
+  test('начатая настройка: «Продолжить настройку» — к тому же шагу; «Новый проект» предупреждает, «Отмена» сохраняет введённое', async ({ page }) => {
     await page.goto('/#room');
     await page.locator('.start-card').getByRole('button', { name: 'Настроить комнату вручную' }).click();
     await page.getByLabel('Глубина', { exact: true }).fill('6');
@@ -42,9 +44,6 @@ test.describe('комнаты ещё нет', () => {
     await projects(page);
     await expect(save(page)).toBeDisabled();
     await expect(page.getByText(/Настройка комнаты не закончена/)).toBeVisible();
-    await page.getByRole('button', { name: /Назад/ }).click();
-    await expect(page.getByRole('heading', { name: 'Шаг 2 из 4: Стены' })).toBeVisible();
-    await projects(page);
     await page.getByRole('button', { name: /Продолжить настройку комнаты/ }).click();
     await expect(page.getByRole('heading', { name: 'Шаг 2 из 4: Стены' })).toBeVisible();
     await projects(page);
@@ -53,7 +52,7 @@ test.describe('комнаты ещё нет', () => {
     await expect(dialog).toContainText('Открыть новый проект?');
     await expect(dialog).toContainText('настроена не полностью');
     await dialog.getByRole('button', { name: 'Отмена' }).click();
-    await page.getByRole('button', { name: /Назад/ }).click();
+    await page.getByRole('button', { name: /Продолжить настройку комнаты/ }).click();
     await page.getByRole('button', { name: /Назад/ }).first().click();
     await expect(page.getByLabel('Глубина', { exact: true })).toHaveValue('6');
     await projects(page);

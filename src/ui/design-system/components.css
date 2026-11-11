@@ -486,6 +486,9 @@ td.num { text-align: right; }
 .drawer__item .icon { width: 24px; height: 24px; }
 .drawer__label { display: block; font-weight: var(--weight-semibold); }
 .drawer__hint { display: block; font-size: var(--text-caption); color: var(--muted); }
+/* 025: «Начать» — выделенный пункт меню над группами, пока комната не создана */
+.drawer__item--start { background: var(--accent); color: var(--accent-ink); }
+.drawer__item--start .drawer__hint { color: inherit; opacity: 0.85; }
 @media (prefers-reduced-motion: reduce) { .drawer__panel, .drawer__backdrop { transition: none; } }
 
 /* Термины и шторка */

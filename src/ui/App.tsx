@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
 import type { Room } from '../core/types';
 import { useProject } from './useProject';
 import { computeReverb } from '../core/reverb';
@@ -30,6 +30,7 @@ import { S } from './strings';
 import { fmt } from './format';
 import { consumeJustUpdated } from './updates';
 import { activeTreatments } from '../core/treatments';
+import { loadRoomDraft } from './roomDraft';
 
 /**
  * Экраны с расчётами: пока комната не создана, на них — «Сначала создайте комнату» (021). С 022 до создания
@@ -55,10 +56,6 @@ const TITLES: Record<Tab, string> = {
 export function App() {
   const { route, go } = useNavigation();
   const { tab, placement: placementMode, analysis: modesView } = route;
-  // 023: «Проекты» возвращают туда, откуда их открыли (кнопка «← Назад»)
-  const lastTab = useRef<Tab>(tab === 'projects' ? 'room' : tab);
-  useEffect(() => { if (tab !== 'projects') lastTab.current = tab; }, [tab]);
-  const back = () => go(lastTab.current);
   const [drawer, setDrawer] = useState(false);
   const [wizard, setWizard] = useState(wizardOn());
   const [, setWizardTick] = useState(0);
@@ -81,6 +78,12 @@ export function App() {
   const placed = !!project.current.placed;
   const toPlacement = (m: 'auto' | 'manual') => go(m === 'manual' ? 'manual' : 'placement/auto');
   const title = tab === 'room' && route.room !== 'overview' ? S.editor.title : TITLES[tab];
+  // 025: «Начать» в меню, пока комната не создана; подсказка — откуда продолжится настройка
+  const draft = roomReady ? null : loadRoomDraft(project.id);
+  const start = roomReady ? null : {
+    hint: project.scanInfo ? S.drawer.startScan : draft ? S.drawer.startDraft(S.editor.stepLabels[draft.reached]) : S.drawer.startHint,
+    onPick: () => { setDrawer(false); go('room/overview'); },
+  };
   if (!ready) return <div class="screen"><p role="status">Открываем проект…</p></div>;
   return (
     <div class={`app${roomReady ? '' : ' app--start'}`}>
@@ -105,7 +108,7 @@ export function App() {
         </div>
       )}
 
-      <Drawer open={drawer} current={tab} roomReady={roomReady} onClose={() => setDrawer(false)} onPick={(i) => { setDrawer(false); go(i); }} />
+      <Drawer open={drawer} current={tab} roomReady={roomReady} start={start} onClose={() => setDrawer(false)} onPick={(i) => { setDrawer(false); go(i); }} />
       <TermSheet />
 
       <main class="content" key={project.id}>
@@ -161,7 +164,6 @@ export function App() {
             project={project}
             onReplace={(p) => { setProject(p); go('room/overview'); }}
             onRename={(name) => touch({ name }, false)}
-            onBack={back}
             onGo={go}
           />
         )}

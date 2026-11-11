@@ -21,7 +21,12 @@ const ICONS: Record<DrawerItem, string> = {
   about: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 11v6 M12 7.5v.01',
 };
 
-export function Drawer({ open, current, roomReady = true, onClose, onPick }: { open: boolean; current: string; roomReady?: boolean; onClose: () => void; onPick: (i: DrawerItem) => void }) {
+const START_ICON = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M10 8.5v7l6-3.5z';
+
+/** 025: «Начать» — выделенный пункт над группами, пока комната не создана; подсказка — с чего продолжить. */
+export interface DrawerStart { hint: string; onPick: () => void }
+
+export function Drawer({ open, current, roomReady = true, start, onClose, onPick }: { open: boolean; current: string; roomReady?: boolean; start?: DrawerStart | null; onClose: () => void; onPick: (i: DrawerItem) => void }) {
   const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => roomReady || !NEEDS_ROOM.includes(i)) })).filter((g) => g.items.length > 0);
   const x0 = useRef<number | null>(null);
   const panel = useRef<HTMLElement>(null);
@@ -52,6 +57,19 @@ export function Drawer({ open, current, roomReady = true, onClose, onPick }: { o
           <strong>{S.drawer.title}</strong>
           <button type="button" class="sheet__close" aria-label="Закрыть меню" onClick={onClose}>×</button>
         </div>
+        {start && <div class="drawer__group">
+          <ul class="drawer__list">
+            <li>
+              <button type="button" class="drawer__item drawer__item--start" aria-current={current === 'room' ? 'page' : undefined} tabIndex={open ? 0 : -1} onClick={start.onPick}>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d={START_ICON} /></svg>
+                <span>
+                  <span class="drawer__label">{S.drawer.start}</span>
+                  <span class="drawer__hint">{start.hint}</span>
+                </span>
+              </button>
+            </li>
+          </ul>
+        </div>}
         {groups.map((group) => <div key={group.title} class="drawer__group">
         <h2 class="drawer__group-title">{group.title}</h2>
         <ul class="drawer__list">
