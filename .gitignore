@@ -8,3 +8,4 @@ tests/fixtures/out/
 work/
 docs/chat-history.md
 docs/full_history.txt
+tests/e2e/.auth/

@@ -1,7 +1,8 @@
 // Применение скана к комнате (020). Одна функция строит комнату из найденного — и при первом применении,
 // и при «Поправить границы комнаты». Комната проекта остаётся единственным источником истины: всё, что
 // показывают планы, развёртки и 3D-модель, берётся из неё; исходный скан виден только при поправке границ.
-import type { Covering, Opening, Room, Setup, Treatment, WallFeature, WallId, Zone, Extension } from '../core/types';
+import type { Opening, Room, Setup, WallFeature, Zone } from '../core/types';
+import { shiftRoom } from '../core/fitRoom';
 import { toRoomItem, type WallItem, type WallItemKind } from '../core/wallItems';
 import { scanFurnitureType } from '../core/furniture';
 import { rotateRoom, rotateSetup } from '../state/project';
@@ -19,6 +20,8 @@ export interface ScanChoice {
   furniture: { on: boolean; sit: boolean }[];
   takeCorridor: boolean;
 }
+
+export { shiftRoom };
 
 export interface ScanNames {
   furniture: (name: string) => string;
@@ -56,8 +59,6 @@ export function scanProblem(d: { depth: number; width: number; height: number })
   if (ok(d.depth, 50) && ok(d.width, 50) && ok(d.height, 20)) return null;
   return 'dims';
 }
-
-const len = (room: Room, w: WallId) => (w === 'front' || w === 'back' ? room.width : room.depth);
 
 /**
  * Комната из скана в системе координат скана. mode:
@@ -100,46 +101,7 @@ export function scanRoom(base: Room, c: ScanChoice, mode: 'first' | 'fix', n: Sc
   };
 }
 
-/** Миллиметры: без хвостов округления после сдвига. */
 const mm = (v: number) => Math.round(v * 1000) / 1000;
-const clip = (a: number, b: number, lo: number, hi: number): [number, number] | null => {
-  const a0 = mm(Math.max(lo, Math.min(a, b))), a1 = mm(Math.min(hi, Math.max(a, b)));
-  return a1 - a0 >= 0.1 ? [a0, a1] : null;
-};
-
-/**
- * Сдвиг начала координат на (dx, dy) при новых размерах: элементы, добавленные вручную, остаются на тех же
- * местах настоящей комнаты. То, что оказалось за новыми стенами, обрезается; совсем снаружи — удаляется.
- */
-export function shiftRoom(room: Room, dx: number, dy: number, depth: number, width: number): Room {
-  const along = (w: WallId) => (w === 'front' || w === 'back' ? dy : dx);
-  const sized = { ...room, depth, width };
-  const zones = (room.zones ?? []).flatMap((z): Zone[] => {
-    const x = clip(z.x0 - dx, z.x1 - dx, 0, depth), y = clip(z.y0 - dy, z.y1 - dy, 0, width);
-    return x && y ? [{ ...z, x0: x[0], x1: x[1], y0: y[0], y1: y[1] }] : [];
-  });
-  const onWall = <T extends { wall: WallId; a0: number; a1: number }>(xs: T[] | undefined): T[] => (xs ?? []).flatMap((o) => {
-    const r = clip(o.a0 - along(o.wall), o.a1 - along(o.wall), 0, len(sized, o.wall));
-    return r ? [{ ...o, a0: r[0], a1: r[1] }] : [];
-  });
-  const coverings = (room.coverings ?? []).flatMap((c): Covering[] => {
-    const floor = c.surface === 'floor';
-    const du = floor ? dx : along(c.surface as WallId), dv = floor ? dy : 0;
-    const u = clip(c.u0 - du, c.u1 - du, 0, floor ? depth : len(sized, c.surface as WallId));
-    const v = clip(c.v0 - dv, c.v1 - dv, 0, floor ? width : room.height);
-    return u && v ? [{ ...c, u0: u[0], u1: u[1], v0: v[0], v1: v[1] }] : [];
-  });
-  const extensions = (room.extensions ?? []).map((e): Extension => {
-    const d = along(e.wall);
-    return { ...e, a0: mm(e.a0 - d), a1: mm(e.a1 - d), arch: { ...e.arch, a0: mm(e.arch.a0 - d), a1: mm(e.arch.a1 - d) } };
-  });
-  const treatments = (room.treatments ?? []).map((t): Treatment => {
-    if (t.kind === 'cloud') return { ...t, x: mm((t.x ?? 0) - dx), y: mm((t.y ?? 0) - dy) };
-    if (t.kind === 'panel' && t.wall) return { ...t, at: mm((t.at ?? len(room, t.wall) / 2) - along(t.wall)) };
-    return t;
-  });
-  return { ...sized, zones, openings: onWall(room.openings), features: onWall(room.features), coverings, extensions, treatments };
-}
 
 export function shiftSetup(s: Setup, dx: number, dy: number): Setup {
   const m = (p: { x: number; y: number; z: number }) => ({ ...p, x: mm(p.x - dx), y: mm(p.y - dy) });

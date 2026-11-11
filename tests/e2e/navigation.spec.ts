@@ -28,6 +28,7 @@ test('tuning preserves EQ result and export choice across sections, invalidates 
   await page.getByRole('button', { name: 'Конструктор комнаты' }).click();
   await page.getByLabel('Глубина', { exact: true }).fill('6');
   await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Настройка' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.locator('#eq-apo')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Рассчитать фильтры' })).toBeVisible();
 });

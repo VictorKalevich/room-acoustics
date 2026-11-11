@@ -72,6 +72,7 @@ test('room materials update RT60 and the final goal wins after rapid toggles', a
   // 019: обстановка — на шаге «Мебель» конструктора
   await page.evaluate(() => { location.hash = 'room/furniture'; });
   await page.getByLabel('Общая оценка обстановки', { exact: true }).selectOption('empty');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.evaluate(() => { location.hash = 'voice'; });
   await ready(page);
   await expect(value(page, 'voice-reverb')).not.toHaveText(rt!);

@@ -25,6 +25,7 @@ import { ReportScreen } from './screens/ReportScreen';
 import { VoiceScreen } from './screens/VoiceScreen';
 import { SyncScreen } from './screens/SyncScreen';
 import { OverviewScreen } from './screens/OverviewScreen';
+import { RoomFirst } from './screens/RoomFirst';
 import { AboutPanel } from './screens/ProjectsScreen';
 import { ProblemReport } from './components/ProblemReport';
 import { setFieldFocus } from './screens/FieldScreen';
@@ -32,6 +33,9 @@ import { S } from './strings';
 import { fmt } from './format';
 import { consumeJustUpdated } from './updates';
 import { activeTreatments } from '../core/treatments';
+
+/** Экраны с расчётами: пока комната не создана, на них — «Сначала создайте комнату» (021). */
+const NEEDS_ROOM: Tab[] = ['modes', 'placement', 'tuning', 'measure', 'voice', 'report'];
 
 /** Вкладки нижней панели; «Проекты» — кнопка в верхней панели. */
 const BAR: ('room' | 'modes' | 'placement' | 'tuning')[] = ['room', 'modes', 'placement', 'tuning'];
@@ -69,6 +73,7 @@ export function App() {
   const modes = useMemo(() => computeModes(project.room, fMax), [project.room, fMax]);
 
   const r = project.room;
+  const roomReady = project.roomReady;
   const title = tab === 'room' && route.room !== 'overview' ? S.editor.title : TITLES[tab];
   if (!ready) return <div class="screen"><p role="status">Открываем проект…</p></div>;
   return (
@@ -81,7 +86,7 @@ export function App() {
           <div class="topbar__text">
             <h1 class={`topbar__title${title.length > 14 ? ' is-long' : ''}`}>{title}</h1>
             <span class="topbar__room">
-              {project.name}, {fmt(r.depth, 2)} × {fmt(r.width, 2)} × {fmt(r.height, 2)} м
+              {project.name}{roomReady ? `, ${fmt(r.depth, 2)} × ${fmt(r.width, 2)} × ${fmt(r.height, 2)} м` : ''}
             </span>
           </div>
           <button
@@ -121,9 +126,10 @@ export function App() {
           <RoomScreen project={project} reverb={reverb} onRoom={onRoom} onGo={(t) => go(t)} />
         </div>
         {tab === 'room' && route.room !== 'overview' && (
-          <RoomEditor project={project} reverb={reverb} step={route.room} onStep={(s) => go(`room/${s}`)} onRoom={(room) => onRoom(room)} onBack={() => go('room/overview')} />
+          <RoomEditor project={project} step={route.room} onStep={(s) => go(`room/${s}`)} onRoom={onRoom} onBack={() => go('room/overview')} />
         )}
-        {tab === 'modes' && (
+        {!roomReady && NEEDS_ROOM.includes(tab) && <RoomFirst onGo={() => go('room/overview')} />}
+        {roomReady && tab === 'modes' && (
           <>
             <div class="screen modes-switch">
               <SectionNav label="Раздел анализа" value={modesView} options={[{ value: 'overview', label: S.modesView.overview }, { value: 'list', label: S.modesView.list }, { value: 'field', label: S.modesView.field }]} onChange={setModes} />
@@ -135,7 +141,7 @@ export function App() {
             )}
           </>
         )}
-        <div hidden={tab !== 'placement'}>
+        {roomReady && <div hidden={tab !== 'placement'}>
           <PlacementScreen
             project={project}
             onSources={onSources}
@@ -148,10 +154,10 @@ export function App() {
             onSetups={onSetups}
             onGo={(t) => go(t)}
           />
-        </div>
-        <RetainedSection active={tab === 'tuning'}>
+        </div>}
+        {roomReady && <RetainedSection active={tab === 'tuning'}>
           <TuningScreen project={project} modes={modes} onSetup={onSetup} onRoom={(room) => onRoom(room)} view={route.tuning} active={tab === 'tuning'} onGo={go} />
-        </RetainedSection>
+        </RetainedSection>}
         {tab === 'projects' && (
           <ProjectsScreen
             project={project}
@@ -159,11 +165,11 @@ export function App() {
             onRename={(name) => touch({ name }, false)}
           />
         )}
-        <RetainedSection active={tab === 'measure'}>
+        {roomReady && <RetainedSection active={tab === 'measure'}>
           <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} />
-        </RetainedSection>
-        {tab === 'voice' && <VoiceScreen project={project} onVoice={onVoice} />}
-        {tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} />}
+        </RetainedSection>}
+        {roomReady && tab === 'voice' && <VoiceScreen project={project} onVoice={onVoice} />}
+        {roomReady && tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} />}
         {tab === 'sync' && <SyncScreen project={project} onReplace={(p: Project) => setProject(p)} />}
         {tab === 'help' && <HelpScreen project={project} onGo={(t) => go(t)} onWizard={refreshWizard} />}
         {tab === 'about' && <div class="screen"><AboutPanel /><ProblemReport project={project} /></div>}

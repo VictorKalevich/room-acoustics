@@ -87,6 +87,7 @@ test('без списка ковры и мебель не меняют RT60; с�
   await page.locator('.zone-card').filter({ hasText: 'В расчёте звука не учитывается' }).getByRole('button', { name: 'Удалить', exact: true }).click();
   await expect(status).toHaveText(listed!);
   // бас (63 и 125 Гц) — прежний, средние частоты — другие
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('button', { name: /Обзор комнаты/ }).click();
   const after = await Promise.all([0, 1, 3, 4].map((i) => rtCell(page, i).textContent()));
   expect(after.slice(0, 2)).toEqual(before.slice(0, 2));
@@ -115,4 +116,63 @@ test('пояснение «Почему учитывается только эт
   await bed.getByRole('button', { name: 'Повернуть на 90°' }).click();
   await expect(bed.getByLabel('Длина вдоль передней', { exact: true })).toHaveValue('2');
   await expect(bed.getByLabel('Глубина', { exact: true })).toHaveValue('1,6');
+});
+
+test('021: уход с несохранёнными изменениями — «Остаться», «Не сохранять», «Сохранить»', async ({ page }) => {
+  await page.goto('/#room/size');
+  const save = page.getByRole('button', { name: 'Сохранить', exact: true });
+  await expect(save).toBeDisabled();
+  await page.getByLabel('Ширина', { exact: true }).fill('3,5');
+  await page.getByLabel('Ширина', { exact: true }).blur();
+  await expect(page.getByText(/Есть несохранённые изменения/)).toBeVisible();
+  await expect(save).toBeEnabled();
+  // между шагами конструктора — без вопроса, черновик общий
+  await steps(page).getByRole('button', { name: /Стены/ }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole('button', { name: /Обзор комнаты/ }).click();
+  await expect(dialog).toContainText('Сохранить изменения комнаты?');
+  await dialog.getByRole('button', { name: 'Остаться' }).click();
+  await expect(page).toHaveURL(/#room\/walls$/);
+  await page.getByRole('button', { name: /Обзор комнаты/ }).click();
+  await dialog.getByRole('button', { name: 'Не сохранять' }).click();
+  await expect(page).toHaveURL(/#room$/);
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00');
+  await page.getByRole('button', { name: 'Конструктор комнаты' }).click();
+  await expect(page.getByLabel('Ширина', { exact: true })).toHaveValue('4');
+  await page.getByLabel('Ширина', { exact: true }).fill('3,5');
+  await page.getByLabel('Ширина', { exact: true }).blur();
+  // «Назад» браузера тоже спрашивает
+  await page.goBack();
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page).toHaveURL(/#room$/);
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 3,50');
+});
+
+test('021: уменьшение комнаты — список удаляемого перед сохранением; проект не теряется после перезапуска', async ({ page }) => {
+  await page.goto('/#room/furniture');
+  await page.getByRole('button', { name: 'Добавить мебель', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Диван сложенный', exact: true }).click();
+  const sofa = page.locator('.zone-card').filter({ has: page.getByLabel('Что это 1', { exact: true }) });
+  await sofa.getByLabel('От передней стены', { exact: true }).fill('3,8');
+  await sofa.getByLabel('От передней стены', { exact: true }).blur();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await steps(page).getByRole('button', { name: /Размеры/ }).click();
+  await page.getByLabel('Глубина', { exact: true }).fill('3');
+  await page.getByLabel('Глубина', { exact: true }).blur();
+  await expect(page.getByText(/Объекты за стенами комнаты: 1\./)).toBeVisible();
+  const dialog = page.getByRole('alertdialog');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(dialog).toContainText('Часть объектов не помещается в комнату');
+  await expect(dialog.locator('li')).toHaveText(['Диван сложенный']);
+  await dialog.getByRole('button', { name: 'Вернуться' }).click();
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page.locator('.topbar__room')).toContainText('3,00 × 4,00');
+  await page.waitForTimeout(800);
+  await page.reload();
+  await expect(page.locator('.topbar__room')).toContainText('3,00 × 4,00');
+  await steps(page).getByRole('button', { name: /Мебель/ }).click();
+  await expect(page.locator('.zone-card select').filter({ has: page.locator('option:checked', { hasText: 'Диван' }) })).toHaveCount(0);
 });

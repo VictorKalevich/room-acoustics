@@ -1,6 +1,8 @@
 // Скан комнаты (020). Выбор файла → разбор и распознавание → сразу применение к комнате, как если бы
 // нажали «Применить размеры». Исходный скан хранится на устройстве и виден только в «Поправить границы
 // комнаты»; в остальное время здесь показывается модель комнаты проекта — та же, по которой идут расчёты.
+// 021: пока комната не создана, блок появляется только на время разбора файла (выбор — в «С чего начать»);
+// у комнаты, настроенной вручную, это просто «3D-модель» без упоминаний скана.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
@@ -13,11 +15,11 @@ import type { WallItemKind } from '../../../core/wallItems';
 import { SIT_DEFAULT, defaultChoice, fixScan, foundWallItems, scanProblem, scanRoom, type ScanChoice, type ScanNames } from '../../../scan/apply';
 import { loadStoredScan, saveScan, thinScan } from '../../../state/storage';
 import { LayoutEditor, type Rect } from '../../components/LayoutEditor';
-import { Panel, SelectField, Note, Details, Segmented } from '../../design-system';
+import { Panel, SelectField, Note, Segmented } from '../../design-system';
 import { S } from '../../strings';
 import { fmt, fmtInt } from '../../format';
 import { logError } from '../../../state/errlog';
-import { FileIcon } from './icons';
+import { dropRoomDraft } from '../../roomDraft';
 
 type ScanState =
   | { phase: 'idle' }
@@ -81,7 +83,8 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
     }, { rootMargin: '300px' });
     io.observe(el);
     return () => io.disconnect();
-  }, [editing, RoomModel]);
+    // место под модель появляется и после поправки, и когда комната создана (021)
+  }, [editing, RoomModel, project.roomReady]);
 
   const runWorker = <T,>(msg: Record<string, unknown>, tri: Float32Array) =>
     new Promise<T>((resolve, reject) => {
@@ -167,7 +170,10 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
       ...reset,
       scanInfo: { ...summaryOf(d, l), rotation: 0 },
       constraints: { ...(reset?.constraints ?? project.constraints), ...zoneFor(room) },
+      // комната создана; незаконченная ручная настройка больше не нужна
+      roomReady: true,
     });
+    dropRoomDraft(project.id);
     applied.current = { choice: c, units: d.units };
     persist(l, d, init, c, u);
   };
@@ -300,8 +306,8 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
   const busy = state.phase === 'loading' || state.phase === 'detecting';
   const model = project.room;
   const count = (kind: 'window' | 'door') => (model.features ?? []).filter((f) => f.kind === kind).length;
-  return (
-    <Panel title={S.room.scan} id="scan-panel">
+  const ready = project.roomReady;
+  const fileInput = (
       <input
         ref={input}
         type="file"
@@ -314,20 +320,12 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
           (e.target as HTMLInputElement).value = '';
         }}
       />
-      {!hasScan && (
-        <>
-          <p class="small">{S.room.scanIntro}</p>
-          <button type="button" class="btn" disabled={busy} onClick={() => input.current?.click()}>
-            <FileIcon /> {S.room.chooseFile}
-          </button>
-          <Details summary={S.scanGuide.title}>
-            <ol class="small scan-guide">
-              {S.scanGuide.steps.map((t, ki) => <li key={ki}>{t}</li>)}
-            </ol>
-            <p class="muted small">{S.scanGuide.formats}</p>
-          </Details>
-        </>
-      )}
+  );
+  // комнаты ещё нет и файл не разбирается — выбор файла в «С чего начать», здесь только поле выбора
+  if (!ready && !busy && !editing && state.phase !== 'error') return fileInput;
+  return (
+    <Panel title={hasScan || !ready ? S.room.scan : S.room.model3d} id="scan-panel">
+      {fileInput}
 
       {busy && (
         <p class="progress-text" role="status">
@@ -337,7 +335,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
       {state.phase === 'error' && <Note tone="warn">{state.message}</Note>}
       {missing && <Note>{S.scan.missing}</Note>}
 
-      {!editing && (
+      {ready && !editing && (
         <div class="scan-result" ref={modelSlot}>
           {RoomModel ? <RoomModel room={project.room} /> : <div class="scan-preview" aria-hidden="true" />}
           <p class="muted small">{hasScan ? S.scan.modelNote : S.room.modelNote}</p>

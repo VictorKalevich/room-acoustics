@@ -1,14 +1,13 @@
 // Помощник по шагам: от скана до отчёта. Часть шагов определяется сама, остальные отмечаются вручную.
 import type { Project } from '../state/project';
-import { defaultRoom } from '../state/project';
 import type { Destination } from './navigation';
 
 export type WizardTab = Destination;
 export interface WizardStep { id: string; title: string; hint: string; tab: WizardTab; auto?: (p: Project) => boolean }
 
 export const STEPS: WizardStep[] = [
-  { id: 'room', title: 'Комната', hint: 'Загрузите скан (Polycam) или введите размеры.', tab: 'room',
-    auto: (p) => p.room.source === 'scan' || p.room.depth !== defaultRoom().depth || p.room.width !== defaultRoom().width },
+  // 021: комната создана — скан применён или ручная настройка сохранена
+  { id: 'room', title: 'Комната', hint: 'Загрузите скан (Polycam) или настройте комнату вручную.', tab: 'room', auto: (p) => p.roomReady },
   { id: 'materials', title: 'Материалы', hint: 'Укажите материалы пола, стен и потолка и мебель.', tab: 'room' },
   { id: 'placement', title: 'Расстановка', hint: 'Подберите расстановку автоматически или вручную.', tab: 'placement', auto: (p) => !!p.result },
   { id: 'check', title: 'Проверка', hint: 'Послушайте моды тоном или сделайте замер.', tab: 'measure', auto: (p) => !!p.current.measurement },

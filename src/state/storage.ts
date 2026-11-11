@@ -1,8 +1,9 @@
 // Локальное хранение проектов (IndexedDB) и файл проекта (contracts/project-file.md).
 import { normalizeVoice } from '../core/voice';
 import type { Project } from './project';
-import { defaultConstraints, defaultRoom, defaultSetup, defaultSources, defaultSub, makeId, syncSetup, validateRoom, validateSources } from './project';
-import type { FurnitureType, Measurement, Setup, SourceSpec } from '../core/types';
+import { defaultConstraints, defaultRoom, defaultSetup, defaultSources, defaultSub, legacyRoomReady, makeId, syncSetup, validateRoom, validateSources } from './project';
+import { fitRoomObjects } from '../core/fitRoom';
+import type { FurnitureType, Measurement, Room, Setup, SourceSpec } from '../core/types';
 import { DAMPING_MODEL, SURFACES } from '../core/types';
 import { MATERIAL_BY_ID } from '../core/materials';
 import { FURNITURE } from '../core/furniture';
@@ -40,10 +41,14 @@ export function parseProjectFile(text: string): Project {
   return normalizeProject(data.project ?? {});
 }
 
-/** Заполняет отсутствующие поля умолчаниями и проверяет диапазоны. */
-export function normalizeProject(raw: any): Project {
-  const room = { ...defaultRoom(), ...raw.room };
-  room.materials = { ...defaultRoom().materials, ...raw.room?.materials };
+/**
+ * Комната: отсутствующие поля — умолчания, неверные элементы отбрасываются, диапазоны проверяются.
+ * fit = false (черновик конструктора, 021): объекты за стенами остаются как есть — список удаляемого
+ * пользователь увидит перед сохранением; проверка при этом идёт по вписанной копии.
+ */
+export function normalizeRoom(rawRoom: any, fit = true): Room {
+  const room = { ...defaultRoom(), ...rawRoom };
+  room.materials = { ...defaultRoom().materials, ...rawRoom?.materials };
   for (const s of SURFACES) if (!MATERIAL_BY_ID[room.materials[s]]) room.materials[s] = defaultRoom().materials[s];
   if (!Array.isArray(room.zones)) room.zones = [];
   if (!['sealed', 'typical', 'door', 'open'].includes(room.leakage)) room.leakage = 'typical';
@@ -77,8 +82,17 @@ export function normalizeProject(raw: any): Project {
       && [c.u0, c.u1, c.v0, c.v1].every(num) && c.u1 > c.u0 && c.v1 > c.v0)
     : [];
   room.furnitureList = !!room.furnitureList;
-  const roomErr = validateRoom(room);
+  // 021: мебель, зоны, окна, ковры, скос и коридоры за стенами (после уменьшения комнаты) вписываются в комнату,
+  // а не делают весь проект «неверным» — раньше такой проект не открывался и заменялся новым
+  const fitted = fitRoomObjects(room).room;
+  const roomErr = validateRoom(fitted);
   if (roomErr.length) throw new Error(`Неверные данные комнаты: ${roomErr.map((e) => e.message).join('; ')}`);
+  return fit ? fitted : room;
+}
+
+/** Заполняет отсутствующие поля умолчаниями и проверяет диапазоны. */
+export function normalizeProject(raw: any): Project {
+  const room = normalizeRoom(raw.room);
   const rawSources: SourceSpec[] = Array.isArray(raw.sources) && raw.sources.length ? raw.sources : defaultSources(2, 1);
   const sources = rawSources.map((s, i) => (s.kind === 'sub' ? { ...defaultSub(i + 1), ...s } : s));
   const srcErr = validateSources(sources);
@@ -118,6 +132,7 @@ export function normalizeProject(raw: any): Project {
     current: fixSetup(raw.current, 'Текущая'),
     setups: Array.isArray(raw.setups) ? raw.setups.map((s: any) => fixSetup(s, s?.name ?? 'Вариант')) : [],
     ...(raw.voice ? { voice: normalizeVoice(raw.voice) } : {}),
+    roomReady: typeof raw.roomReady === 'boolean' ? raw.roomReady : legacyRoomReady(room, raw),
   };
 }
 

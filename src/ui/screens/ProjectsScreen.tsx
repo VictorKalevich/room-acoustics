@@ -6,6 +6,7 @@ import { Panel, Note } from '../design-system';
 import { S } from '../strings';
 import { BUILD, checkForUpdate, getStatus, onStatus, type UpdateStatus } from '../updates';
 import { fmt } from '../format';
+import { dropRoomDraft } from '../roomDraft';
 
 interface Props {
   project: Project;
@@ -94,7 +95,7 @@ export function ProjectsScreen({ project, onReplace, onRename }: Props) {
                   <button
                     type="button"
                     class="btn btn--small btn--ghost"
-                    onClick={async () => { await deleteProject(p.id); refresh(); }}
+                    onClick={async () => { await deleteProject(p.id); dropRoomDraft(p.id); refresh(); }}
                     aria-label={`${S.projects.remove} ${p.name}`}
                   >
                     {S.projects.remove}

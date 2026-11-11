@@ -33,6 +33,7 @@ function Catalog() {
   const [theme, setTheme] = useState('light');
   const [checked, setChecked] = useState(true);
   const [confirm, setConfirm] = useState(false);
+  const [choice, setChoice] = useState(false);
   const [message, setMessage] = useState('Выберите действие');
   const options = [{ value: 'first', label: 'Первый' }, { value: 'second', label: 'Второй' }];
   return <main class="content screen">
@@ -53,7 +54,7 @@ function Catalog() {
     <Panel title="Кнопки и состояния">
       <div class="btn-row"><button type="button" class="btn btn--primary">Основная</button><button type="button" class="btn">Обычная</button></div>
       <div class="btn-row"><button type="button" class="btn btn--ghost">Без фона</button><button type="button" class="btn" disabled>Недоступна</button></div>
-      <div class="btn-row"><button type="button" class="btn btn--small">Компактная</button><button type="button" class="btn btn--danger" onClick={() => setConfirm(true)}>Подтверждение</button></div>
+      <div class="btn-row"><button type="button" class="btn btn--small">Компактная</button><button type="button" class="btn btn--danger" onClick={() => setConfirm(true)}>Подтверждение</button><button type="button" class="btn" onClick={() => setChoice(true)}>Три действия</button></div>
       <button type="button" class="btn btn--primary btn--wide">Широкая</button>
       <ActionMenu label="Добавить проём" actions={['Окно', 'Дверь', 'Проём без двери'].map(label => ({ label, onSelect: () => setMessage(label) }))} />
       <p class="small" role="status">{message}</p>
@@ -94,6 +95,11 @@ function Catalog() {
     </Panel>
     {confirm && <ConfirmSheet title="Пример подтверждения" text="Это демонстрация компонента, данные приложения не меняются."
       confirm="Подтвердить" onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); setMessage('Подтверждено'); }} />}
+    {choice && <ConfirmSheet title="Пример с тремя действиями" text="Основной тон, своя подпись отмены, третье действие и список." tone="primary"
+      confirm="Сохранить" cancel="Остаться" extra={{ label: 'Не сохранять', onClick: () => { setChoice(false); setMessage('Не сохранено'); } }}
+      onCancel={() => setChoice(false)} onConfirm={() => { setChoice(false); setMessage('Сохранено'); }}>
+      <ul class="plain-list small"><li>Диван</li><li>Окно, передняя стена</li></ul>
+    </ConfirmSheet>}
   </main>;
 }
 render(<Catalog />, document.getElementById('catalog')!);

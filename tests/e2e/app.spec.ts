@@ -49,6 +49,8 @@ test('US4: толстый ковёр уменьшает RT60', async ({ page }) 
   await page.getByRole('button', { name: 'Конструктор комнаты' }).click();
   await page.getByRole('navigation', { name: 'Шаги конструктора' }).getByRole('button', { name: /Пол и потолок/ }).click();
   await page.getByLabel('Материал пола', { exact: true }).selectOption('carpet-thick');
+  // 021: в расчёты правка попадает после «Сохранить»
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('button', { name: /Обзор комнаты/ }).click();
   await expect(async () => {
     const after = Number((await rt.textContent())!.replace(',', '.').replace(/[^\d.]/g, ''));
@@ -101,7 +103,9 @@ test('003: коридор за аркой — моды системы и вол�
   await page.goto('/#room/size');
   await page.getByRole('button', { name: 'Добавить коридор' }).click();
   await expect(page.locator('svg.plan:visible .plan__ext').first()).toBeVisible();
+  // 021: уход из конструктора с несохранённым коридором — вопрос; «Сохранить» сохраняет и переходит
   await page.getByRole('button', { name: 'Анализ', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   await expect(page.locator('.sysmodes-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Расстановка' }).click();
@@ -196,6 +200,7 @@ test('005: план обработки, скос потолка и помощн�
   await page.goto('/#room/floor');
   await page.getByText('Есть скос потолка (мансарда)').click();
   await expect(page.locator('.plan__slope').first()).toBeAttached();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.goto('/#help');
   await page.getByText('Показывать подсказку текущего шага сверху экрана').click();
   await expect(page.locator('.wizard-strip')).toBeVisible();
@@ -222,15 +227,6 @@ test('аудит: синхронизация — открыть файл дру�
   await expect(page.getByText('В файле другой проект — «Дача»')).toBeVisible();
   await page.getByRole('button', { name: 'Открыть', exact: true }).click();
   await expect(page.locator('.topbar__room')).toContainText('Дача, 6,00 × 4,50 × 2,70');
-});
-
-test('UX: первый запуск — карточка «С чего начать» ведёт к размерам и исчезает, когда комната задана', async ({ page }) => {
-  await page.goto('/#room');
-  await expect(page.locator('.start-card')).toBeVisible();
-  await page.locator('.start-card').getByRole('button', { name: 'Ввести размеры' }).click();
-  await expect(page.getByLabel('Глубина', { exact: true })).toBeFocused();
-  await page.getByLabel('Глубина', { exact: true }).fill('6');
-  await expect(page.locator('.start-card')).toHaveCount(0);
 });
 
 test('UX: найденный вариант становится текущей расстановкой, другой — по кнопке', async ({ page }) => {
@@ -474,10 +470,12 @@ test('013: общий блок «Система и цель подбора» н�
 
 test('014: «Очистить» на экране комнаты; модель комнаты без скана; окно — отступ и ширина; стрелка списков с отступом', async ({ page }) => {
   await page.goto('/#room');
-  // без скана — 3D-модель по введённым размерам там, где показывается скан
+  // без скана — 3D-модель по введённым размерам там, где показывается скан; 021: без упоминаний скана и LiDAR
   const model = page.locator('#scan-panel .scan-result');
   await model.scrollIntoViewIfNeeded();
   await expect(model.locator('canvas')).toBeVisible();
+  await expect(page.locator('#scan-panel .panel__title')).toHaveText('3D-модель');
+  await expect(page.locator('#scan-panel')).not.toContainText(/LiDAR|скан/i);
   // окно: отступ и ширина; при сдвиге ширина сохраняется (019: окна — на шаге «Стены», левая стена)
   await page.goto('/#room/walls');
   await page.getByRole('radio', { name: 'Левая', exact: true }).click();
@@ -502,6 +500,9 @@ test('014: «Очистить» на экране комнаты; модель �
   await page.goto('/#room/size');
   await page.getByLabel('Глубина', { exact: true }).fill('6');
   await page.getByLabel('Глубина', { exact: true }).blur();
+  // 021: до «Сохранить» в расчётах прежняя комната
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.locator('.topbar__room')).toContainText('6,00 × 4,00');
   // очистить на обзоре: сначала отмена, потом подтверждение
   await page.getByRole('button', { name: /Обзор комнаты/ }).click();
@@ -510,13 +511,18 @@ test('014: «Очистить» на экране комнаты; модель �
   await expect(page.locator('.topbar__room')).toContainText('6,00 × 4,00');
   await page.getByRole('button', { name: 'Очистить' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Очистить' }).click();
-  await expect(page.locator('.topbar__room')).toContainText('4,00 × 3,00 × 2,70 м');
+  // 021: комнаты снова нет — только «С чего начать», размеры в заголовке не показываются
   await expect(page.locator('.start-card')).toBeVisible();
-  await expect(page.locator('.plan__slope')).toHaveCount(0);
+  await expect(page.locator('.topbar__room')).not.toContainText('×');
+  await expect(page.locator('svg.plan:visible')).toHaveCount(0);
+  // ручная настройка идёт по шагам: по адресу «Стены» открывается первый шаг
   await page.goto('/#room/walls');
+  await expect(page.getByRole('heading', { name: 'Шаг 1 из 4: Размеры' })).toBeVisible();
+  await expect(page.getByLabel('Глубина', { exact: true })).toHaveValue('4');
+  await page.getByRole('button', { name: /Далее/ }).click();
   await page.getByRole('radio', { name: 'Левая', exact: true }).click();
   await expect(page.locator('.zone-card:visible')).toHaveCount(0);
-  await page.goto('/#room/floor');
+  await page.getByRole('button', { name: /Далее/ }).click();
   await expect(page.getByLabel('Есть скос потолка (мансарда)')).not.toBeChecked();
 });
 
@@ -565,6 +571,8 @@ test('015: отражения от передней и задней стен; э
   await win.getByLabel('Ширина', { exact: true }).fill('4');
   await page.getByRole('button', { name: 'Открыть меню' }).click();
   await page.getByRole('button', { name: /Место для записи/ }).click();
+  // 021: изменения конструктора сохраняются по вопросу при уходе
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.locator('.topbar__room')).toContainText('4,00 × 3,00');
   await expect(page.locator('.voice-refl')).toContainText('на окне');
 });

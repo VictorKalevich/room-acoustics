@@ -37,22 +37,35 @@ export function routePath(route: Route): string {
   return route.tab;
 }
 
+/**
+ * Уход с экрана с несохранёнными данными (021): страж получает следующий адрес и решает, уходить ли сразу.
+ * Вернул true — переход отложен; страж сам вызовет proceed, когда пользователь выберет «Сохранить» или «Не сохранять».
+ */
+export type LeaveGuard = (next: Route, proceed: () => void) => boolean;
+let leaveGuard: LeaveGuard | null = null;
+export function setLeaveGuard(g: LeaveGuard | null) { leaveGuard = g; }
+
 export function useNavigation() {
   const [route, setRoute] = useState(() => resolveRoute(location.hash));
   const current = useRef(route);
   const positions = useRef(new Map<string, number>());
   const previousPath = useRef(routePath(route));
-  const go = (destination: Destination) => {
+  const apply = (next: Route) => {
     const prev = current.current;
     positions.current.set(routePath(prev), window.scrollY);
-    // Main tabs restore their last subsection; explicit destinations select a subsection.
-    const next = TABS.includes(destination as Tab)
-      ? { ...prev, tab: destination as Tab }
-      : resolveRoute(destination, prev);
     const path = routePath(next);
     if (path !== routePath(prev)) history.pushState(null, '', `#${path}`);
     current.current = next;
     setRoute(next);
+  };
+  const go = (destination: Destination) => {
+    const prev = current.current;
+    // Main tabs restore their last subsection; explicit destinations select a subsection.
+    const next = TABS.includes(destination as Tab)
+      ? { ...prev, tab: destination as Tab }
+      : resolveRoute(destination, prev);
+    if (routePath(next) !== routePath(prev) && leaveGuard?.(next, () => apply(next))) return;
+    apply(next);
   };
   useEffect(() => {
     const previousRestoration = history.scrollRestoration;
@@ -60,6 +73,11 @@ export function useNavigation() {
     const sync = () => {
       const next = resolveRoute(location.hash, current.current);
       if (routePath(next) === routePath(current.current)) return;
+      // «Назад» браузера с несохранёнными данными: адрес возвращается, переход — после ответа пользователя
+      if (leaveGuard?.(next, () => apply(next))) {
+        history.pushState(null, '', `#${routePath(current.current)}`);
+        return;
+      }
       positions.current.set(routePath(current.current), window.scrollY);
       current.current = next;
       setRoute(next);

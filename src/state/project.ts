@@ -21,6 +21,11 @@ export interface Project {
   setups: Setup[];
   /** Запись голоса: микрофон, полоса частот, где стоит исполнитель. */
   voice?: VoiceSettings;
+  /**
+   * Комната создана (021): применён скан или ручной ввод сохранён кнопкой «Сохранить».
+   * До этого экраны с расчётами предлагают сначала создать комнату.
+   */
+  roomReady: boolean;
 }
 
 export function defaultRoom(): Room {
@@ -71,7 +76,7 @@ export function clearedRoom(p: Project): Partial<Project> & { room: Room } {
   const constraints: Constraints = { ...p.constraints, listenerMinX: d.listenerMinX, listenerMaxX: d.listenerMaxX };
   const b = baselinePositions(room, p.sources, constraints);
   const current: Setup = { ...p.current, listener: b.listener, positions: b.positions, measurement: null, history: undefined };
-  return { room, constraints, current, scanInfo: null, result: null, selectedIndex: 0 };
+  return { room, constraints, current, scanInfo: null, result: null, selectedIndex: 0, roomReady: false };
 }
 
 /** Колонки (1 — моно по центру, 2 — стерео-пара) и сабвуферы с диапазонами по умолчанию. */
@@ -141,7 +146,27 @@ export function newProject(name = 'Моя комната'): Project {
     selectedIndex: 0,
     current: defaultSetup(room, sources, constraints),
     setups: [],
+    roomReady: false,
   };
+}
+
+/**
+ * Проекты до 021 не знали о признаке «комната создана». Не создана она только у нетронутого проекта:
+ * без скана, с размерами комнаты по умолчанию или пустой комнаты после «Очистить» (прежнее правило карточки
+ * «С чего начать»), без своих объектов, материалов и обстановки и без следов работы в других разделах
+ * (результат подбора, замер, сохранённые варианты, запись голоса). Иначе проект открывается как раньше.
+ */
+export function legacyRoomReady(room: Room, raw: {
+  scanInfo?: unknown; result?: unknown; voice?: unknown; setups?: unknown[]; current?: { measurement?: unknown };
+} = {}): boolean {
+  if (room.source === 'scan' || raw.scanInfo) return true;
+  const same = (r: Room) => room.depth === r.depth && room.width === r.width && room.height === r.height;
+  if (!(same(defaultRoom()) || same(emptyRoom()))) return true;
+  const base = defaultRoom();
+  const objects = [room.zones, room.openings, room.features, room.extensions, room.coverings, room.treatments].some((a) => (a ?? []).length > 0);
+  const surfaces = (Object.keys(base.materials) as (keyof Room['materials'])[]).some((k) => room.materials[k] !== base.materials[k]);
+  const used = !!raw.result || !!raw.voice || !!raw.current?.measurement || (raw.setups ?? []).length > 0;
+  return objects || !!room.slope || surfaces || room.furnishing !== base.furnishing || !!room.furnitureList || used;
 }
 
 export function makeId(): string {

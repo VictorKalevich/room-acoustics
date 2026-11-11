@@ -1,5 +1,9 @@
 // Конструктор комнаты (019): размеры и форма → стены (развёртка, окна, ковры, шторы) → пол и потолок →
-// мебель сверху. Всё, что найдено в скане, правится здесь же. Данные — общий Project, как и раньше.
+// мебель сверху. Всё, что найдено в скане, правится здесь же.
+// 021: правки копятся в черновике (ui/roomDraft) и попадают в проект только по «Сохранить». Пока комната
+// не создана, это ручная настройка по шагам («Далее», на последнем шаге «Сохранить»); потом — правка с
+// переходами между шагами, «Сохранить» внизу каждого шага и вопросом при уходе с несохранёнными изменениями.
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
 import { makeId } from '../../../state/project';
 import type { Covering, FurnitureType, ReverbResult, Room, WallId, Zone } from '../../../core/types';
@@ -10,13 +14,16 @@ import {
 } from '../../../core/furniture';
 import { speedOfSound } from '../../../core/physics';
 import { shownTreatments } from '../../../core/treatments';
-import { ActionMenu, Details, NumberField, Panel, SectionNav, Segmented, SelectField } from '../../design-system';
+import { computeReverb } from '../../../core/reverb';
+import { fitRoomObjects, type FitItem } from '../../../core/fitRoom';
+import { ActionMenu, ConfirmSheet, Details, Note, NumberField, Panel, SectionNav, Segmented, SelectField } from '../../design-system';
 import { PlanView } from '../../components/PlanView';
 import { WallView } from '../../components/WallView';
 import { ShapePanel, SlopeBlock, WallItemsPanel } from './OpeningsPanel';
 import { ZonesPanel } from './ZonesPanel';
-import { ROOM_STEPS, type RoomStep } from '../../navigation';
+import { ROOM_STEPS, setLeaveGuard, type RoomStep } from '../../navigation';
 import { useViewState } from '../../useViewState';
+import { draftDiffers, dropRoomDraft, loadRoomDraft, saveRoomDraft, withOutside } from '../../roomDraft';
 import { S } from '../../strings';
 import { fmt } from '../../format';
 import type { Furnishing } from '../../../core/types';
@@ -28,27 +35,188 @@ const len = (a: number, b: number) => Math.round((b - a) * 1000) / 1000;
 
 interface Props {
   project: Project;
-  reverb: ReverbResult;
   step: RoomStep;
   onStep: (s: RoomStep) => void;
-  onRoom: (room: Room) => void;
+  onRoom: (room: Room, extra?: Partial<Project>) => void;
+  /** К обзору комнаты. */
   onBack: () => void;
 }
 
-export function RoomEditor({ project, reverb, step, onStep, onRoom, onBack }: Props) {
-  const room = project.room;
+type FitResult = ReturnType<typeof fitRoomObjects>;
+
+export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
+  const wizard = !project.roomReady;
+  const [stored] = useState(() => loadRoomDraft(project.id));
+  /** null — черновика нет, на экране сохранённая комната. */
+  const [draft, setDraft] = useState<Room | null>(stored?.room ?? null);
+  const [reached, setReached] = useState<RoomStep>(stored?.reached ?? 'size');
+  const [saved, setSaved] = useState(false);
+  const [askReset, setAskReset] = useState(false);
+  const [leave, setLeave] = useState<{ proceed: () => void } | null>(null);
+  const [fitAsk, setFitAsk] = useState<{ fit: FitResult; after?: () => void } | null>(null);
+
+  // поля, которые меняются вне конструктора (обработка, калибровка), всегда берутся из проекта
+  const room = useMemo(() => (draft ? withOutside(draft, project.room) : project.room), [draft, project.room]);
+  const reverb = useMemo(() => computeReverb(room), [room]);
+  const outside = useMemo(() => { const f = fitRoomObjects(room); return f.removed.length + f.trimmed.length; }, [room]);
+  const dirty = draft !== null && draftDiffers(draft, project.room);
+
+  const index = ROOM_STEPS.indexOf(step);
+  const reachedIndex = ROOM_STEPS.indexOf(reached);
+  // ручная настройка идёт по порядку: дальше достигнутого шага по адресу не попасть
+  const shown = wizard && index > reachedIndex ? reached : step;
+  useEffect(() => { if (shown !== step) onStep(shown); }, [shown, step]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const edit = (r: Room) => {
+    setDraft(r);
+    setSaved(false);
+    saveRoomDraft(project.id, { room: r, reached });
+  };
+
+  const commit = (r: Room, after?: () => void) => {
+    onRoom(r, { roomReady: true });
+    dropRoomDraft(project.id);
+    setDraft(null);
+    setReached('size');
+    setFitAsk(null);
+    if (after) after();
+    else if (wizard) onBack();
+    else setSaved(true);
+  };
+  /** «Сохранить»: если после уменьшения комнаты что-то оказалось за стенами — сначала список и подтверждение. */
+  const save = (after?: () => void) => {
+    const fit = fitRoomObjects(room);
+    if (fit.removed.length || fit.trimmed.length) setFitAsk({ fit, after });
+    else commit(room, after);
+  };
+  const reset = () => {
+    setAskReset(false);
+    dropRoomDraft(project.id);
+    setDraft(null);
+    setReached('size');
+    setSaved(false);
+    if (wizard) onStep('size');
+  };
+  const next = () => {
+    const to = ROOM_STEPS[index + 1];
+    const far = ROOM_STEPS.indexOf(to) > reachedIndex ? to : reached;
+    const r = draft ?? project.room;
+    setDraft(r);
+    setReached(far);
+    saveRoomDraft(project.id, { room: r, reached: far });
+    onStep(to);
+  };
+
+  // уход из конструктора с несохранёнными изменениями: «Сохранить» / «Не сохранять» / «Остаться».
+  // При ручной настройке не спрашиваем — черновик остаётся и продолжится с того же шага.
+  const guard = useRef({ wizard, dirty });
+  guard.current = { wizard, dirty };
+  useEffect(() => {
+    setLeaveGuard((nextRoute, proceed) => {
+      if (nextRoute.tab === 'room' && nextRoute.room !== 'overview') return false;
+      if (guard.current.wizard || !guard.current.dirty) return false;
+      setLeave({ proceed });
+      return true;
+    });
+    return () => setLeaveGuard(null);
+  }, []);
+
+  const steps = (
+    <>
+      {shown === 'size' && <SizeStep room={room} onRoom={edit} />}
+      {shown === 'walls' && <WallsStep pid={project.id} room={room} onRoom={edit} />}
+      {shown === 'floor' && <FloorStep room={room} onRoom={edit} />}
+      {shown === 'furniture' && <FurnitureStep pid={project.id} room={room} reverb={reverb} onRoom={edit} />}
+    </>
+  );
+  const i = ROOM_STEPS.indexOf(shown);
   return (
     <div class="screen">
       <div class="btn-row">
         <button type="button" class="btn btn--ghost btn--small" onClick={onBack}>← {S.editor.back}</button>
       </div>
-      <SectionNav label={S.editor.steps} value={step} onChange={onStep}
-        options={ROOM_STEPS.map((s) => ({ value: s, label: S.editor.stepLabels[s], hint: S.editor.stepHints[s] }))} />
-      {step === 'size' && <SizeStep room={room} onRoom={onRoom} />}
-      {step === 'walls' && <WallsStep project={project} onRoom={onRoom} />}
-      {step === 'floor' && <FloorStep room={room} onRoom={onRoom} />}
-      {step === 'furniture' && <FurnitureStep project={project} reverb={reverb} onRoom={onRoom} />}
+      {wizard ? (
+        <Panel title={S.editor.wizardStep(i + 1, S.editor.stepLabels[shown])}>
+          <p class="muted small">{S.editor.wizardIntro}</p>
+        </Panel>
+      ) : (
+        <>
+          <SectionNav label={S.editor.steps} value={shown} onChange={onStep}
+            options={ROOM_STEPS.map((s) => ({ value: s, label: S.editor.stepLabels[s], hint: S.editor.stepHints[s] }))} />
+          {dirty && <Note>{S.editor.unsaved}</Note>}
+        </>
+      )}
+      {steps}
+      <Panel>
+        {outside > 0 && <Note tone="warn">{S.editor.outside(outside)}</Note>}
+        {saved && !dirty && <p class="small" role="status">{S.editor.saved}</p>}
+        {wizard ? (
+          <>
+            <div class="btn-row">
+              {i > 0 && <button type="button" class="btn" onClick={() => onStep(ROOM_STEPS[i - 1])}>← {S.editor.prev}</button>}
+              {i < ROOM_STEPS.length - 1
+                ? <button type="button" class="btn btn--primary" onClick={next}>{S.editor.next} →</button>
+                : <button type="button" class="btn btn--primary" onClick={() => save()}>{S.editor.save}</button>}
+            </div>
+            <div class="btn-row">
+              <button type="button" class="btn btn--ghost btn--small" onClick={() => setAskReset(true)}>{S.editor.resetDraft}</button>
+            </div>
+          </>
+        ) : (
+          <div class="btn-row">
+            <button type="button" class="btn btn--primary" disabled={!dirty} onClick={() => save()}>{S.editor.save}</button>
+            <button type="button" class="btn btn--ghost" disabled={!dirty} onClick={() => setAskReset(true)}>{S.editor.resetDraft}</button>
+          </div>
+        )}
+      </Panel>
+
+      {askReset && (
+        <ConfirmSheet title={S.editor.resetTitle} text={S.editor.resetText(wizard)} confirm={S.editor.resetDraft}
+          onCancel={() => setAskReset(false)} onConfirm={reset} />
+      )}
+      {leave && (
+        <ConfirmSheet title={S.editor.leaveTitle} text={S.editor.leaveText} tone="primary"
+          confirm={S.editor.save} cancel={S.editor.leaveStay}
+          extra={{ label: S.editor.leaveDiscard, onClick: () => { const go = leave.proceed; setLeave(null); dropRoomDraft(project.id); setDraft(null); go(); } }}
+          onCancel={() => setLeave(null)}
+          onConfirm={() => { const go = leave.proceed; setLeave(null); save(go); }} />
+      )}
+      {fitAsk && (
+        <ConfirmSheet title={S.editor.fitTitle} text={S.editor.fitText} confirm={S.editor.save} cancel={S.editor.fitBack}
+          tone={fitAsk.fit.removed.length ? 'danger' : 'primary'}
+          onCancel={() => setFitAsk(null)} onConfirm={() => commit(fitAsk.fit.room, fitAsk.after)}>
+          <FitList title={S.editor.fitRemoved} items={fitAsk.fit.removed} />
+          <FitList title={S.editor.fitTrimmed} items={fitAsk.fit.trimmed} />
+        </ConfirmSheet>
+      )}
     </div>
+  );
+}
+
+/** Подпись объекта в списке удаляемого и обрезаемого. */
+function fitLabel(f: FitItem): string {
+  const wall = (w: WallId) => S.editor.neighbour[w];
+  switch (f.kind) {
+    case 'zone': return f.item.name || S.zones.kinds[f.item.kind];
+    case 'opening': return `${S.editor.fitOpening}, ${wall(f.item.wall)}`;
+    case 'feature': return `${S.layout.kinds[f.item.kind]}, ${wall(f.item.wall)}`;
+    case 'covering': {
+      const c = f.item;
+      if (c.surface === 'floor') return `${S.coverings.carpet} ${S.editor.fitFloor}`;
+      return `${c.kind === 'curtain' ? S.coverings.curtain : S.coverings.wallCarpet}, ${wall(c.surface)}`;
+    }
+    case 'extension': return `${f.item.name || S.openings.corridor}, ${wall(f.item.wall)}`;
+    case 'slope': return S.shape.slopeTitle;
+  }
+}
+
+function FitList({ title, items }: { title: string; items: FitItem[] }) {
+  if (!items.length) return null;
+  return (
+    <>
+      <p class="small"><strong>{title}</strong></p>
+      <ul class="plain-list small">{items.map((f, ki) => <li key={ki}>{fitLabel(f)}</li>)}</ul>
+    </>
   );
 }
 
@@ -92,9 +260,8 @@ function useCoverings(room: Room, onRoom: (r: Room) => void) {
 }
 
 /** Шаг «Стены»: выбор стены, развёртка, материал, окна/двери/проёмы, ковры и шторы этой стены. */
-function WallsStep({ project, onRoom }: { project: Project; onRoom: (r: Room) => void }) {
-  const room = project.room;
-  const [wall, setWall] = useViewState<WallId>(project.id, 'room.wall', 'front');
+function WallsStep({ pid, room, onRoom }: { pid: string; room: Room; onRoom: (r: Room) => void }) {
+  const [wall, setWall] = useViewState<WallId>(pid, 'room.wall', 'front');
   const covers = (room.coverings ?? []).filter((c) => c.surface === wall);
   const edit = useCoverings(room, onRoom);
   return (
@@ -188,11 +355,10 @@ function FloorStep({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) 
 }
 
 /** Шаг «Мебель»: план сверху, обстановка (общая оценка и список), предметы, прочие зоны. */
-function FurnitureStep({ project, reverb, onRoom }: { project: Project; reverb: ReverbResult; onRoom: (r: Room) => void }) {
-  const room = project.room;
+function FurnitureStep({ pid, room, reverb, onRoom }: { pid: string; room: Room; reverb: ReverbResult; onRoom: (r: Room) => void }) {
   const zones = room.zones ?? [];
   const items = zones.filter((z) => z.kind === 'furniture');
-  const [selected, setSelected] = useViewState<string | null>(project.id, 'room.furniture', null);
+  const [selected, setSelected] = useViewState<string | null>(pid, 'room.furniture', null);
   const setItem = (id: string, patch: Partial<Zone>) => onRoom({ ...room, zones: zones.map((z) => (z.id === id ? { ...z, ...patch } : z)) });
   /** Положение и размеры: предмет остаётся в комнате, размер по возможности сохраняется. */
   const place = (z: Zone, x0: number, y0: number, dx: number, dy: number) => setItem(z.id, fitRect(room, x0 + dx / 2, y0 + dy / 2, dx, dy));

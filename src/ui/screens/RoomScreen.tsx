@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { shownTreatments } from '../../core/treatments';
-import { clearedRoom, defaultRoom, emptyRoom, rotateRoom, rotateSetup } from '../../state/project';
+import { clearedRoom, rotateRoom, rotateSetup } from '../../state/project';
 import type { Room, ReverbResult } from '../../core/types';
 import { FURNISHING_LABEL } from '../../core/materials';
 import { Panel, Details } from '../design-system';
@@ -13,6 +13,7 @@ import { deleteScan } from '../../state/storage';
 import { ClearIcon, FileIcon, RotateIcon } from './room/icons';
 import { ConfirmSheet } from '../design-system';
 import type { Destination } from '../navigation';
+import { dropRoomDraft, loadRoomDraft } from '../roomDraft';
 
 interface Props {
   project: Project;
@@ -25,6 +26,7 @@ interface Props {
 /**
  * Обзор комнаты (019): план и сводка, вход в конструктор, поворот и очистка, скан, реверберация.
  * Размеры, стены, пол, потолок и мебель правятся в конструкторе (room/RoomEditor).
+ * 021: пока комната не создана (нет скана и ручная настройка не сохранена), на экране только «С чего начать».
  */
 export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
   const room = project.room;
@@ -35,6 +37,7 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
     setAskClear(false);
     // скан проекта на устройстве тоже удаляется: после «Очистить» можно выбрать новый скан
     void deleteScan(project.id).catch(() => undefined);
+    dropRoomDraft(project.id);
     const c = clearedRoom(project);
     onRoom(c.room, c);
     setScanGen((g) => g + 1);
@@ -42,33 +45,45 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
     setTimeout(() => scrollTo({ top: 0, behavior: 'smooth' }), 60);
   };
 
-  // комната ещё не задана (новый проект или после очистки): ни скана, ни своих размеров — подсказываем, с чего начать
-  const sameDims = (r: Room) => room.depth === r.depth && room.width === r.width && room.height === r.height;
-  const fresh = room.source !== 'scan' && !project.scanInfo && (sameDims(defaultRoom()) || sameDims(emptyRoom()));
+  // комната ещё не создана (новый проект или после очистки) — только «С чего начать»
+  const draft = project.roomReady ? null : loadRoomDraft(project.id);
+  if (!project.roomReady) return (
+    <div class="screen">
+      <Panel class="start-card" title={S.start.title}>
+        <p class="small">{S.start.text}</p>
+        <div class="btn-row">
+          <button type="button" class="btn btn--primary" onClick={() => document.getElementById('scan-file')?.click()}>
+            <FileIcon /> {S.start.scan}
+          </button>
+          <button type="button" class="btn" onClick={() => {
+            const step = draft?.reached ?? 'size';
+            onGo?.(`room/${step}`);
+            if (step !== 'size') return;
+            // поле глубины появится после перехода на шаг «Размеры»
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              const el = document.getElementById('room-depth') as HTMLInputElement | null;
+              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el?.focus();
+            }));
+          }}>
+            {S.start.manual}
+          </button>
+        </div>
+        {draft && <p class="small">{S.start.draft(S.editor.stepLabels[draft.reached])}</p>}
+        <Details summary={S.scanGuide.title}>
+          <ol class="small scan-guide">
+            {S.scanGuide.steps.map((t, ki) => <li key={ki}>{t}</li>)}
+          </ol>
+          <p class="muted small">{S.scanGuide.formats}</p>
+          <p class="muted small">{S.start.local}</p>
+        </Details>
+        <p class="muted small">{S.start.note}</p>
+      </Panel>
+      <ScanPanel key={scanGen} project={project} onRoom={onRoom} onGo={onGo} />
+    </div>
+  );
   return (
     <div class="screen">
-      {fresh && (
-        <Panel class="start-card" title={S.start.title}>
-          <p class="small">{S.start.text}</p>
-          <div class="btn-row">
-            <button type="button" class="btn btn--primary" onClick={() => document.getElementById('scan-file')?.click()}>
-              <FileIcon /> {S.start.scan}
-            </button>
-            <button type="button" class="btn" onClick={() => {
-              onGo?.('room/size');
-              // поле глубины появится после перехода на шаг «Размеры»
-              requestAnimationFrame(() => requestAnimationFrame(() => {
-                const el = document.getElementById('room-depth') as HTMLInputElement | null;
-                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                el?.focus();
-              }));
-            }}>
-              {S.start.manual}
-            </button>
-          </div>
-          <p class="muted small">{S.start.note}</p>
-        </Panel>
-      )}
       <Panel class="panel--hero">
         <PlanView depth={room.depth} width={room.width} zones={room.zones} rugs={room.coverings} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} />
         <p class="small">{S.editor.summary(

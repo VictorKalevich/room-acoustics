@@ -12,7 +12,7 @@ export const componentFamilies = [
   ['Ползунки', '.smoothing-slider · .freq-slider · .hrange · .miniplayer__vol'],
   ['Сообщения', 'Note · CalculationStatus · .note · .progress · .spinner'],
   ['Раскрытие', 'Details · .details · .setup-card'],
-  ['Шторки', 'ConfirmSheet · .sheet · .sheet-backdrop · .sheet__close'],
+  ['Шторки', 'ConfirmSheet (danger/primary, cancel, extra, список .plain-list) · .sheet · .sheet-backdrop · .sheet__close'],
   ['Карточки объектов', '.zone-card · .zone-card.is-selected · .wall-items · .found-opening · .problem'],
   ['Метки состояния', '.tag · .model-tag · .sev · .robust-tag · .score__grade'],
   ['Показатели', '.stat · .score · .voice-metric · .score-ring · .meter'],
