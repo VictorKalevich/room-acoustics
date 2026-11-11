@@ -6,3 +6,5 @@ playwright-report/
 tests/fixtures/out/
 *.log
 work/
+docs/chat-history.md
+docs/full_history.txt

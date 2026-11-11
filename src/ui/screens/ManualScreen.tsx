@@ -156,9 +156,10 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
           keyNotes={effMode === 'sub' ? { best: S.manual.keyBestSub, probe: S.manual.keyProbeSub, heat: S.manual.keyHeatSub } : undefined}
           label="План комнаты с картой оценок"
         />
+        {/* «Карта звука» прячет только окраску плана и её шкалу; выбор слоя и пояснение остаются (009) */}
         {layers.map && heat && <HeatLegend hm={layer === 'robust' ? robustHeat! : heat} />}
-        {layers.map && <Segmented label={S.robust.layer} value={layer} options={[{ value: 'flat' as const, label: S.robust.layers.flat }, { value: 'robust' as const, label: S.robust.layers.robust }]} onChange={setLayer} />}
-        {layers.map && layer === 'robust' && <p class="muted small">{S.robust.layerHint}</p>}
+        <Segmented label={S.robust.layer} value={layer} options={[{ value: 'flat' as const, label: S.robust.layers.flat }, { value: 'robust' as const, label: S.robust.layers.robust }]} onChange={setLayer} />
+        {layer === 'robust' && <p class="muted small">{S.robust.layerHint}</p>}
         <p class="progress-text small" role="status" aria-live="polite">
           {busy ? <><span class="spinner" aria-hidden="true" /> {S.manual.computing}</> : <span class="muted">{S.manual.hint}</span>}
         </p>

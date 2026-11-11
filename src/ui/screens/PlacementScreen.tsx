@@ -214,13 +214,14 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
             )}
             {current.scheme === 'dba' && <Note>{S.robust.dbaNote}</Note>}
             <PlanLayers {...layers} />
-            {layers.map && subs.length > 0 && (
+            {/* «Карта звука» прячет только окраску плана и её шкалу; выбор и пояснение остаются (009) */}
+            {subs.length > 0 && (
               <Segmented label={S.layers.mapFor} value={effKind} options={[{ value: 'listener' as const, label: S.manual.findListener }, { value: 'sub' as const, label: S.manual.findSub }]} onChange={setMapKind} />
             )}
-            {layers.map && effKind === 'sub' && subs.length > 1 && (
+            {effKind === 'sub' && subs.length > 1 && (
               <Segmented label={S.manual.whichSub} value={effSub} options={subs.map((s) => ({ value: s.id, label: `С${s.id.slice(3)}` }))} onChange={setMapSub} />
             )}
-            {layers.map && <MapModeHelp mode={effKind} where="auto" />}
+            <MapModeHelp mode={effKind} where="auto" />
             <PlanView
               depth={room.depth} width={room.width} placement={current}
               zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope}

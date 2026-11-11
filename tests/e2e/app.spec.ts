@@ -325,6 +325,16 @@ test('009: карта звука в автоподборе обновляетс�
   await page.getByRole('button', { name: 'Карта звука' }).click();
   await expect(page.getByRole('button', { name: 'Карта звука' })).toHaveAttribute('aria-pressed', 'false');
   await expect(heat).toHaveCount(0);
+  // выключена только окраска и её шкала: «Карта для» и пояснение под ним остаются и работают
+  const hero = page.locator('.panel--hero');
+  await expect(hero.locator('.heat-legend')).toHaveCount(0);
+  await expect(hero.getByRole('radiogroup', { name: 'Карта для' })).toBeVisible();
+  await expect(hero.getByRole('radio', { name: 'Место сабвуфера' })).toHaveAttribute('aria-checked', 'true');
+  await expect(hero.locator('.map-help__line')).toContainText('Ищем место для сабвуфера');
+  await expect(hero.getByText('Что показывает карта')).toBeVisible();
+  await hero.getByRole('radio', { name: 'Место слушателя' }).click();
+  await expect(hero.locator('.map-help__line')).toContainText('куда сесть');
+  await expect(heat).toHaveCount(0);
   await page.getByRole('button', { name: 'Оси комнаты' }).click();
   await expect(page.locator('.panel--hero svg.plan .plan__axis')).toHaveCount(6);
   await expect(page.locator('.panel--hero svg.plan .plan__axis.is-mid')).toHaveCount(2);
@@ -333,6 +343,15 @@ test('009: карта звука в автоподборе обновляетс�
   // (вертикальная линия нулевой ширины для Playwright «невидима» — проверяем количество)
   await expect(page.locator('svg.plan .plan__axis')).toHaveCount(6);
   await expect(page.locator('svg.plan .plan__heat rect')).toHaveCount(0);
+  // в ручном режиме при выключенной окраске выбор места, слой карты и пояснения тоже видны
+  await expect(page.locator('.heat-legend')).toHaveCount(0);
+  await expect(page.getByRole('radiogroup', { name: 'Что ищем' })).toBeVisible();
+  await expect(page.locator('.map-help__line')).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Слой карты' })).toBeVisible();
+  await page.getByRole('radio', { name: 'Устойчивость' }).click();
+  await expect(page.getByText(/Устойчивость: насколько меняется оценка/)).toBeVisible();
+  await expect(page.locator('svg.plan .plan__heat rect')).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Ровность' }).click();
   await page.getByRole('button', { name: 'Карта звука' }).click();
   await expect.poll(() => page.locator('svg.plan .plan__heat rect').count(), { timeout: 20_000 }).toBeGreaterThan(100);
 });
