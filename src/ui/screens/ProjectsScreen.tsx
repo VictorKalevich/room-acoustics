@@ -18,15 +18,19 @@ interface Props {
   onGo: (t: Destination) => void;
 }
 
+/** Что заменит текущий проект (023): новый, сохранённый из списка или открытый из файла. */
+type Replace = { kind: 'new' } | { kind: 'open'; p: Project } | { kind: 'import'; p: Project };
+
 /**
  * Проекты. 023: «← Назад» возвращает на прежний экран; «Сохранить» и «Экспорт» — только у созданной
- * комнаты; «Новый проект» рядом с «Сохранить» и, если введённое пропадёт, спрашивает; файл проекта — отдельной строкой.
+ * комнаты; «Новый проект» рядом с «Сохранить»; файл проекта — отдельной строкой. «Новый проект», «Открыть»
+ * из списка и «Импорт» спрашивают, если введённое в текущем проекте пропадёт.
  */
 export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: Props) {
   const [list, setList] = useState<Project[]>([]);
   const [canStore, setCanStore] = useState(true);
   const [msg, setMsg] = useState<{ text: string; tone: 'good' | 'warn' } | null>(null);
-  const [askNew, setAskNew] = useState(false);
+  const [ask, setAsk] = useState<Replace | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const ready = project.roomReady;
@@ -37,13 +41,17 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
   // созданная комната, которой нет в списке или которая изменилась после сохранения
   const unsaved = ready && (!savedCopy || project.updatedAt > savedCopy.updatedAt);
   const toRoom = () => onGo(draft ? `room/${draft.reached}` : 'room/overview');
-  const openNew = () => {
-    setAskNew(false);
+  const replaceNow = (r: Replace) => {
+    setAsk(null);
+    const next = r.kind === 'new' ? newProject() : r.p;
     // незаконченная настройка текущего проекта больше не нужна; скан проекта, которого нет в списке, — тоже
     dropRoomDraft(project.id);
-    if (!savedCopy) void deleteScan(project.id).catch(() => undefined);
-    onReplace(newProject());
+    if (!savedCopy && next.id !== project.id) void deleteScan(project.id).catch(() => undefined);
+    onReplace(next);
+    if (r.kind === 'import') setMsg({ text: S.projects.imported, tone: 'good' });
   };
+  // спросить, только если введённое пропадёт: комната задана частично или созданная комната не сохранена
+  const replace = (r: Replace) => (partial || unsaved ? setAsk(r) : replaceNow(r));
 
   const refresh = () => listProjects().then(setList).catch(() => setList([]));
   useEffect(() => {
@@ -62,9 +70,7 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
 
   const importFile = async (f: File) => {
     try {
-      const p = parseProjectFile(await f.text());
-      onReplace(p);
-      setMsg({ text: S.projects.imported, tone: 'good' });
+      replace({ kind: 'import', p: parseProjectFile(await f.text()) });
     } catch (e) {
       setMsg({ text: (e as Error).message, tone: 'warn' });
     }
@@ -84,7 +90,7 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
         </div>
         <div class="btn-row">
           <button type="button" class="btn btn--primary" onClick={save} disabled={!canStore || !ready}>{S.projects.save}</button>
-          <button type="button" class="btn btn--tonal" onClick={() => (partial || unsaved ? setAskNew(true) : openNew())}>{S.projects.newProject}</button>
+          <button type="button" class="btn btn--tonal" onClick={() => replace({ kind: 'new' })}>{S.projects.newProject}</button>
         </div>
         {!ready && (
           <>
@@ -112,10 +118,7 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
         />
         {msg && <Note tone={msg.tone}>{msg.text}</Note>}
         {!canStore && <Note tone="warn">{S.projects.storageOff}</Note>}
-        {askNew && (
-          <ConfirmSheet title={S.projects.newTitle} text={partial ? S.projects.newTextPartial : S.projects.newTextUnsaved}
-            confirm={S.projects.newConfirm} cancel={S.projects.cancel} onCancel={() => setAskNew(false)} onConfirm={openNew} />
-        )}
+        {ask && <ReplaceSheet ask={ask} project={project} partial={partial} onCancel={() => setAsk(null)} onConfirm={() => replaceNow(ask)} />}
       </Panel>
 
       <Panel title={S.projects.list}>
@@ -132,7 +135,7 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
                   </span>
                 </div>
                 <div class="btn-row btn-row--tight">
-                  <button type="button" class="btn btn--small" onClick={() => onReplace(p)}>{S.projects.open}</button>
+                  <button type="button" class="btn btn--small" onClick={() => replace({ kind: 'open', p })}>{S.projects.open}</button>
                   <button
                     type="button"
                     class="btn btn--small btn--ghost"
@@ -156,6 +159,19 @@ export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: P
       </Panel>
     </div>
   );
+}
+
+/** Предупреждение перед заменой текущего проекта (023). */
+function ReplaceSheet({ ask, project, partial, onCancel, onConfirm }: {
+  ask: Replace; project: Project; partial: boolean; onCancel: () => void; onConfirm: () => void;
+}) {
+  const T = S.projects;
+  // тот же проект из списка: откроется сохранённая версия, пропадут изменения после сохранения
+  const revert = ask.kind === 'open' && ask.p.id === project.id && !partial;
+  const title = ask.kind === 'new' ? T.newTitle : revert ? T.revertTitle : ask.kind === 'open' ? T.openTitle(ask.p.name) : T.importTitle(ask.p.name);
+  const text = revert ? T.revertText : partial ? T.leavePartial : T.leaveUnsaved;
+  const confirm = ask.kind === 'new' ? T.newConfirm : revert ? T.revertConfirm : T.openConfirm;
+  return <ConfirmSheet title={title} text={text} confirm={confirm} cancel={T.cancel} onCancel={onCancel} onConfirm={onConfirm} />;
 }
 
 export function AboutPanel() {

@@ -1,7 +1,11 @@
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import { EMPTY_STATE } from './helpers';
 
-// 023: «Проекты» — возврат назад, сохранение только созданной комнаты, «Новый проект» с предупреждением.
+// 023: «Проекты» — возврат назад, сохранение только созданной комнаты; «Новый проект», «Открыть» и «Импорт»
+// предупреждают, если введённое пропадёт.
 const projects = (page: Page) => page.getByRole('button', { name: 'Проекты' });
 const save = (page: Page) => page.getByRole('button', { name: 'Сохранить', exact: true });
 const exportFile = (page: Page) => page.getByRole('button', { name: 'Экспорт', exact: true });
@@ -81,4 +85,65 @@ test('созданная комната: несохранённый проект
   await projects(page).click();
   await page.locator('.project-list li').first().getByRole('button', { name: 'Открыть' }).click();
   await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
+});
+
+test('«Открыть» из списка: изменения после сохранения и начатая настройка — предупреждение', async ({ page }) => {
+  await page.goto('/#room');
+  await projects(page).click();
+  const name = page.locator('#pname');
+  const saved = await name.inputValue();
+  await save(page).click();
+  await expect(page.getByText('Сохранено')).toBeVisible();
+  const row = page.locator('.project-list li').first();
+  // тот же проект изменён после сохранения: откроется сохранённая версия
+  await name.fill('Изменённое название');
+  await row.getByRole('button', { name: 'Открыть' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText('Вернуться к сохранённой версии?');
+  await expect(dialog).toContainText('Изменения после последнего сохранения пропадут');
+  await dialog.getByRole('button', { name: 'Отмена' }).click();
+  await expect(name).toHaveValue('Изменённое название');
+  await row.getByRole('button', { name: 'Открыть' }).click();
+  await dialog.getByRole('button', { name: 'Вернуться', exact: true }).click();
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
+  await projects(page).click();
+  await expect(name).toHaveValue(saved);
+  // сохранённый и не изменённый — новый проект без вопроса; начатая в нём настройка — с вопросом
+  await newProject(page).click();
+  await expect(dialog).toHaveCount(0);
+  await page.locator('.start-card').getByRole('button', { name: 'Настроить комнату вручную' }).click();
+  await page.getByLabel('Глубина', { exact: true }).fill('6');
+  await projects(page).click();
+  await row.getByRole('button', { name: 'Открыть' }).click();
+  await expect(dialog).toContainText(`Открыть проект «${saved}»?`);
+  await expect(dialog).toContainText('настроена не полностью');
+  await dialog.getByRole('button', { name: 'Открыть проект' }).click();
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
+});
+
+test('«Импорт»: несохранённый проект — предупреждение; после «Сохранить» — без вопроса', async ({ page }) => {
+  await page.goto('/#room');
+  await projects(page).click();
+  const name = page.locator('#pname');
+  const current = await name.inputValue();
+  const [download] = await Promise.all([page.waitForEvent('download'), exportFile(page).click()]);
+  const data = JSON.parse(readFileSync((await download.path())!, 'utf8'));
+  data.project = { ...data.project, id: 'from-file', name: 'Комната из файла' };
+  // путь без русских букв и кавычек: из папки результатов этого теста файл в поле выбора не попадал
+  const file = join(mkdtempSync(join(tmpdir(), 'ra-import-')), 'room.json');
+  writeFileSync(file, JSON.stringify(data));
+  const input = page.locator('input[type=file][accept^=".json"]');
+  await input.setInputFiles(file);
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText('Открыть проект «Комната из файла» из файла?');
+  await expect(dialog).toContainText('Рекомендуем сначала сохранить текущий проект');
+  await dialog.getByRole('button', { name: 'Отмена' }).click();
+  await expect(name).toHaveValue(current);
+  await save(page).click();
+  await expect(page.getByText('Сохранено')).toBeVisible();
+  await input.setInputFiles(file);
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
+  await projects(page).click();
+  await expect(name).toHaveValue('Комната из файла');
 });
