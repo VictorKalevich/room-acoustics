@@ -10,6 +10,20 @@ import '@fontsource/golos-text/latin-600.css';
 import '../../styles.css';
 import { ActionMenu, CalculationStatus, ConfirmSheet, Details, Note, NumberField, Panel, SectionNav, Segmented, SelectField } from './index';
 import { componentFamilies } from './registry';
+import { WallView } from '../components/WallView';
+import { defaultRoom } from '../../state/project';
+import type { Room } from '../../core/types';
+
+/** Пример для каталога: стена с окном, шторами, ковром и шкафом (без расчётов). */
+const sampleRoom: Room = {
+  ...defaultRoom(),
+  features: [{ id: 'w', kind: 'window', wall: 'front', a0: 1.35, a1: 2.65, bottom: 0.9, top: 2.3 }],
+  coverings: [
+    { id: 'c', kind: 'curtain', grade: 'heavy', surface: 'front', u0: 1.2, u1: 2.8, v0: 0, v1: 2.45 },
+    { id: 'k', kind: 'carpet', grade: 'thin', surface: 'front', u0: 3.0, u1: 3.9, v0: 0.6, v1: 1.8 },
+  ],
+  zones: [{ id: 'z', kind: 'furniture', furniture: 'wardrobe', name: 'Шкаф (МДФ)', height: 2.2, canSit: false, x0: 0, x1: 0.6, y0: 0.1, y1: 1.1 }],
+};
 
 function Catalog() {
   const [number, setNumber] = useState(160);
@@ -70,6 +84,10 @@ function Catalog() {
     <Panel title="Отступы и вложенные карточки">
       <p class="small">Между секциями — 14 px, внутри панели — 12 px, поля панели — 16 px, между подписью и вводом — 4 px.</p>
       <div class="wall-items"><div class="zone-card"><strong>Первая карточка</strong><p class="small">Единый фон, радиус и отступы</p></div><div class="zone-card"><strong>Вторая карточка</strong><p class="small">Интервал 12 px сохраняется</p></div></div>
+    </Panel>
+    <Panel title="Развёртка стены">
+      <WallView room={sampleRoom} wall="front" />
+      <p class="small muted">Вид изнутри комнаты: окно, плотные шторы, ковёр на стене и шкаф у стены.</p>
     </Panel>
     <Panel title="Реестр визуальных семейств">
       <dl class="glossary">{componentFamilies.map(([name, api]) => <div key={name}><dt>{name}</dt><dd class="small text-code">{api}</dd></div>)}</dl>

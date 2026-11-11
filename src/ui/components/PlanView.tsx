@@ -1,5 +1,5 @@
-import { useRef } from 'preact/hooks';
-import type { Extension, Opening, Placement, Room, Treatment, Vec3, WallFeature, WallId, Zone } from '../../core/types';
+import { useId, useRef } from 'preact/hooks';
+import type { Covering, Extension, Opening, Placement, Room, Treatment, Vec3, WallFeature, WallId, Zone } from '../../core/types';
 import { extensionBox } from '../../core/geometry';
 import type { Heatmap } from '../../core/field';
 import type { FieldSlice } from '../../core/field3d';
@@ -37,6 +37,11 @@ export interface PlanProps {
   items?: PlanItem[];
   seats?: Vec3[];
   zones?: Zone[];
+  /** Ковры на полу (019): только на шаге «Пол и потолок». */
+  rugs?: Covering[];
+  /** Выбранная зона (мебель) и выбор касанием. */
+  selectedZone?: string | null;
+  onZoneSelect?: (id: string) => void;
   extensions?: Extension[];
   openings?: Opening[];
   /** Окна и закрытые двери — ориентиры на стенах. */
@@ -101,6 +106,9 @@ export function PlanView(p: PlanProps) {
     w === 'back' ? { x: X(a0), y: oy + rh - 1, w: (a1 - a0) * scale, h: wall + 2 } :
     { x: X(a0), y: oy - wall - 1, w: (a1 - a0) * scale, h: wall + 2 };
   const svgRef = useRef<SVGSVGElement>(null);
+  // узоры — свои у каждого плана: ссылка на одинаковый id попадала в скрытый план другого раздела, и штриховка пропадала
+  const uid = useId();
+  const hatchId = `hatch-${uid}`, zoneHatchId = `zonehatch-${uid}`;
   const drag = useRef<string | null>(null);
   const moved = useRef(false);
 
@@ -164,10 +172,10 @@ export function PlanView(p: PlanProps) {
       }}
     >
       <defs>
-        <pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <pattern id={hatchId} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <line x1="0" y1="0" x2="0" y2="5" class="plan__hatch" />
         </pattern>
-        <pattern id="zonehatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+        <pattern id={zoneHatchId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
           <line x1="0" y1="0" x2="0" y2="6" class="plan__zonehatch" />
         </pattern>
       </defs>
@@ -179,9 +187,12 @@ export function PlanView(p: PlanProps) {
           ))}
         </g>
       ))}
-      <rect x={ox - wall} y={oy - wall} width={rw + 2 * wall} height={rh + 2 * wall} class="plan__wall" fill="url(#hatch)" />
+      <rect x={ox - wall} y={oy - wall} width={rw + 2 * wall} height={rh + 2 * wall} class="plan__wall" fill={`url(#${hatchId})`} />
       <rect x={ox} y={oy} width={rw} height={rh} class="plan__floor" />
       <rect x={ox - wall} y={oy - wall} width={rw + 2 * wall} height={wall} class="plan__front" />
+      {(p.rugs ?? []).filter((c) => c.surface === 'floor').map((c) => (
+        <rect key={c.id} class={`plan__rug is-${c.grade}`} x={X(c.v0)} y={Y(c.u0)} width={Math.max(1, (c.v1 - c.v0) * scale)} height={Math.max(1, (c.u1 - c.u0) * scale)} rx="2" />
+      ))}
       {[...(p.extensions ?? []).map((e) => ({ wall: e.wall, a0: e.arch.a0, a1: e.arch.a1, cls: 'plan__arch' })), ...(p.openings ?? []).map((o) => ({ wall: o.wall, a0: o.a0, a1: o.a1, cls: 'plan__gap' }))].map((g, ki) => {
         const r =
           g.wall === 'right' ? { x: ox + rw - 1, y: Y(g.a0), w: wall + 2, h: (g.a1 - g.a0) * scale } :
@@ -281,8 +292,9 @@ export function PlanView(p: PlanProps) {
       )}
 
       {(p.zones ?? []).map((z) => (
-        <g key={z.id} class={`plan__zone-rect is-${z.kind}`}>
-          <rect x={X(z.y0)} y={Y(z.x0)} width={(z.y1 - z.y0) * scale} height={(z.x1 - z.x0) * scale} fill="url(#zonehatch)" />
+        <g key={z.id} class={`plan__zone-rect is-${z.kind}${p.onZoneSelect ? ' is-selectable' : ''}${p.selectedZone === z.id ? ' is-selected' : ''}`}
+          onClick={p.onZoneSelect ? (e) => { e.stopPropagation(); p.onZoneSelect!(z.id); } : undefined}>
+          <rect x={X(z.y0)} y={Y(z.x0)} width={(z.y1 - z.y0) * scale} height={(z.x1 - z.x0) * scale} fill={`url(#${zoneHatchId})`} />
           <rect x={X(z.y0)} y={Y(z.x0)} width={(z.y1 - z.y0) * scale} height={(z.x1 - z.x0) * scale} class="plan__zone-outline" />
           <text x={X((z.y0 + z.y1) / 2)} y={Y((z.x0 + z.x1) / 2) + 4} text-anchor="middle">{z.name ?? S.zones.short[z.kind]}</text>
         </g>
@@ -318,7 +330,7 @@ export function PlanView(p: PlanProps) {
           s.wall === 'left' ? { x: ox, y: oy, w: run, h: rh } : { x: ox + rw - run, y: oy, w: run, h: rh };
         return (
           <g class="plan__slope">
-            <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="url(#zonehatch)" />
+            <rect x={r.x} y={r.y} width={r.w} height={r.h} fill={`url(#${zoneHatchId})`} />
             <text x={r.x + r.w / 2} y={r.y + r.h / 2 + 4} text-anchor="middle">{S.shape.slopeShort(fmt(s.low, 1))}</text>
           </g>
         );
@@ -458,6 +470,7 @@ export function keysFor(p: PlanProps, items: PlanItem[] = p.items ?? [], seats: 
   if (p.slope) keys.push('slope');
   if (p.listenerZone) keys.push('listenerZone');
   if ((p.zones ?? []).length) keys.push('zone');
+  if ((p.rugs ?? []).some((c) => c.surface === 'floor')) keys.push('rug');
   if (feats.some((f) => f.kind === 'window')) keys.push('window');
   if (feats.some((f) => f.kind === 'door')) keys.push('door');
   if ((p.openings ?? []).length) keys.push('opening');
@@ -467,10 +480,11 @@ export function keysFor(p: PlanProps, items: PlanItem[] = p.items ?? [], seats: 
 
 export type KeyId =
   | 'front' | 'spk' | 'sub' | 'listener' | 'triangle' | 'seats' | 'heat' | 'best' | 'probe'
-  | 'reflection' | 'trap' | 'singer' | 'listenerZone' | 'zone' | 'window' | 'door' | 'opening' | 'arch' | 'corridor' | 'field' | 'treat' | 'slope' | 'axes';
+  | 'reflection' | 'trap' | 'singer' | 'listenerZone' | 'zone' | 'rug' | 'window' | 'door' | 'opening' | 'arch' | 'corridor' | 'field' | 'treat' | 'slope' | 'axes';
 
 /** Маленький значок обозначения — теми же стилями, что и на плане. */
 function KeyIcon({ id }: { id: KeyId }) {
+  const keyHatch = `keyhatch-${useId()}`;
   const g = (() => {
     switch (id) {
       case 'front': return <rect x="2" y="7" width="24" height="6" class="plan__front" />;
@@ -479,7 +493,7 @@ function KeyIcon({ id }: { id: KeyId }) {
       case 'listener': return <g class="plan__listener"><circle cx="14" cy="10" r="8" /><circle cx="14" cy="10" r="2.5" class="plan__dot" /></g>;
       case 'triangle': return <polygon class="plan__triangle" points="3,3 25,3 14,18" />;
       case 'seats': return <circle class="plan__seat" cx="14" cy="10" r="5" />;
-      case 'slope': return <g class="plan__slope"><rect x="3" y="3" width="22" height="14" fill="url(#keyhatch)" /></g>;
+      case 'slope': return <g class="plan__slope"><rect x="3" y="3" width="22" height="14" fill={`url(#${keyHatch})`} /></g>;
       case 'treat': return <g><polygon class="plan__treat is-corner" points="2,2 14,2 2,14" /><rect class="plan__treat is-panel" x="16" y="6" width="10" height="5" /></g>;
       case 'field': return <g><rect x="2" y="4" width="8" height="12" fill="rgba(26,71,230,0.8)" /><rect x="10" y="4" width="8" height="12" fill="none" stroke="currentColor" stroke-width="0.6" stroke-dasharray="2 2" /><rect x="18" y="4" width="8" height="12" fill="rgba(214,31,20,0.8)" /></g>;
       case 'axes': return <g><line x1="14" y1="1" x2="14" y2="19" class="plan__axis is-mid" /><line x1="2" y1="10" x2="26" y2="10" class="plan__axis is-mid" /><line x1="7" y1="1" x2="7" y2="19" class="plan__axis" /><line x1="21" y1="1" x2="21" y2="19" class="plan__axis" /></g>;
@@ -497,10 +511,11 @@ function KeyIcon({ id }: { id: KeyId }) {
       );
       case 'trap': return <g class="plan__mark is-trap"><circle cx="14" cy="10" r="7" /></g>;
       case 'listenerZone': return <rect class="plan__zone" x="2" y="3" width="24" height="14" rx="4" />;
-      case 'zone': return <g class="plan__zone-rect"><rect x="3" y="3" width="22" height="14" fill="url(#keyhatch)" /><rect x="3" y="3" width="22" height="14" class="plan__zone-outline" /></g>;
+      case 'zone': return <g class="plan__zone-rect"><rect x="3" y="3" width="22" height="14" fill={`url(#${keyHatch})`} /><rect x="3" y="3" width="22" height="14" class="plan__zone-outline" /></g>;
       case 'window': return <g class="plan__window"><rect x="2" y="6" width="24" height="8" /><line x1="2" y1="10" x2="26" y2="10" /></g>;
       case 'door': return <g class="plan__door"><rect class="plan__door-gap" x="2" y="1" width="24" height="5" /><line x1="2" y1="6" x2="2" y2="19" /><path d="M 2 19 A 13 13 0 0 0 15 6" class="plan__door-arc" /></g>;
       case 'opening': return <rect class="plan__gap" x="2" y="6" width="24" height="8" />;
+      case 'rug': return <rect class="plan__rug is-thick" x="3" y="3" width="22" height="14" rx="2" />;
       case 'arch': return <rect class="plan__arch" x="2" y="6" width="24" height="8" />;
       case 'corridor': return <g class="plan__ext"><rect x="2" y="3" width="24" height="14" class="plan__ext-floor" /><line x1="2" y1="3" x2="26" y2="3" class="plan__ext-wall" /><line x1="26" y1="3" x2="26" y2="17" class="plan__ext-open" /></g>;
     }
@@ -508,7 +523,7 @@ function KeyIcon({ id }: { id: KeyId }) {
   return (
     <svg class="plan-key__icon" viewBox="0 0 28 20" aria-hidden="true">
       <defs>
-        <pattern id="keyhatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+        <pattern id={keyHatch} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
           <line x1="0" y1="0" x2="0" y2="5" class="plan__zonehatch" />
         </pattern>
       </defs>

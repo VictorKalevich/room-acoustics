@@ -7,7 +7,8 @@ import { speedOfSound } from './physics';
 import { roomVolume } from './geometry';
 import { computeReverb, surfaceAreas } from './reverb';
 import { patchModeIntegral, patchWallAlpha, roomPatches, type Patch } from './patches';
-import { FURNISHING, alphaAt, getMaterial } from './materials';
+import { alphaAt, getMaterial } from './materials';
+import { furnishingOctaves } from './furniture';
 import { apertureBeta, betaFromAlpha } from './paris';
 
 /**
@@ -18,7 +19,7 @@ import { apertureBeta, betaFromAlpha } from './paris';
 export function modalAbsorptionAt(room: Room, f: number): Record<SurfaceId, number> {
   const S = surfaceAreas(room);
   const total = SURFACES.reduce((s, k) => s + S[k], 0);
-  const furn = alphaAt(FURNISHING[room.furnishing], f) * S.floor;
+  const furn = alphaAt(furnishingOctaves(room), f) * S.floor;
   const out = {} as Record<SurfaceId, number>;
   for (const k of SURFACES) out[k] = 8 * betaFromAlpha(alphaAt(getMaterial(room.materials[k]).alpha, f)) * S[k] + (furn * S[k]) / total;
   return out;
@@ -50,7 +51,7 @@ export function modeDamping(mode: Pick<Mode, 'n' | 'f'>, room: Room, rev?: Rever
     const kx = (mode.n[0] * Math.PI) / room.depth, ky = (mode.n[1] * Math.PI) / room.width, kz = (mode.n[2] * Math.PI) / room.height;
     const prod = ex * ey * ez;
     const S = surfaceAreas(room);
-    const furnPerArea = (alphaAt(FURNISHING[room.furnishing], f) * S.floor) / SURFACES.reduce((s, k) => s + S[k], 0);
+    const furnPerArea = (alphaAt(furnishingOctaves(room), f) * S.floor) / SURFACES.reduce((s, k) => s + S[k], 0);
     for (const p of patches) {
       const aw = patchWallAlpha(room, p, f);
       const bw = betaFromAlpha(aw);

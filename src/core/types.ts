@@ -24,6 +24,31 @@ export interface Zone {
   /** Подпись (например, «Диван») и признак, что зона взята из скана. */
   name?: string;
   fromScan?: boolean;
+  /** Тип мебели из каталога (src/core/furniture.ts); нет — «Другое». Только для kind = 'furniture'. */
+  furniture?: FurnitureType;
+  /** Высота предмета, м (развёртка стены, площадь фасада стеллажа). */
+  height?: number;
+}
+
+export type FurnitureType =
+  | 'sofa' | 'sofa-open' | 'armchair' | 'bed' | 'bookshelf'
+  | 'wardrobe' | 'shelf' | 'table' | 'chair' | 'chest' | 'other';
+
+/**
+ * Ковёр или шторы на поверхности, в координатах участков (patches.ts): на стене u — вдоль стены
+ * (для передней/задней — от левой стены, для левой/правой — от передней), v — высота над полом;
+ * на полу u = x (от передней стены), v = y (от левой).
+ */
+export interface Covering {
+  id: string;
+  kind: 'carpet' | 'curtain';
+  /** Ковёр: тонкий / толстый на подложке; шторы: лёгкие / плотные в складку. */
+  grade: 'thin' | 'thick' | 'light' | 'heavy';
+  surface: 'floor' | WallId;
+  u0: number;
+  u1: number;
+  v0: number;
+  v1: number;
 }
 
 export type WallId = 'front' | 'back' | 'left' | 'right';
@@ -124,6 +149,10 @@ export interface Room {
   /** План обработки и признак «учитывать в расчёте». */
   treatments?: Treatment[];
   treatmentsOn?: boolean;
+  /** Ковры (пол, стены) и шторы. Поглощение учитывается только при furnitureList. */
+  coverings?: Covering[];
+  /** Обстановка на средних и высоких частотах — по списку мебели и покрытий (бас — по furnishing). */
+  furnitureList?: boolean;
 }
 
 /** Коэффициенты поглощения по октавам 63, 125, 250, 500, 1000, 2000, 4000 Гц. */

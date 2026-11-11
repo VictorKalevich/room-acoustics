@@ -1,13 +1,17 @@
-// Зоны, где нельзя ставить колонки и слушателя (двери, окна, мебель).
+// Зоны, где нельзя ставить колонки и слушателя (двери, окна, проходы). Мебель с 019 правится
+// на шаге «Мебель» конструктора; здесь — остальные зоны и герметичность комнаты.
 import { makeId } from '../../../state/project';
 import type { Room, Zone, ZoneKind, Leakage } from '../../../core/types';
 import { NumberField, Panel, SelectField } from '../../design-system';
 import { S } from '../../strings';
 
+const KINDS: ZoneKind[] = ['door', 'window', 'other'];
+
 export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
-  const zones = room.zones ?? [];
+  const all = room.zones ?? [];
+  const zones = all.filter((z) => z.kind !== 'furniture');
   const setZone = (id: string, patch: Partial<Zone>) => {
-    const next = zones.map((z) => {
+    const next = all.map((z) => {
       if (z.id !== id) return z;
       const n = { ...z, ...patch };
       // держим границы внутри комнаты и в правильном порядке
@@ -21,10 +25,10 @@ export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
   };
   const add = () => {
     const z: Zone = { id: makeId(), kind: 'door', x0: Math.max(0, room.depth - 1), x1: room.depth, y0: 0, y1: Math.min(1, room.width), canSit: false };
-    onRoom({ ...room, zones: [...zones, z] });
+    onRoom({ ...room, zones: [...all, z] });
   };
   return (
-    <Panel title={S.zones.title} collapseKey="ra-room-zones" summary={`Зон: ${zones.length} · ${S.zones.leakages[room.leakage ?? 'typical']}`}>
+    <Panel title={S.furniture.otherZones} collapseKey="ra-room-zones" summary={`Зон: ${zones.length} · ${S.zones.leakages[room.leakage ?? 'typical']}`}>
       <p class="small">{S.zones.intro}</p>
       {zones.length === 0 && <p class="muted small">{S.zones.none}</p>}
       {zones.map((z, i) => (
@@ -33,10 +37,10 @@ export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
             <SelectField
               label={`${S.zones.kind} ${i + 1}`}
               value={z.kind}
-              options={(['door', 'window', 'furniture', 'other'] as ZoneKind[]).map((k) => ({ value: k, label: S.zones.kinds[k] }))}
+              options={KINDS.map((k) => ({ value: k, label: S.zones.kinds[k] }))}
               onChange={(v) => setZone(z.id, { kind: v as ZoneKind })}
             />
-            <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, zones: zones.filter((x) => x.id !== z.id) })}>
+            <button type="button" class="btn btn--small btn--ghost" onClick={() => onRoom({ ...room, zones: all.filter((x) => x.id !== z.id) })}>
               {S.zones.remove}
             </button>
           </div>

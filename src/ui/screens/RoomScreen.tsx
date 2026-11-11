@@ -2,17 +2,13 @@ import { useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { shownTreatments } from '../../core/treatments';
 import { clearedRoom, defaultRoom, emptyRoom, rotateRoom, rotateSetup } from '../../state/project';
-import type { Room, SurfaceId, ReverbResult, Furnishing } from '../../core/types';
-import { SURFACES } from '../../core/types';
-import { MATERIALS, FURNISHING_LABEL } from '../../core/materials';
-import { speedOfSound } from '../../core/physics';
-import { NumberField, Panel, SelectField, Details } from '../design-system';
+import type { Room, ReverbResult } from '../../core/types';
+import { FURNISHING_LABEL } from '../../core/materials';
+import { Panel, Details } from '../design-system';
 import { PlanView } from '../components/PlanView';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { ScanPanel } from './room/ScanPanel';
-import { OpeningsPanel } from './room/OpeningsPanel';
-import { ZonesPanel } from './room/ZonesPanel';
 import { ClearIcon, FileIcon, RotateIcon } from './room/icons';
 import { ConfirmSheet } from '../design-system';
 import type { Destination } from '../navigation';
@@ -25,9 +21,12 @@ interface Props {
   onGo?: (t: Destination) => void;
 }
 
+/**
+ * Обзор комнаты (019): план и сводка, вход в конструктор, поворот и очистка, скан, реверберация.
+ * Размеры, стены, пол, потолок и мебель правятся в конструкторе (room/RoomEditor).
+ */
 export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
   const room = project.room;
-  const set = (patch: Partial<Room>) => onRoom({ ...room, ...patch });
   const [askClear, setAskClear] = useState(false);
   // после очистки панель скана начинает заново (без прежнего файла и найденного в нём)
   const [scanGen, setScanGen] = useState(0);
@@ -52,7 +51,15 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
             <button type="button" class="btn btn--primary" onClick={() => document.getElementById('scan-file')?.click()}>
               <FileIcon /> {S.start.scan}
             </button>
-            <button type="button" class="btn" onClick={() => { const el = document.getElementById('room-depth') as HTMLInputElement | null; el?.scrollIntoView({ behavior: 'smooth', block: 'center' }); el?.focus(); }}>
+            <button type="button" class="btn" onClick={() => {
+              onGo?.('room/size');
+              // поле глубины появится после перехода на шаг «Размеры»
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                const el = document.getElementById('room-depth') as HTMLInputElement | null;
+                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el?.focus();
+              }));
+            }}>
               {S.start.manual}
             </button>
           </div>
@@ -60,12 +67,15 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
         </Panel>
       )}
       <Panel class="panel--hero">
-        <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} />
-        <div class="dims">
-          <NumberField id="room-depth" label={S.room.depth} hint={S.room.depthHint} value={room.depth} unit="м" min={1} max={50} onChange={(v) => set({ depth: v })} />
-          <NumberField label={S.room.width} hint={S.room.widthHint} value={room.width} unit="м" min={1} max={50} onChange={(v) => set({ width: v })} />
-          <NumberField label={S.room.height} value={room.height} unit="м" min={1} max={20} onChange={(v) => set({ height: v })} />
-        </div>
+        <PlanView depth={room.depth} width={room.width} zones={room.zones} rugs={room.coverings} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} />
+        <p class="small">{S.editor.summary(
+          `${fmt(room.depth, 2)} × ${fmt(room.width, 2)} × ${fmt(room.height, 2)} м`,
+          (room.features ?? []).length + (room.openings ?? []).length,
+          (room.zones ?? []).filter((z) => z.kind === 'furniture').length,
+          (room.coverings ?? []).length,
+        )} · {FURNISHING_LABEL[room.furnishing].toLowerCase()}{room.furnitureList ? ` + ${S.furniture.list.toLowerCase()}` : ''}</p>
+        <button type="button" class="btn btn--primary" onClick={() => onGo?.('room/size')}>{S.editor.open}</button>
+        <p class="muted small">{S.editor.openHint}</p>
         <div class="btn-row">
           <button
             type="button"
@@ -87,45 +97,10 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
             onConfirm={clear}
           />
         )}
-        <Details summary={S.room.temperature}>
-          <NumberField
-            label={S.room.temperature}
-            value={room.temperatureC}
-            unit="°C"
-            min={-10}
-            max={40}
-            digits={0}
-            hint={S.room.speed(fmt(speedOfSound(room.temperatureC), 1))}
-            onChange={(v) => set({ temperatureC: v })}
-          />
-        </Details>
       </Panel>
 
       <ScanPanel key={scanGen} project={project} onRoom={onRoom} onGo={onGo} />
 
-      <OpeningsPanel room={room} onRoom={(r) => onRoom(r)} />
-
-      <Panel title={S.room.materials} collapseKey="ra-room-materials" summary={`${MATERIALS.find((m) => m.id === room.materials.floor)?.name ?? ''} · ${FURNISHING_LABEL[room.furnishing]}`}>
-        <div class="grid-2 grid-2--wide-items">
-          {SURFACES.map((s: SurfaceId, ki) => (
-            <SelectField key={ki}
-              label={S.room.surfaces[s]}
-              value={room.materials[s]}
-              options={MATERIALS.map((m) => ({ value: m.id, label: m.name }))}
-              onChange={(v) => set({ materials: { ...room.materials, [s]: v } })}
-            />
-          ))}
-        </div>
-        <SelectField
-          label={S.room.furnishing}
-          value={room.furnishing}
-          options={(Object.keys(FURNISHING_LABEL) as Furnishing[]).map((k) => ({ value: k, label: FURNISHING_LABEL[k] }))}
-          onChange={(v) => set({ furnishing: v as Furnishing })}
-        />
-        <p class="muted small">{S.room.furnishingHint}</p>
-      </Panel>
-
-      <ZonesPanel room={room} onRoom={(r) => onRoom(r)} />
 
       <Panel title={S.room.reverb}>
         <div class="stat-row">

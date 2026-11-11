@@ -1,6 +1,7 @@
 import type { ReverbResult, Room, SurfaceId } from './types';
 import { SURFACES } from './types';
-import { FURNISHING, OCTAVES, alphaAt, getMaterial } from './materials';
+import { OCTAVES, alphaAt, getMaterial } from './materials';
+import { furnishingOctaves } from './furniture';
 import { roomVolume } from './geometry';
 import { patchDeltaAlpha, patchShares, roomPatches, type Patch } from './patches';
 
@@ -34,7 +35,7 @@ const AIR_M = [0, 0, 0, 0, 0.00108, 0.00223, 0.0076];
 export function baseSurfaceAbsorptionAt(room: Room, f: number): Record<SurfaceId, number> {
   const S = surfaceAreas(room);
   const total = SURFACES.reduce((s, k) => s + S[k], 0);
-  const furn = alphaAt(FURNISHING[room.furnishing], f) * S.floor;
+  const furn = alphaAt(furnishingOctaves(room), f) * S.floor;
   const out = {} as Record<SurfaceId, number>;
   for (const k of SURFACES) {
     out[k] = alphaAt(getMaterial(room.materials[k]).alpha, f) * S[k] + (furn * S[k]) / total;

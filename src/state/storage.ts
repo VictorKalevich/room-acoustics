@@ -2,9 +2,10 @@
 import { normalizeVoice } from '../core/voice';
 import type { Project } from './project';
 import { defaultConstraints, defaultRoom, defaultSetup, defaultSources, defaultSub, makeId, syncSetup, validateRoom, validateSources } from './project';
-import type { Measurement, Setup, SourceSpec } from '../core/types';
+import type { FurnitureType, Measurement, Setup, SourceSpec } from '../core/types';
 import { DAMPING_MODEL, SURFACES } from '../core/types';
 import { MATERIAL_BY_ID } from '../core/materials';
+import { FURNITURE } from '../core/furniture';
 import { HISTORY_MAX } from './variant';
 import { normalizeObjective } from '../core/objective';
 
@@ -57,6 +58,22 @@ export function normalizeProject(raw: any): Project {
     ? room.features.filter((f: any) => f && (f.kind === 'window' || f.kind === 'door') && ['front', 'back', 'left', 'right'].includes(f.wall) && f.a1 > f.a0)
     : [];
   if (!['auto', 'modal', 'wave'].includes(room.model)) room.model = 'auto';
+  // 019: тип и высота мебели, ковры и шторы, обстановка по списку (необязательные поля)
+  room.zones = room.zones.map((z: any) => {
+    const n = { ...z };
+    if (n.furniture !== undefined && (n.kind !== 'furniture' || !FURNITURE[n.furniture as FurnitureType])) delete n.furniture;
+    if (n.height !== undefined && !(Number.isFinite(n.height) && n.height > 0)) delete n.height;
+    return n;
+  });
+  const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
+  room.coverings = Array.isArray(room.coverings)
+    ? room.coverings.filter((c: any) => c
+      && (c.kind === 'carpet' ? ['thin', 'thick'].includes(c.grade) : c.kind === 'curtain' && ['light', 'heavy'].includes(c.grade))
+      && ['floor', 'front', 'back', 'left', 'right'].includes(c.surface)
+      && !(c.kind === 'curtain' && c.surface === 'floor')
+      && [c.u0, c.u1, c.v0, c.v1].every(num) && c.u1 > c.u0 && c.v1 > c.v0)
+    : [];
+  room.furnitureList = !!room.furnitureList;
   const roomErr = validateRoom(room);
   if (roomErr.length) throw new Error(`Неверные данные комнаты: ${roomErr.map((e) => e.message).join('; ')}`);
   const rawSources: SourceSpec[] = Array.isArray(raw.sources) && raw.sources.length ? raw.sources : defaultSources(2, 1);

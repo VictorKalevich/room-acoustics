@@ -25,14 +25,15 @@ test('adjacent fields stay aligned with wrapping labels and validation feedback'
     await height.fill('160');
     await expect(height).toHaveAttribute('aria-invalid', 'false');
   }
-  await page.evaluate(() => { location.hash = 'room'; });
+  await page.evaluate(() => { location.hash = 'room/size'; });
   await page.setViewportSize({ width: 430, height: 932 });
   // Dimensions have hints under two controls, but none under the third.
   await aligned(page.getByLabel('Глубина', { exact: true }), page.getByLabel('Высота', { exact: true }));
 });
 
 test('wall picker creates presets, keeps edited sizes and separates cards from actions', async ({ page }) => {
-  await page.goto('/#room');
+  // 019: элементы добавляются на выбранную стену и не ложатся друг на друга
+  await page.goto('/#room/walls');
   await add(page, 'Окно');
   const window = page.locator('.wall-items .zone-card').filter({ has: page.getByLabel('Окно 1: стена', { exact: true }) });
   await expect(window.getByLabel('Ширина', { exact: true })).toHaveValue('1,3');
@@ -50,7 +51,7 @@ test('wall picker creates presets, keeps edited sizes and separates cards from a
   await expect(window.getByLabel('Ширина', { exact: true })).toHaveValue('1,7');
   for (const width of [320, 393, 1024]) {
     await page.setViewportSize({ width, height: 852 });
-    const gaps = await page.locator('.wall-items').evaluate(el => {
+    const gaps = await page.locator('.wall-items').first().evaluate(el => {
       const cards = Array.from(el.children).map(card => card.getBoundingClientRect());
       const action = el.nextElementSibling!.getBoundingClientRect();
       return [...cards.slice(1).map((card, i) => card.top - cards[i].bottom), action.top - cards[cards.length - 1].bottom];
@@ -70,8 +71,10 @@ test('wall picker creates presets, keeps edited sizes and separates cards from a
 });
 
 test('picker supports keyboard and dismissal; new items fit a small room', async ({ page }) => {
-  await page.goto('/#room');
+  await page.goto('/#room/size');
   for (const label of ['Глубина', 'Ширина', 'Высота']) await page.getByLabel(label, { exact: true }).fill('1');
+  await page.getByLabel('Высота', { exact: true }).blur();
+  await page.getByRole('navigation', { name: 'Шаги конструктора' }).getByRole('button', { name: /Стены/ }).click();
   const trigger = page.getByRole('button', { name: 'Добавить проём', exact: true });
   await trigger.focus();
   await page.keyboard.press('ArrowDown');
@@ -84,7 +87,7 @@ test('picker supports keyboard and dismissal; new items fit a small room', async
   await expect(trigger).toBeFocused();
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await trigger.click();
-  await page.getByRole('heading', { name: 'Окна, двери и проёмы', exact: true }).click();
+  await page.getByRole('heading', { name: 'Окна, двери и проёмы этой стены', exact: true }).click();
   await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(page.locator('.wall-items .zone-card')).toHaveCount(0);
   for (const name of ['Окно', 'Дверь', 'Проём без двери']) await add(page, name);

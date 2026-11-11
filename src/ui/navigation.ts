@@ -4,9 +4,13 @@ export type Tab = 'room' | 'modes' | 'placement' | 'tuning' | 'projects' | 'meas
 export type AnalysisView = 'overview' | 'list' | 'field';
 export type TuningView = 'sub' | 'eq' | 'treatment';
 export type MeasureView = 'sweep' | 'clap' | 'rta' | 'compare';
-export type Destination = Tab | 'analysis' | 'analysis/list' | 'placement/auto' | 'field' | 'overview' | 'manual' | `tuning/${TuningView}` | `measure/${MeasureView}`;
-export interface Route { tab: Tab; analysis: AnalysisView; placement: 'auto' | 'manual'; tuning: TuningView; measure: MeasureView }
-const INITIAL: Route = { tab: 'room', analysis: 'overview', placement: 'auto', tuning: 'sub', measure: 'sweep' };
+/** «Комната»: обзор или шаг конструктора (019). */
+export type RoomStep = 'size' | 'walls' | 'floor' | 'furniture';
+export type RoomView = 'overview' | RoomStep;
+export const ROOM_STEPS: RoomStep[] = ['size', 'walls', 'floor', 'furniture'];
+export type Destination = Tab | 'analysis' | 'analysis/list' | 'placement/auto' | 'field' | 'overview' | 'manual' | 'room/overview' | `room/${RoomStep}` | `tuning/${TuningView}` | `measure/${MeasureView}`;
+export interface Route { tab: Tab; analysis: AnalysisView; placement: 'auto' | 'manual'; tuning: TuningView; measure: MeasureView; room: RoomView }
+const INITIAL: Route = { tab: 'room', analysis: 'overview', placement: 'auto', tuning: 'sub', measure: 'sweep', room: 'overview' };
 const TABS: Tab[] = ['room', 'modes', 'placement', 'tuning', 'projects', 'measure', 'voice', 'report', 'sync', 'help', 'about'];
 
 /** Old bookmarks remain valid; view selection is UI state, never project data. */
@@ -18,6 +22,7 @@ export function resolveRoute(hash: string, previous: Route = INITIAL): Route {
   if (path === 'manual') return { ...previous, tab: 'placement', placement: 'manual' };
   if (path === 'placement' || path === 'placement/auto') return { ...previous, tab: 'placement', placement: 'auto' };
   const [tab, section] = path.split('/');
+  if (tab === 'room') return { ...previous, tab, room: ROOM_STEPS.includes(section as RoomStep) ? section as RoomStep : 'overview' };
   if (tab === 'tuning' && ['sub', 'eq', 'treatment'].includes(section)) return { ...previous, tab, tuning: section as TuningView };
   if (tab === 'measure' && ['sweep', 'clap', 'rta', 'compare'].includes(section)) return { ...previous, tab, measure: section as MeasureView };
   return { ...previous, tab: TABS.includes(path as Tab) ? path as Tab : 'room' };
@@ -28,6 +33,7 @@ export function routePath(route: Route): string {
   if (route.tab === 'placement') return route.placement === 'manual' ? 'manual' : 'placement';
   if (route.tab === 'tuning') return `tuning/${route.tuning}`;
   if (route.tab === 'measure') return `measure/${route.measure}`;
+  if (route.tab === 'room') return route.room === 'overview' ? 'room' : `room/${route.room}`;
   return route.tab;
 }
 

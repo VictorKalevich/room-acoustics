@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
 import type { Project } from '../../../state/project';
+import { scanFurnitureType } from '../../../core/furniture';
 import { defaultConstraints, makeId } from '../../../state/project';
 import type { Room, WallId } from '../../../core/types';
 import type { DetectResult, Units } from '../../../scan/detect';
@@ -33,7 +34,7 @@ interface Loaded {
 }
 const SIT = new Set(['sofa', 'couch', 'chair', 'armchair', 'bed']);
 
-export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom: (room: Room, extra?: Partial<Project>) => void; onGo?: (t: 'placement') => void }) {
+export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom: (room: Room, extra?: Partial<Project>) => void; onGo?: (t: 'placement' | 'room/walls') => void }) {
   const [state, setState] = useState<ScanState>({ phase: 'idle' });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [det, setDet] = useState<DetectResult | null>(null);
@@ -169,7 +170,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
         ? [
             ...project.room.zones.filter((z) => !z.fromScan),
             ...furn.flatMap((f, i) => (furnUse[i]?.on ?? true)
-              ? [{ id: makeId(), kind: 'furniture' as const, x0: f.x0, x1: f.x1, y0: f.y0, y1: f.y1, canSit: furnUse[i]?.sit ?? SIT.has(f.name), name: S.layout.furnitureNames[f.name] ?? S.layout.furnitureOther, fromScan: true }]
+              ? [{ id: makeId(), kind: 'furniture' as const, x0: f.x0, x1: f.x1, y0: f.y0, y1: f.y1, canSit: furnUse[i]?.sit ?? SIT.has(f.name), name: S.layout.furnitureNames[f.name] ?? S.layout.furnitureOther, fromScan: true, furniture: scanFurnitureType(f.name), height: f.top > 0 ? f.top : undefined }]
               : []),
           ]
         : project.room.zones,
@@ -354,6 +355,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
               <Note tone="good">{S.room.appliedNext}</Note>
               <div class="btn-row">
                 {onGo && <button type="button" class="btn btn--primary" onClick={() => onGo('placement')}>{S.room.toPlacement}</button>}
+                {onGo && <button type="button" class="btn" onClick={() => onGo('room/walls')}>{S.editor.open}</button>}
                 <button type="button" class="btn" onClick={() => scrollTo({ top: 0, behavior: 'smooth' })}>{S.room.seePlan}</button>
               </div>
             </>

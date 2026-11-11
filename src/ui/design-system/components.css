@@ -670,3 +670,29 @@ line.chart__grid { stroke: var(--line); stroke-width: 1; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
 /* Shared badge geometry; status tones and emphasis remain semantic variants. */
 .tag, .model-tag, .sev, .robust-tag, .score__grade { display: inline-block; padding: var(--space-2) var(--space-8); border-radius: var(--r-chip); }
+
+/* 019 — конструктор комнаты: развёртка стены, ковры на плане, выбор предмета */
+.wall-view { width: 100%; height: auto; display: block; max-height: 46vh; }
+.wall-view__wall { fill: var(--surface); stroke: var(--ink); stroke-width: 1.2; }
+.wall-view__floor { stroke: var(--ink); stroke-width: 2; }
+.wall-view text { fill: var(--muted); font-size: var(--text-diagram-small); }
+.wall-view__dim { font-weight: var(--weight-semibold); }
+.wall-view__window rect { fill: var(--accent-soft); stroke: var(--ink); stroke-width: 1; }
+.wall-view__window line { stroke: var(--ink); stroke-width: 1; }
+.wall-view__door { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
+.wall-view__gap { fill: var(--paper); stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 2; }
+.wall-view__arch { fill: var(--paper); stroke: var(--arch); stroke-width: 1.5; }
+.wall-view__treat { fill: color-mix(in srgb, var(--good) 35%, transparent); stroke: var(--good); stroke-width: 1.2; }
+.wall-view__carpet { stroke: var(--warn); stroke-width: 1.2; }
+.wall-view__weave { stroke: var(--warn); stroke-width: 1.4; opacity: 0.55; }
+.wall-view__curtain rect { fill: color-mix(in srgb, var(--accent) 26%, transparent); stroke: var(--accent); stroke-width: 1.2; }
+.wall-view__curtain.is-light rect { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke-dasharray: 3 2; }
+.wall-view__fold { stroke: var(--accent); stroke-width: 0.8; opacity: 0.6; }
+.wall-view__furniture rect { fill: color-mix(in srgb, var(--muted) 16%, transparent); stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.wall-view__furniture text { font-weight: var(--weight-semibold); }
+.plan__rug { fill: color-mix(in srgb, var(--warn) 22%, transparent); stroke: var(--warn); stroke-width: 1; }
+.plan__rug.is-thin { fill: color-mix(in srgb, var(--warn) 8%, transparent); stroke-dasharray: 3 2; }
+.plan__zone-rect.is-selectable { cursor: pointer; }
+.plan__zone-rect.is-selected .plan__zone-outline { stroke: var(--accent); stroke-width: 2.4; stroke-dasharray: none; }
+.plan__zone-rect.is-selected text { fill: var(--accent); }
+.zone-card.is-selected { box-shadow: inset 0 0 0 2px var(--accent); }

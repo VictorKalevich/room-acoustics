@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 // Перед запуском: npm run fixtures (создаёт tests/fixtures/out/sample-room.obj).
 
 test('US1: моды по ручным размерам', async ({ page }) => {
-  await page.goto('/#room');
+  await page.goto('/#room/size');
   await page.getByLabel('Глубина', { exact: true }).fill('5');
   await page.getByLabel('Ширина', { exact: true }).fill('4');
   await page.getByLabel('Высота', { exact: true }).fill('2,5');
@@ -43,9 +43,13 @@ test('US3: неподдерживаемый файл — понятная оши
 
 test('US4: толстый ковёр уменьшает RT60', async ({ page }) => {
   await page.goto('/#room');
-  const rt = page.locator('.stat__value').first();
+  const rt = page.locator('.stat__value:visible').first();
   const before = Number((await rt.textContent())!.replace(',', '.').replace(/[^\d.]/g, ''));
-  await page.getByLabel('Пол', { exact: true }).selectOption('carpet-thick');
+  // материал пола — в конструкторе, шаг «Пол и потолок» (019)
+  await page.getByRole('button', { name: 'Конструктор комнаты' }).click();
+  await page.getByRole('navigation', { name: 'Шаги конструктора' }).getByRole('button', { name: /Пол и потолок/ }).click();
+  await page.getByLabel('Материал пола', { exact: true }).selectOption('carpet-thick');
+  await page.getByRole('button', { name: /Обзор комнаты/ }).click();
   await expect(async () => {
     const after = Number((await rt.textContent())!.replace(',', '.').replace(/[^\d.]/g, ''));
     expect(after).toBeLessThan(before);
@@ -94,9 +98,9 @@ test('002 US8: импорт замера REW', async ({ page }) => {
 });
 
 test('003: коридор за аркой — моды системы и волновая модель', async ({ page }) => {
-  await page.goto('/#room');
+  await page.goto('/#room/size');
   await page.getByRole('button', { name: 'Добавить коридор' }).click();
-  await expect(page.locator('.plan__ext').first()).toBeVisible();
+  await expect(page.locator('svg.plan:visible .plan__ext').first()).toBeVisible();
   await page.getByRole('button', { name: 'Анализ', exact: true }).click();
   await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   await expect(page.locator('.sysmodes-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
@@ -184,7 +188,7 @@ test('005: план обработки, скос потолка и помощн�
   await page.getByRole('button', { name: 'Предложить план' }).click();
   await expect(page.locator('.treat-compare')).toBeVisible();
   await expect(page.locator('.plan__treat').first()).toBeAttached();
-  await page.goto('/#room');
+  await page.goto('/#room/floor');
   await page.getByText('Есть скос потолка (мансарда)').click();
   await expect(page.locator('.plan__slope').first()).toBeAttached();
   await page.goto('/#help');
@@ -249,9 +253,12 @@ test('UX: предложенный план обработки не меняет
 });
 
 test('UX: поля выбора не мельче 16 px (иначе Safari увеличивает страницу при касании)', async ({ page }) => {
-  await page.goto('/#room');
-  await expect(page.getByLabel('Глубина', { exact: true })).toBeVisible();
-  const sizes = await page.locator('select').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+  const sizes: number[] = [];
+  for (const step of ['size', 'walls', 'floor', 'furniture']) {
+    await page.goto(`/#room/${step}`);
+    await expect(page.locator('.section-nav button.is-on')).toBeVisible();
+    sizes.push(...await page.locator('select:visible').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize))));
+  }
   expect(sizes.length).toBeGreaterThan(3);
   for (const s of sizes) expect(s).toBeGreaterThanOrEqual(16);
 });
@@ -466,7 +473,9 @@ test('014: «Очистить» на экране комнаты; модель �
   const model = page.locator('#scan-panel .scan-result');
   await model.scrollIntoViewIfNeeded();
   await expect(model.locator('canvas')).toBeVisible();
-  // окно: отступ и ширина; при сдвиге ширина сохраняется
+  // окно: отступ и ширина; при сдвиге ширина сохраняется (019: окна — на шаге «Стены», левая стена)
+  await page.goto('/#room/walls');
+  await page.getByRole('radio', { name: 'Левая', exact: true }).click();
   await page.getByRole('button', { name: 'Добавить проём', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Окно', exact: true }).click();
   const win = page.locator('.zone-card').filter({ hasText: 'Окно 1' });
@@ -478,24 +487,32 @@ test('014: «Очистить» на экране комнаты; модель �
   // стрелка выпадающего списка: справа такой же отступ, как у текста слева
   const pad = await win.locator('.field__box--select').first().evaluate((el) => { const s = getComputedStyle(el); return [s.paddingLeft, s.paddingRight]; });
   expect(pad[1]).toBe(pad[0]);
-  // скос: поля одно под другим
+  // скос: поля одно под другим (шаг «Пол и потолок»)
+  await page.goto('/#room/floor');
   await page.getByText('Есть скос потолка (мансарда)').click();
   const low = await page.getByLabel('Высота у стены').boundingBox();
   const run = await page.getByLabel('Ширина скоса от стены').boundingBox();
   expect(run!.y).toBeGreaterThan(low!.y + low!.height);
   expect(Math.abs(run!.x - low!.x)).toBeLessThan(2);
+  await page.goto('/#room/size');
   await page.getByLabel('Глубина', { exact: true }).fill('6');
-  // очистить: сначала отмена, потом подтверждение
+  await page.getByLabel('Глубина', { exact: true }).blur();
+  await expect(page.locator('.topbar__room')).toContainText('6,00 × 4,00');
+  // очистить на обзоре: сначала отмена, потом подтверждение
+  await page.getByRole('button', { name: /Обзор комнаты/ }).click();
   await page.getByRole('button', { name: 'Очистить' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Отмена' }).click();
-  await expect(win).toBeVisible();
+  await expect(page.locator('.topbar__room')).toContainText('6,00 × 4,00');
   await page.getByRole('button', { name: 'Очистить' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Очистить' }).click();
   await expect(page.locator('.topbar__room')).toContainText('4,00 × 3,00 × 2,70 м');
-  await expect(page.locator('.zone-card')).toHaveCount(0);
-  await expect(page.getByLabel('Есть скос потолка (мансарда)')).not.toBeChecked();
   await expect(page.locator('.start-card')).toBeVisible();
   await expect(page.locator('.plan__slope')).toHaveCount(0);
+  await page.goto('/#room/walls');
+  await page.getByRole('radio', { name: 'Левая', exact: true }).click();
+  await expect(page.locator('.zone-card:visible')).toHaveCount(0);
+  await page.goto('/#room/floor');
+  await expect(page.getByLabel('Есть скос потолка (мансарда)')).not.toBeChecked();
 });
 
 test('015: отражения от передней и задней стен; экран «Запись голоса» из меню — карта, место, направление, полоса частот, пересчёт при изменении комнаты', async ({ page }) => {
@@ -531,8 +548,11 @@ test('015: отражения от передней и задней стен; э
   await page.locator('.best-list li').nth(1).getByRole('button', { name: 'Встать сюда' }).click();
   // комната меняется — экран считает заново: окно на стене напротив появляется в списке отражений
   await page.getByRole('button', { name: 'Комната' }).click();
+  await page.getByRole('button', { name: 'Конструктор комнаты' }).click();
   await page.getByLabel('Глубина', { exact: true }).fill('4');
   await page.getByLabel('Ширина', { exact: true }).fill('3');
+  await page.getByRole('navigation', { name: 'Шаги конструктора' }).getByRole('button', { name: /Стены/ }).click();
+  await page.getByRole('radio', { name: 'Левая', exact: true }).click();
   await page.getByRole('button', { name: 'Добавить проём', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Окно', exact: true }).click();
   const win = page.locator('.zone-card').filter({ hasText: 'Окно 1' });

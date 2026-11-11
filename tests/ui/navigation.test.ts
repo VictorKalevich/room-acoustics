@@ -12,9 +12,14 @@ describe('navigation compatibility', () => {
     expect(resolveRoute('#analysis')).toMatchObject({ tab: 'modes', analysis: 'overview' });
   });
   it('round trips specific workspace links', () => {
-    for (const path of ['room', 'analysis', 'modes', 'field', 'manual', 'placement', 'tuning/sub', 'tuning/eq', 'tuning/treatment', 'measure/sweep', 'measure/clap', 'measure/rta', 'measure/compare', 'voice', 'projects', 'sync', 'report', 'help', 'about']) {
+    for (const path of ['room', 'room/size', 'room/walls', 'room/floor', 'room/furniture', 'analysis', 'modes', 'field', 'manual', 'placement', 'tuning/sub', 'tuning/eq', 'tuning/treatment', 'measure/sweep', 'measure/clap', 'measure/rta', 'measure/compare', 'voice', 'projects', 'sync', 'report', 'help', 'about']) {
       expect(routePath(resolveRoute(`#${path}`))).toBe(path);
     }
+  });
+  it('opens room overview for the old address and unknown room steps (019)', () => {
+    expect(resolveRoute('#room')).toMatchObject({ tab: 'room', room: 'overview' });
+    expect(resolveRoute('#room/walls')).toMatchObject({ tab: 'room', room: 'walls' });
+    expect(resolveRoute('#room/unknown')).toMatchObject({ tab: 'room', room: 'overview' });
   });
   it('rejects unknown sections without losing the last valid selection', () => {
     const previous = resolveRoute('#tuning/eq');

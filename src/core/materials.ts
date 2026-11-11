@@ -50,6 +50,12 @@ export const FEATURE_ALPHA: Record<'window' | 'door', OctaveValues> = {
   door: [0.14, 0.14, 0.1, 0.06, 0.08, 0.1, 0.1],
 };
 
+/**
+ * Лёгкие шторы (тюль, лёгкая ткань): лёгкий велюр ≈ 0,34 кг/м² без складок вплотную к стене
+ * (Everest & Pohlmann). Не входит в список отделки — только покрытие (019).
+ */
+export const LIGHT_CURTAIN_ALPHA: OctaveValues = [0.02, 0.03, 0.04, 0.11, 0.17, 0.24, 0.35];
+
 export function getMaterial(id: string): Material {
   return MATERIAL_BY_ID[id] ?? MATERIAL_BY_ID['plaster'];
 }

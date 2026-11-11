@@ -1,4 +1,5 @@
-// Проёмы, коридор за аркой, окна и двери, скос потолка.
+// Элементы комнаты (019 разделил прежнюю панель): форма (коридоры, ниши, модель), скос потолка,
+// окна, двери и проёмы выбранной стены. Логика правки одна — useRoomItems.
 import { makeId } from '../../../state/project';
 import type { Room, Opening, Extension, WallId, AcousticModel, WallFeature } from '../../../core/types';
 import { validateExtension, validateSlope, wallLength } from '../../../core/geometry';
@@ -9,7 +10,7 @@ import { S } from '../../strings';
 
 const WALLS: WallId[] = ['front', 'back', 'left', 'right'];
 
-export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
+function useRoomItems(room: Room, onRoom: (r: Room) => void) {
   const openings = room.openings ?? [];
   const exts = room.extensions ?? [];
   const setOpening = (id: string, patch: Partial<Opening>) => {
@@ -30,14 +31,24 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
     onRoom({ ...room, extensions: exts.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
   };
   // Starting dimensions only: existing/imported items are never resized here.
+  // 019: новые элементы одной стены не ложатся друг на друга — берётся ближайшее к заготовке свободное место
   const fitSpan = (wall: WallId, width: number, offset: number) => {
     const length = wallLength(room, wall);
     const fittedWidth = Math.min(width, length);
-    const a0 = Math.max(0, Math.min(offset, length - fittedWidth));
+    const at = (a: number) => Math.max(0, Math.min(a, length - fittedWidth));
+    const busy = [...openings, ...(room.features ?? []), ...exts.map((e) => ({ wall: e.wall, ...e.arch }))].filter((o) => o.wall === wall);
+    const free = (a0: number) => busy.every((o) => a0 + fittedWidth <= o.a0 + 1e-6 || a0 >= o.a1 - 1e-6);
+    const step = 0.05;
+    let a0 = at(offset);
+    for (let d = 0; !free(a0) && d <= length; d += step) {
+      const left = at(offset - d), right = at(offset + d);
+      if (free(right)) { a0 = right; break; }
+      if (free(left)) { a0 = left; break; }
+    }
     return { a0, a1: a0 + fittedWidth };
   };
-  const addOpening = () =>
-    onRoom({ ...room, openings: [...openings, { id: makeId(), wall: 'right', ...fitSpan('right', 0.9, 1), height: Math.min(2.1, room.height) }] });
+  const addOpening = (wall: WallId) =>
+    onRoom({ ...room, openings: [...openings, { id: makeId(), wall, ...fitSpan(wall, 0.9, 1), height: Math.min(2.1, room.height) }] });
   const addNiche = () =>
     onRoom({
       ...room,
@@ -72,12 +83,12 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
       }),
     });
   };
-  const addFeature = (kind: WallFeature['kind']) => {
-    const L = wallLength(room, 'left');
+  const addFeature = (kind: WallFeature['kind'], wall: WallId) => {
+    const L = wallLength(room, wall);
     const bottom = Math.min(0.9, Math.max(0, room.height - 1.4));
     const f: WallFeature = kind === 'window'
-      ? { id: makeId(), kind, wall: 'left', ...fitSpan('left', 1.3, (L - 1.3) / 2), bottom, top: Math.min(room.height, bottom + 1.4) }
-      : { id: makeId(), kind, wall: 'back', ...fitSpan('back', 0.8, 0.3), bottom: 0, top: Math.min(room.height, 2) };
+      ? { id: makeId(), kind, wall, ...fitSpan(wall, 1.3, (L - 1.3) / 2), bottom, top: Math.min(room.height, bottom + 1.4) }
+      : { id: makeId(), kind, wall, ...fitSpan(wall, 0.8, 0.3), bottom: 0, top: Math.min(room.height, 2) };
     onRoom({ ...room, features: [...feats, f] });
   };
   /** Смена вида элемента стены (если распознан неверно): арка ↔ дверь ↔ окно. */
@@ -99,10 +110,15 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
   );
   /** Ширина вдоль стены (без хвостов округления). */
   const span = (a0: number, a1: number) => Math.round((a1 - a0) * 1000) / 1000;
+  return { openings, exts, feats, setOpening, setExt, addOpening, addNiche, addCorridor, setFeature, addFeature, kindSelect, span };
+}
+
+/** Шаг «Размеры»: коридоры за аркой, ниши и модель расчёта. */
+export function ShapePanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
+  const { exts, setExt, addNiche, addCorridor, span } = useRoomItems(room, onRoom);
   return (
-    <Panel title={S.openings.title} collapseKey="ra-room-geometry" summary={`Окна и двери: ${room.features?.length ?? 0} · Проёмы: ${openings.length} · Коридоры и ниши: ${exts.length}${room.slope ? ' · Есть скос' : ''}`}>
-      <p class="small">{S.openings.intro}</p>
-      {openings.length === 0 && exts.length === 0 && <p class="muted small">{S.openings.none}</p>}
+    <Panel title={S.editor.shape}>
+      <p class="small">{S.editor.shapeIntro}</p>
       {exts.map((e, i) => {
         const err = validateExtension(room, e);
         return (
@@ -144,6 +160,21 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
       </div>
       <p class="muted small">{S.shape.nicheHint}</p>
 
+      <SelectField
+        label={S.model.title}
+        value={room.model ?? 'auto'}
+        options={(['auto', 'modal', 'wave'] as AcousticModel[]).map((m) => ({ value: m, label: S.model[m] }))}
+        onChange={(v) => onRoom({ ...room, model: v as AcousticModel })}
+      />
+      <p class="muted small">{S.model.hint}</p>
+    </Panel>
+  );
+}
+
+/** Шаг «Пол и потолок»: скос потолка (прежний блок без изменений). */
+export function SlopeBlock({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
+  return (
+    <>
       <h3 class="subhead">{S.shape.slopeTitle}</h3>
       <label class="check">
         <input type="checkbox" checked={!!room.slope} onChange={(e) => onRoom({ ...room, slope: (e.target as HTMLInputElement).checked ? { wall: 'front', low: Math.max(0.6, Math.round(room.height * 0.5 * 10) / 10), run: Math.min(1.5, room.depth / 2) } : null })} />
@@ -159,10 +190,20 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
         </div>
       )}
 
-      <h3 class="subhead">{S.openings.featuresTitle}</h3>
+    </>
+  );
+}
+
+/** Шаг «Стены»: окна, двери и проёмы выбранной стены; новые элементы появляются на ней. */
+export function WallItemsPanel({ room, onRoom, wall }: { room: Room; onRoom: (r: Room) => void; wall: WallId }) {
+  const { openings, feats, setOpening, setFeature, addOpening, addFeature, kindSelect, span } = useRoomItems(room, onRoom);
+  const count = openings.filter((o) => o.wall === wall).length + feats.filter((f) => f.wall === wall).length;
+  return (
+    <Panel title={S.editor.wallItems}>
       <p class="muted small">{S.openings.featuresIntro}</p>
+      {count === 0 && <p class="muted small">{S.editor.wallNone}</p>}
       <div class="wall-items">
-        {openings.map((o, i) => (
+        {openings.filter((o) => o.wall === wall).map((o, i) => (
           <div key={o.id} class="zone-card">
             <div class="zone-card__head">
               <SelectField
@@ -184,7 +225,7 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
             {kindSelect(o.id, openingAsItem(o), 'arch')}
           </div>
         ))}
-        {feats.map((f, i) => (
+        {feats.filter((f) => f.wall === wall).map((f, i) => (
           <div key={f.id} class="zone-card">
             <div class="zone-card__head">
               <SelectField
@@ -209,17 +250,10 @@ export function OpeningsPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) 
         ))}
       </div>
       <ActionMenu label={S.openings.addOpening} actions={[
-        { label: S.openings.window, onSelect: () => addFeature('window') },
-        { label: S.openings.door, onSelect: () => addFeature('door') },
-        { label: 'Проём без двери', onSelect: addOpening },
+        { label: S.openings.window, onSelect: () => addFeature('window', wall) },
+        { label: S.openings.door, onSelect: () => addFeature('door', wall) },
+        { label: 'Проём без двери', onSelect: () => addOpening(wall) },
       ]} />
-      <SelectField
-        label={S.model.title}
-        value={room.model ?? 'auto'}
-        options={(['auto', 'modal', 'wave'] as AcousticModel[]).map((m) => ({ value: m, label: S.model[m] }))}
-        onChange={(v) => onRoom({ ...room, model: v as AcousticModel })}
-      />
-      <p class="muted small">{S.model.hint}</p>
     </Panel>
   );
 }

@@ -25,6 +25,7 @@ test('tuning preserves EQ result and export choice across sections, invalidates 
   await page.getByRole('navigation', { name: 'Раздел настройки' }).getByRole('button', { name: /Эквалайзер/ }).click();
   await expect(page.locator('#eq-apo')).toHaveValue(value);
   await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Комната' }).click();
+  await page.getByRole('button', { name: 'Конструктор комнаты' }).click();
   await page.getByLabel('Глубина', { exact: true }).fill('6');
   await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Настройка' }).click();
   await expect(page.locator('#eq-apo')).toHaveCount(0);
@@ -48,8 +49,8 @@ test('measurement is shared with EQ and survives navigation and project reload',
 });
 
 test('room sections keep their collapsed state and all input labels remain unique', async ({ page }) => {
-  await page.goto('/#room');
-  const section = page.locator('.panel--collapsible').first();
+  await page.goto('/#room/furniture');
+  const section = page.locator('.panel--collapsible:visible').first();
   await section.locator('summary').click();
   await expect(section).not.toHaveAttribute('open', '');
   await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Расстановка' }).click();
@@ -57,17 +58,22 @@ test('room sections keep their collapsed state and all input labels remain uniqu
   await expect(section).not.toHaveAttribute('open', '');
   await page.reload();
   await expect(section).not.toHaveAttribute('open', '');
-  const duplicates = await page.locator('input[id],select[id]').evaluateAll((els) => {
-    const ids = els.map((el) => el.id);
-    return ids.filter((id, i) => ids.indexOf(id) !== i);
-  });
-  expect(duplicates).toEqual([]);
+  // 019: на каждом шаге конструктора id полей уникальны и в паре с обзором комнаты (он остаётся в DOM)
+  for (const step of ['size', 'walls', 'floor', 'furniture']) {
+    await page.goto(`/#room/${step}`);
+    await expect(page.locator('.section-nav button.is-on')).toBeVisible();
+    const duplicates = await page.locator('input[id],select[id]').evaluateAll((els) => {
+      const ids = els.map((el) => el.id);
+      return ids.filter((id, i) => ids.indexOf(id) !== i);
+    });
+    expect(duplicates).toEqual([]);
+  }
 });
 
 test('workspace fits small iPhone and desktop without horizontal overflow', async ({ page }) => {
   for (const width of [320, 393, 1280]) {
     await page.setViewportSize({ width, height: 852 });
-    for (const route of ['room', 'analysis', 'tuning/sub', 'tuning/eq', 'tuning/treatment', 'measure/compare']) {
+    for (const route of ['room', 'room/size', 'room/walls', 'room/floor', 'room/furniture', 'analysis', 'tuning/sub', 'tuning/eq', 'tuning/treatment', 'measure/compare']) {
       await page.goto(`/#${route}`);
       await expect(page.locator('.topbar__title')).toBeVisible();
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

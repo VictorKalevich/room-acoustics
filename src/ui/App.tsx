@@ -5,6 +5,7 @@ import type { Project } from '../state/project';
 import { computeReverb } from '../core/reverb';
 import { computeModes } from '../core/modes';
 import { RoomScreen } from './screens/RoomScreen';
+import { RoomEditor } from './screens/room/RoomEditor';
 import { ModesScreen } from './screens/ModesScreen';
 import { PlacementScreen } from './screens/PlacementScreen';
 import { ProjectsScreen } from './screens/ProjectsScreen';
@@ -68,6 +69,7 @@ export function App() {
   const modes = useMemo(() => computeModes(project.room, fMax), [project.room, fMax]);
 
   const r = project.room;
+  const title = tab === 'room' && route.room !== 'overview' ? S.editor.title : TITLES[tab];
   if (!ready) return <div class="screen"><p role="status">Открываем проект…</p></div>;
   return (
     <div class="app">
@@ -77,7 +79,7 @@ export function App() {
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16 M4 12h16 M4 17h16" /></svg>
           </button>
           <div class="topbar__text">
-            <h1 class={`topbar__title${TITLES[tab].length > 14 ? ' is-long' : ''}`}>{TITLES[tab]}</h1>
+            <h1 class={`topbar__title${title.length > 14 ? ' is-long' : ''}`}>{title}</h1>
             <span class="topbar__room">
               {project.name}, {fmt(r.depth, 2)} × {fmt(r.width, 2)} × {fmt(r.height, 2)} м
             </span>
@@ -115,9 +117,12 @@ export function App() {
             </span>
           </div>
         )}
-        <div hidden={tab !== 'room'}>
+        <div hidden={tab !== 'room' || route.room !== 'overview'}>
           <RoomScreen project={project} reverb={reverb} onRoom={onRoom} onGo={(t) => go(t)} />
         </div>
+        {tab === 'room' && route.room !== 'overview' && (
+          <RoomEditor project={project} reverb={reverb} step={route.room} onStep={(s) => go(`room/${s}`)} onRoom={(room) => onRoom(room)} onBack={() => go('room/overview')} />
+        )}
         {tab === 'modes' && (
           <>
             <div class="screen modes-switch">

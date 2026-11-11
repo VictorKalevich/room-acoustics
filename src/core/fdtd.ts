@@ -3,7 +3,8 @@
 import type { OctaveValues, Room, SurfaceId, Vec3, WallId } from './types';
 import { ceilingAt, extensionBox, roomBox, type Box } from './geometry';
 import { speedOfSound } from './physics';
-import { FURNISHING, alphaAt, getMaterial } from './materials';
+import { alphaAt, getMaterial } from './materials';
+import { furnishingOctaves } from './furniture';
 import { surfaceAreas } from './reverb';
 import { treatmentKey } from './treatments';
 import { cornerLegs, patchContains, roomPatches, type Patch } from './patches';
@@ -112,7 +113,7 @@ interface FaceAbs {
 /** Ключ геометрии/материалов для кэша. */
 export function geometryKey(room: Room, fMax: number, boundary: BoundaryModel = BOUNDARY_DEFAULT): string {
   return JSON.stringify([boundary,
-    room.depth, room.width, room.height, room.temperatureC, room.materials, room.furnishing,
+    room.depth, room.width, room.height, room.temperatureC, room.materials, room.furnishing, room.furnitureList ? furnishingOctaves(room) : null,
     room.openings, room.extensions, room.calibration, Math.round(fMax), treatmentKey(room), room.slope ?? null,
     (room.features ?? []).map((f) => [f.kind, f.wall, f.a0, f.a1, f.bottom, f.top]),
   ]);
@@ -196,7 +197,7 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000, op
   // комнаты (в смежных помещениях обстановки нет). Подстройка по замеру умножает β (затухание мод ∝ β), кроме проёмов.
   const S = surfaceAreas(room);
   const sTotal = Object.values(S).reduce((a, b) => a + b, 0);
-  const furnBeta = (lfAlpha(FURNISHING[room.furnishing]) * S.floor) / sTotal / 8;
+  const furnBeta = (lfAlpha(furnishingOctaves(room)) * S.floor) / sTotal / 8;
   const scale = room.calibration?.dampingScale ?? 1;
   const matAlpha = (surf: SurfaceId) => lfAlpha(getMaterial(room.materials[surf]).alpha);
   const wallBeta = (alpha: number, furn: boolean) => (betaFromAlpha(Math.max(0, alpha)) + (furn ? furnBeta : 0)) * scale;
@@ -230,7 +231,7 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000, op
   // частотно-зависимые границы: α по октавам на каждой грани (та же логика, что faceBeta, но по полосам)
   const fd = boundary === 'fd';
   const dt = (LAMBDA * h) / c;
-  const furnVec = FURNISHING[room.furnishing].map((v) => (v * S.floor) / sTotal);
+  const furnVec = furnishingOctaves(room).map((v) => (v * S.floor) / sTotal);
   const matVec = (sf: SurfaceId) => [...getMaterial(room.materials[sf]).alpha] as number[];
   const roomFace: Record<string, FaceAbs> = {};
   const bareFace: Record<string, FaceAbs> = {};

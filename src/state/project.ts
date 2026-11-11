@@ -1,4 +1,4 @@
-import type { Constraints, Room, SourceSpec, SurfaceId, PlacementResult, Setup, Treatment, Vec3, Zone } from '../core/types';
+import type { Constraints, Covering, Room, SourceSpec, SurfaceId, PlacementResult, Setup, Treatment, Vec3, Zone } from '../core/types';
 import { baselinePositions } from '../core/placement';
 import { rotateExtension, rotateOpening, validateExtension, validateSlope } from '../core/geometry';
 import type { DetectSummary } from '../scan/detect';
@@ -45,6 +45,8 @@ export function defaultRoom(): Room {
     features: [],
     treatments: [],
     treatmentsOn: false,
+    coverings: [],
+    furnitureList: false,
     slope: null,
     extensions: [],
     model: 'auto',
@@ -165,6 +167,13 @@ export function rotateTreatment(room: Room, t: Treatment): Treatment {
   return { ...t, wall: r.wall, at: r.a0 };
 }
 
+/** Покрытие при повороте: на стене — как проём, на полу — как зона. */
+export function rotateCovering(room: Room, c: Covering): Covering {
+  if (c.surface === 'floor') return { ...c, u0: c.v0, u1: c.v1, v0: room.depth - c.u1, v1: room.depth - c.u0 };
+  const r = rotateOpening(room, { wall: c.surface, a0: c.u0, a1: c.u1 });
+  return { ...c, surface: r.wall, u0: r.a0, u1: r.a1 };
+}
+
 export function rotateSetup(room: Room, s: Setup): Setup {
   return {
     ...s,
@@ -193,6 +202,7 @@ export function rotateRoom(room: Room): Room {
     openings: (room.openings ?? []).map((o) => rotateOpening(room, o)),
     features: (room.features ?? []).map((f) => rotateOpening(room, f)),
     treatments: (room.treatments ?? []).map((t) => rotateTreatment(room, t)),
+    coverings: (room.coverings ?? []).map((c) => rotateCovering(room, c)),
     slope: room.slope ? { ...room.slope, wall: rotateOpening(room, { wall: room.slope.wall, a0: 0, a1: 0 }).wall } : room.slope,
     extensions: (room.extensions ?? []).map((e) => rotateExtension(room, e)),
   };
