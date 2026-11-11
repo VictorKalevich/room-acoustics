@@ -57,6 +57,8 @@ export type WallId = 'front' | 'back' | 'left' | 'right';
 export interface Opening {
   id: string;
   wall: WallId;
+  /** Найден в скане (020): при поправке границ пересоздаётся, добавленное вручную остаётся. */
+  fromScan?: boolean;
   /** Участок вдоль стены, м: для передней/задней — от левой стены, для левой/правой — от передней. */
   a0: number;
   a1: number;
@@ -68,6 +70,7 @@ export interface WallFeature {
   id: string;
   kind: 'window' | 'door';
   wall: WallId;
+  fromScan?: boolean;
   a0: number;
   a1: number;
   /** Низ и верх над полом, м. */
@@ -80,6 +83,7 @@ export interface Extension {
   id: string;
   name: string;
   wall: WallId;
+  fromScan?: boolean;
   a0: number;
   a1: number;
   depth: number;

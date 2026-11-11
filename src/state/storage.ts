@@ -8,6 +8,9 @@ import { MATERIAL_BY_ID } from '../core/materials';
 import { FURNITURE } from '../core/furniture';
 import { HISTORY_MAX } from './variant';
 import { normalizeObjective } from '../core/objective';
+import type { DetectResult, Units } from '../scan/detect';
+import type { LayoutResult, ScanLabels } from '../scan/layout';
+import type { ScanChoice, ScanRect } from '../scan/apply';
 
 export const FILE_FORMAT = 'room-acoustics-project';
 export const FILE_VERSION = 5; // 4: обработка, скос потолка, окна и двери, фильтры сабвуферов; 5: история замеров
@@ -123,15 +126,18 @@ export function normalizeProject(raw: any): Project {
 const DB = 'room-acoustics';
 const STORE = 'projects';
 const META = 'meta';
+/** 020: облегчённая сетка скана проекта — для «Поправить границы комнаты»; в файл проекта не входит. */
+const SCANS = 'scans';
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB недоступна'));
-    const req = indexedDB.open(DB, 1);
+    const req = indexedDB.open(DB, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(META)) db.createObjectStore(META);
+      if (!db.objectStoreNames.contains(SCANS)) db.createObjectStore(SCANS, { keyPath: 'projectId' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -161,7 +167,8 @@ export async function storageAvailable(): Promise<boolean> {
 
 export const saveProject = (p: Project) =>
   tx(STORE, 'readwrite', (s) => s.put(JSON.parse(JSON.stringify(p))));
-export const deleteProject = (id: string) => tx(STORE, 'readwrite', (s) => s.delete(id));
+export const deleteProject = (id: string) =>
+  tx(STORE, 'readwrite', (s) => s.delete(id)).then(() => deleteScan(id).catch(() => undefined));
 export const listProjects = () =>
   tx<Project[]>(STORE, 'readonly', (s) => s.getAll() as IDBRequest<Project[]>).then((all) =>
     all.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
@@ -184,4 +191,44 @@ export function downloadProject(p: Project) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// ---------- Скан проекта (020) ----------
+
+/** Скан проекта на этом устройстве: сетка (в координатах файла), разметка, распознавание и применённый выбор. */
+export interface StoredScan {
+  projectId: string;
+  fileName: string;
+  format: string;
+  /** Треугольников в исходном файле; сетка ниже может быть облегчена (thinned). */
+  count: number;
+  decimated: boolean;
+  dropped: number;
+  thinned: boolean;
+  triangles: Float32Array;
+  labels?: ScanLabels;
+  units: Units | 'auto';
+  det: DetectResult;
+  initial: { layout: LayoutResult; rect: ScanRect };
+  applied: ScanChoice;
+}
+
+export const saveScan = (s: StoredScan) => tx(SCANS, 'readwrite', (st) => st.put(s));
+export const loadStoredScan = (projectId: string) =>
+  tx<StoredScan | undefined>(SCANS, 'readonly', (st) => st.get(projectId) as IDBRequest<StoredScan | undefined>);
+export const deleteScan = (projectId: string) => tx(SCANS, 'readwrite', (st) => st.delete(projectId));
+
+/** Не больше max треугольников для хранения: каждый k-й треугольник вместе с разметкой. */
+export function thinScan(triangles: Float32Array, labels: ScanLabels | undefined, max = 250_000): { triangles: Float32Array; labels?: ScanLabels; thinned: boolean } {
+  const n = Math.floor(triangles.length / 9);
+  if (n <= max) return { triangles, labels, thinned: false };
+  const step = Math.ceil(n / max);
+  const m = Math.ceil(n / step);
+  const out = new Float32Array(m * 9);
+  const ids = labels ? new Uint16Array(m) : undefined;
+  for (let i = 0, j = 0; i < n; i += step, j++) {
+    out.set(triangles.subarray(i * 9, i * 9 + 9), j * 9);
+    if (ids && labels) ids[j] = labels.ids[i];
+  }
+  return { triangles: out, labels: labels && ids ? { ...labels, ids } : labels, thinned: true };
 }

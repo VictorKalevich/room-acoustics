@@ -9,6 +9,7 @@ import { PlanView } from '../components/PlanView';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { ScanPanel } from './room/ScanPanel';
+import { deleteScan } from '../../state/storage';
 import { ClearIcon, FileIcon, RotateIcon } from './room/icons';
 import { ConfirmSheet } from '../design-system';
 import type { Destination } from '../navigation';
@@ -32,6 +33,8 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
   const [scanGen, setScanGen] = useState(0);
   const clear = () => {
     setAskClear(false);
+    // скан проекта на устройстве тоже удаляется: после «Очистить» можно выбрать новый скан
+    void deleteScan(project.id).catch(() => undefined);
     const c = clearedRoom(project);
     onRoom(c.room, c);
     setScanGen((g) => g + 1);
@@ -80,7 +83,12 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
           <button
             type="button"
             class="btn btn--ghost"
-            onClick={() => onRoom(rotateRoom(room), { current: rotateSetup(room, project.current), setups: project.setups.map((x) => rotateSetup(room, x)) })}
+            onClick={() => onRoom(rotateRoom(room), {
+              current: rotateSetup(room, project.current),
+              setups: project.setups.map((x) => rotateSetup(room, x)),
+              // для «Поправить границы комнаты»: сколько раз комнату повернули относительно скана
+              ...(project.scanInfo ? { scanInfo: { ...project.scanInfo, rotation: ((project.scanInfo.rotation ?? 0) + 1) % 4 } } : {}),
+            })}
           >
             <RotateIcon /> {S.room.rotate}
           </button>

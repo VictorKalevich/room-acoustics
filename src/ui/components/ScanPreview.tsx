@@ -1,16 +1,30 @@
-// 3D-превью скана с наложенным распознанным объёмом. Модуль подгружается лениво вместе с three.js.
-import { useEffect, useRef } from 'preact/hooks';
+// 3D-превью исходного скана с рамкой границ модели комнаты. Модуль подгружается лениво вместе с three.js.
+// Сохранённый скан (020) приходит сеткой треугольников без исходного файла — сетка строится здесь.
+import { useEffect, useMemo, useRef } from 'preact/hooks';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 interface Props {
-  object: THREE.Object3D;
+  /** Сцена из файла; если нет — сетка из triangles (координаты файла, по 9 чисел на треугольник). */
+  object?: THREE.Object3D | null;
+  triangles?: Float32Array;
   transform: number[] | null;
-  dims: { depth: number; width: number; height: number } | null;
+  /** Границы модели комнаты в координатах распознавания. */
+  box: { x0: number; y0: number; depth: number; width: number; height: number } | null;
 }
 
-export default function ScanPreview({ object, transform, dims }: Props) {
+function meshOf(triangles: Float32Array): THREE.Object3D {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(triangles, 3));
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0xb8b0a2, roughness: 0.9, flatShading: true, side: THREE.DoubleSide }));
+}
+
+export default function ScanPreview({ object: given, triangles, transform, box }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const object = useMemo(() => given ?? (triangles ? meshOf(triangles) : new THREE.Group()), [given, triangles]);
+  // рамка — по значениям, чтобы новый объект с теми же числами не пересоздавал сцену
+  const frame = useMemo(() => box, [box?.x0, box?.y0, box?.depth, box?.width, box?.height]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const host = ref.current;
@@ -42,8 +56,8 @@ export default function ScanPreview({ object, transform, dims }: Props) {
     holder.add(wrapper);
 
     // Разрез по 80 % высоты, чтобы было видно комнату изнутри
-    if (dims && transform) {
-      const cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), dims.height * 0.8);
+    if (frame && transform) {
+      const cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), frame.height * 0.8);
       object.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;
@@ -52,9 +66,9 @@ export default function ScanPreview({ object, transform, dims }: Props) {
       });
     }
 
-    if (dims) {
-      const box = new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(dims.depth, dims.width, dims.height));
-      const helper = new THREE.Box3Helper(box, new THREE.Color(0x2d45c2));
+    if (frame) {
+      const bounds3 = new THREE.Box3(new THREE.Vector3(frame.x0, frame.y0, 0), new THREE.Vector3(frame.x0 + frame.depth, frame.y0 + frame.width, frame.height));
+      const helper = new THREE.Box3Helper(bounds3, new THREE.Color(0x2d45c2));
       (helper.material as THREE.LineBasicMaterial).linewidth = 2;
       holder.add(helper);
     }
@@ -85,7 +99,7 @@ export default function ScanPreview({ object, transform, dims }: Props) {
       renderer.dispose();
       host.removeChild(renderer.domElement);
     };
-  }, [object, transform, dims]);
+  }, [object, transform, frame]);
 
-  return <div class="scan-preview" ref={ref} aria-label="3D-превью скана, можно вращать пальцем" />;
+  return <div class="scan-preview" ref={ref} aria-label="Исходный скан в 3D с рамкой границ модели комнаты, можно вращать пальцем" />;
 }

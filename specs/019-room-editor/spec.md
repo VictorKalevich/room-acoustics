@@ -149,3 +149,6 @@ seat, fabric», «Mattress, bare», «Filled bookshelf»). Порядок вкл
 [WallView](../../src/ui/components/WallView.tsx); тесты:
 [furniture.test.ts](../../tests/core/furniture.test.ts),
 [room-editor.spec.ts](../../tests/e2e/room-editor.spec.ts).
+
+Уточнение 020: после выбора скана найденное сразу попадает в конструктор; при «Поправить границы комнаты»
+найденное пересоздаётся, а добавленное в конструкторе вручную сохраняется ([020](../020-scan-apply/spec.md)).

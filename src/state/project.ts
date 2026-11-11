@@ -11,7 +11,8 @@ export interface Project {
   room: Room;
   sources: SourceSpec[];
   constraints: Constraints;
-  scanInfo: DetectSummary | null;
+  /** Сведения о применённом скане; rotation — сколько раз после скана нажимали «Колонки у другой стены» (020). */
+  scanInfo: (DetectSummary & { rotation?: number }) | null;
   result: (PlacementResult & { stale?: boolean }) | null;
   selectedIndex: number;
   /** Текущая расстановка (ручной режим, настройка). */

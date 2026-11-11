@@ -30,9 +30,9 @@ test('US2: подбор расстановки за ≤ 10 с, лучший не
 test('US3: загрузка скана и распознавание размеров', async ({ page }) => {
   await page.goto('/#room');
   await page.setInputFiles('#scan-file', 'tests/fixtures/out/sample-room.obj');
-  await expect(page.locator('.scan-dims')).toContainText('5,00 × 4,00 × 2,50', { timeout: 30_000 });
-  await page.getByRole('button', { name: 'Применить размеры' }).click();
-  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
+  // 020: скан применяется сразу, как «Применить размеры»
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50', { timeout: 30_000 });
+  await expect(page.getByTestId('scan-summary')).toContainText('sample-room.obj');
 });
 
 test('US3: неподдерживаемый файл — понятная ошибка', async ({ page }) => {
@@ -113,10 +113,15 @@ test('003: коридор за аркой — моды системы и вол�
 test('003: скан с коридором — найдены арка и коридор', async ({ page }) => {
   await page.goto('/#room');
   await page.setInputFiles('#scan-file', 'tests/fixtures/out/sample-corridor.obj');
-  await expect(page.locator('.layout-editor')).toBeVisible({ timeout: 30_000 });
+  // 020: применено сразу; коридор — в модели, подробности — в «Поправить границы комнаты»
+  await expect(page.locator('.topbar__room')).toContainText(/5,00 × (3,99|4,00)/, { timeout: 30_000 });
+  await expect(page.getByTestId('scan-summary')).toContainText('коридоров и ниш — 1');
+  await page.getByRole('button', { name: 'Поправить границы комнаты' }).click();
+  await expect(page.locator('.layout-editor')).toBeVisible();
   await expect(page.getByText(/Коридор за .* стеной/)).toBeVisible();
   await page.getByRole('button', { name: 'Применить размеры' }).click();
   await expect(page.locator('.topbar__room')).toContainText(/5,00 × (3,99|4,00)/);
+  await expect(page.getByTestId('scan-summary')).toContainText('коридоров и ниш — 1');
 });
 
 test('версия приложения видна на экране «Проекты»', async ({ page }) => {
