@@ -3,7 +3,7 @@ import { useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { FILE_EXT, parseProjectFile, saveProject, serializeProject } from '../../state/storage';
 import { shareFile } from '../audio/mic';
-import { Note, Panel } from '../components/Fields';
+import { Note, Panel } from '../design-system';
 import { S } from '../strings';
 
 const LAST_KEY = (id: string) => `ra-sync-${id}`;

@@ -14,7 +14,7 @@ import { useSetupEval } from '../useEval';
 import { compute, type ComputeJob } from '../compute';
 import { PlanView, HeatLegend, type PlanItem, type PlanMark } from '../components/PlanView';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
-import { NumberField, Panel, Segmented, Note, Details } from '../components/Fields';
+import { NumberField, Panel, Segmented, Note, Details } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';

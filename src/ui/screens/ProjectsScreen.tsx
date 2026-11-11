@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { newProject } from '../../state/project';
 import { deleteProject, downloadProject, listProjects, parseProjectFile, saveProject, storageAvailable } from '../../state/storage';
-import { Panel, Note } from '../components/Fields';
+import { Panel, Note } from '../design-system';
 import { S } from '../strings';
 import { BUILD, checkForUpdate, getStatus, onStatus, type UpdateStatus } from '../updates';
 import { fmt } from '../format';

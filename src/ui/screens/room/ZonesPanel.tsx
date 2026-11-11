@@ -1,7 +1,7 @@
 // Зоны, где нельзя ставить колонки и слушателя (двери, окна, мебель).
 import { makeId } from '../../../state/project';
 import type { Room, Zone, ZoneKind, Leakage } from '../../../core/types';
-import { NumberField, Panel, SelectField } from '../../components/Fields';
+import { NumberField, Panel, SelectField } from '../../design-system';
 import { S } from '../../strings';
 
 export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {

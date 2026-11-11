@@ -1,0 +1,149 @@
+/* Акустика комнаты — визуальная система.
+   Холодная светлая «бумага чертежа», графитовые чернила, ультрамарин для всего, что звучит
+   (колонки, отклик комнаты, активные действия). Запоминающийся элемент — план комнаты
+   в духе архитектурного чертежа со штриховкой стен. Всё остальное — тихое. */
+
+:root {
+  --paper: #eef1f0;
+  --surface: #ffffff;
+  --ink: #17222b;
+  --muted: #5b6870;
+  --line: #d3dad9;
+  --line-strong: #aab5b6;
+  --accent: #2d45c2;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2e6f7;
+  --warn: #a8402a;
+  --warn-soft: #f6e6e1;
+  --good: #236b49;
+  --good-soft: #e1f0e8;
+  --tangential: #7d8fd8;
+  --oblique: #b9c2c4;
+  --zone: rgba(45, 69, 194, 0.08);
+  --arch: #c0662a;
+
+  --font: 'Golos Text', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --r-panel: 18px;
+  --r-control: 11px;
+  --r-chip: 999px;
+  --gutter: 16px;
+  --tabbar-h: 62px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --paper: #10171c;
+    --surface: #172128;
+    --ink: #e4eaec;
+    --muted: #93a1a8;
+    --line: #29353d;
+    --line-strong: #43525b;
+    --accent: #8d9cff;
+    --accent-ink: #0e1430;
+    --accent-soft: #232c55;
+    --warn: #f09a83;
+    --warn-soft: #3a2420;
+    --good: #7fd0a6;
+    --good-soft: #1b3229;
+    --tangential: #5d6db0;
+    --oblique: #4b585f;
+    --zone: rgba(141, 156, 255, 0.1);
+    --arch: #f0a46c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --paper: #10171c;
+  --surface: #172128;
+  --ink: #e4eaec;
+  --muted: #93a1a8;
+  --line: #29353d;
+  --line-strong: #43525b;
+  --accent: #8d9cff;
+  --accent-ink: #0e1430;
+  --accent-soft: #232c55;
+  --warn: #f09a83;
+  --warn-soft: #3a2420;
+  --good: #7fd0a6;
+  --good-soft: #1b3229;
+  --tangential: #5d6db0;
+  --oblique: #4b585f;
+  --zone: rgba(141, 156, 255, 0.1);
+  --arch: #f0a46c;
+  color-scheme: dark;
+}
+
+/* Foundation scales. UI spacing is a 2 px scale; 1/3 px are optical exceptions. */
+:root {
+  --space-1: 1px;
+  --space-2: 2px;
+  --space-3: 3px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-14: 14px;
+  --space-16: 16px;
+  --space-18: 18px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-section: var(--space-14);
+  --space-panel: var(--space-16);
+  --space-stack: var(--space-12);
+  --space-inline: var(--space-8);
+  --space-field: var(--space-4);
+  --player-clearance: 120px;
+  --touch-min: 44px;
+  --control-height: 46px;
+  --control-large: 52px;
+  --r-small: 8px;
+  --r-card: 12px;
+  --r-track: 4px;
+  --r-round: 50%;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --text-diagram-axis: 8.5px;
+  --text-diagram-small: 10px;
+  --text-diagram: 10.5px;
+  --text-micro: 11px;
+  --text-caption: 12px;
+  --text-meta: 13px;
+  --text-small: 14px;
+  --text-control: 15px;
+  --text-body: 16px;
+  --text-input: 17px;
+  --text-heading: 19px;
+  --text-icon: 20px;
+  --text-title-compact: 22px;
+  --text-title: 26px;
+  --text-metric: 30px;
+  --text-metric-compact: var(--text-title);
+  --text-score: 44px;
+  --text-score-key: 52px;
+  --text-close: 26px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --leading-body: 1.45;
+  --leading-title: 1.15;
+  --leading-compact: 1.24;
+  --leading-tight: 1.2;
+  --leading-metric: 1.1;
+  --leading-solid: 1;
+  --leading-code: 1.4;
+  --tracking-title: -0.01em;
+  --tracking-heading: -0.005em;
+  --tracking-metric: -0.02em;
+  --tracking-score: -0.03em;
+  --tracking-label: 0.04em;
+  --font-body: var(--weight-regular) var(--text-body)/var(--leading-body) var(--font);
+  --font-small: var(--weight-regular) var(--text-small)/var(--leading-body) var(--font);
+  --font-caption: var(--weight-regular) var(--text-caption)/var(--leading-body) var(--font);
+  --font-label: var(--weight-medium) var(--text-small)/var(--leading-body) var(--font);
+  --font-heading: var(--weight-semibold) var(--text-heading)/var(--leading-body) var(--font);
+  --font-title: var(--weight-semibold) var(--text-title)/var(--leading-title) var(--font);
+  --font-metric: var(--weight-semibold) var(--text-metric)/var(--leading-metric) var(--font);
+}

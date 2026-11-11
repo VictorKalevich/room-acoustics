@@ -8,7 +8,7 @@ import { useEffect } from 'preact/hooks';
 import { compareMeasurement, parseRew, type CalibrationResult, type Comparison } from '../../../core/measure';
 import { compute } from '../../compute';
 import { ResponseChart } from '../../components/Charts';
-import { Panel, Note } from '../../components/Fields';
+import { Panel, Note } from '../../design-system';
 import { S } from '../../strings';
 import { fmt } from '../../format';
 import { MeasureCompare } from '../../components/MeasureCompare';

@@ -4,7 +4,7 @@ import { useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { STEPS, manualDone, setManualDone, setWizardOn, stepDone, wizardOn, type WizardTab } from '../wizard';
 import { GLOSSARY } from '../glossary';
-import { Panel } from '../components/Fields';
+import { Panel } from '../design-system';
 import { S } from '../strings';
 
 export function HelpScreen({ project, onGo, onWizard }: { project: Project; onGo: (t: WizardTab) => void; onWizard: () => void }) {

@@ -5,7 +5,7 @@ import type { Mode, ReverbResult } from '../../core/types';
 import { buildOverview, decayLimit, type ModeDecay, type Severity } from '../../core/overview';
 import type { Destination } from '../navigation';
 import { useSetupEval } from '../useEval';
-import { Panel, Note } from '../components/Fields';
+import { Panel, Note } from '../design-system';
 import { PlayButton } from '../components/MiniPlayer';
 import { Term } from '../components/Term';
 import { S } from '../strings';

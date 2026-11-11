@@ -6,7 +6,7 @@ import { computeModes, modeWhere } from '../../core/modes';
 import { DEFAULT_OBJECTIVE, SYS_MODES_FMAX, objectiveModes, shiftModesToSystem } from '../../core/objective';
 import { isWave } from '../../core/geometry';
 import { compute } from '../compute';
-import { Segmented, SelectField, Note } from './Fields';
+import { Segmented, SelectField, Note } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
 

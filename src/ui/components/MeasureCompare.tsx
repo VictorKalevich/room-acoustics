@@ -3,7 +3,7 @@ import { useMemo, useState } from 'preact/hooks';
 import type { Measurement, Setup } from '../../core/types';
 import { compareTakes, type TakeStats } from '../../core/measure';
 import { ResponseChart } from './Charts';
-import { Note, SelectField } from './Fields';
+import { Note, SelectField } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
 

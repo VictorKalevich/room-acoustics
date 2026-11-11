@@ -10,7 +10,7 @@ import { designEq, exportEqualizerAPO } from '../../core/eq';
 import { getMaterial } from '../../core/materials';
 import { useSetupEval } from '../useEval';
 import { PlanView, type PlanItem } from '../components/PlanView';
-import { Panel } from '../components/Fields';
+import { Panel } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { BUILD } from '../updates';

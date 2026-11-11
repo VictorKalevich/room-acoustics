@@ -11,12 +11,12 @@ import { bassAdvice, porousLowLimit, reflectionPoints } from '../../../core/trea
 import { porousAlpha } from '../../../core/treatments';
 import { speedOfSound } from '../../../core/physics';
 import { PlanView, type PlanMark, type WallMark } from '../../components/PlanView';
-import { NumberField, Panel, SelectField } from '../../components/Fields';
+import { NumberField, Panel, SelectField } from '../../design-system';
 import { S } from '../../strings';
 import { fmt } from '../../format';
 import { itemsOf } from './shared';
 import { isWave } from '../../../core/geometry';
-import { ConfirmSheet } from '../../components/ConfirmSheet';
+import { ConfirmSheet } from '../../design-system';
 import { ScoreBlock } from '../../components/ScoreBlock';
 
 // ---------- Обработка ----------

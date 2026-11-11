@@ -10,7 +10,7 @@ import { computeReverb } from '../../core/reverb';
 import { compute, type ComputeJob } from '../compute';
 import { PlanKey, PlanView, keysFor, type PlanItem, type PlanProps } from '../components/PlanView';
 import { HeightRange } from '../components/HeightRange';
-import { NumberField, Note, Panel, Segmented } from '../components/Fields';
+import { NumberField, Note, Panel, Segmented } from '../design-system';
 import { SPAN } from '../fieldColors';
 import { S } from '../strings';
 import { PlayButton } from '../components/MiniPlayer';

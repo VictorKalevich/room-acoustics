@@ -3,8 +3,8 @@ import { makeId } from '../../../state/project';
 import type { Room, Opening, Extension, WallId, AcousticModel, WallFeature } from '../../../core/types';
 import { validateExtension, validateSlope, wallLength } from '../../../core/geometry';
 import { openingAsItem, toRoomItem, type WallItem, type WallItemKind } from '../../../core/wallItems';
-import { NumberField, Panel, SelectField, Note } from '../../components/Fields';
-import { ActionMenu } from '../../components/ActionMenu';
+import { NumberField, Panel, SelectField, Note } from '../../design-system';
+import { ActionMenu } from '../../design-system';
 import { S } from '../../strings';
 
 const WALLS: WallId[] = ['front', 'back', 'left', 'right'];

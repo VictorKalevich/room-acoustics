@@ -7,7 +7,7 @@ import { designEq, exportEqualizerAPO, exportMiniDSP, exportREW, type EqResult }
 import { measurementAt } from '../../../core/measure';
 import { compute } from '../../compute';
 import { ResponseChart } from '../../components/Charts';
-import { Panel, Segmented, Note, Details } from '../../components/Fields';
+import { Panel, Segmented, Note, Details } from '../../design-system';
 import { S } from '../../strings';
 import { Term } from '../../components/Term';
 import { Auralize } from '../../components/Auralize';
@@ -16,7 +16,7 @@ import { firLinearPhase, firMinPhase, linearPhaseLength, wavFloat32 } from '../.
 import { fmt } from '../../format';
 import { ExportBlock } from './shared';
 import { exportCamillaDSP } from '../../../core/camilla';
-import { CalculationStatus } from '../../components/CalculationStatus';
+import { CalculationStatus } from '../../design-system';
 
 // ---------- Эквалайзер ----------
 

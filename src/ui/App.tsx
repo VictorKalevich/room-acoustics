@@ -11,7 +11,7 @@ import { ProjectsScreen } from './screens/ProjectsScreen';
 import { TuningScreen } from './screens/TuningScreen';
 import { FieldScreen } from './screens/FieldScreen';
 import { Drawer } from './components/Drawer';
-import { SectionNav } from './components/SectionNav';
+import { SectionNav } from './design-system';
 import { RetainedSection } from './components/RetainedSection';
 import { useNavigation, type Tab, type AnalysisView } from './navigation';
 import { TermSheet } from './components/Term';

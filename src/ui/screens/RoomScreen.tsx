@@ -6,7 +6,7 @@ import type { Room, SurfaceId, ReverbResult, Furnishing } from '../../core/types
 import { SURFACES } from '../../core/types';
 import { MATERIALS, FURNISHING_LABEL } from '../../core/materials';
 import { speedOfSound } from '../../core/physics';
-import { NumberField, Panel, SelectField, Details } from '../components/Fields';
+import { NumberField, Panel, SelectField, Details } from '../design-system';
 import { PlanView } from '../components/PlanView';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -14,7 +14,7 @@ import { ScanPanel } from './room/ScanPanel';
 import { OpeningsPanel } from './room/OpeningsPanel';
 import { ZonesPanel } from './room/ZonesPanel';
 import { ClearIcon, FileIcon, RotateIcon } from './room/icons';
-import { ConfirmSheet } from '../components/ConfirmSheet';
+import { ConfirmSheet } from '../design-system';
 import type { Destination } from '../navigation';
 
 interface Props {

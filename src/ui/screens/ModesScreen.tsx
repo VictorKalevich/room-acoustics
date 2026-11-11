@@ -5,7 +5,7 @@ import { compute } from '../compute';
 import type { Mode, ReverbResult, Room } from '../../core/types';
 import { bonelloCheck, modeIssues, proportionsNotes, modeWhere } from '../../core/modes';
 import { ModeChart } from '../components/Charts';
-import { Panel, Note, Details } from '../components/Fields';
+import { Panel, Note, Details } from '../design-system';
 import { S } from '../strings';
 import { PlayButton } from '../components/MiniPlayer';
 import { Term } from '../components/Term';

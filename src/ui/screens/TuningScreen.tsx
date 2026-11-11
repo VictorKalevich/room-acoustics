@@ -1,11 +1,11 @@
 import type { Project } from '../../state/project';
 import type { Mode, Room, Setup } from '../../core/types';
-import { Panel } from '../components/Fields';
+import { Panel } from '../design-system';
 import { S } from '../strings';
 import { SubPanel } from './tuning/SubPanel';
 import { EqPanel } from './tuning/EqPanel';
 import { TreatmentPanel } from './tuning/TreatmentPanel';
-import { SectionNav } from '../components/SectionNav';
+import { SectionNav } from '../design-system';
 import { RetainedSection } from '../components/RetainedSection';
 import type { Destination, TuningView } from '../navigation';
 

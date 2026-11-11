@@ -7,7 +7,7 @@ import { biquad } from '../../../core/eq';
 import { allpassBiquad, type SubFilterResult } from '../../../core/subfilters';
 import { compute } from '../../compute';
 import { ResponseChart } from '../../components/Charts';
-import { NumberField, Panel, Segmented, Note, Details } from '../../components/Fields';
+import { NumberField, Panel, Segmented, Note, Details } from '../../design-system';
 import { S } from '../../strings';
 import { Term } from '../../components/Term';
 import { fmt } from '../../format';

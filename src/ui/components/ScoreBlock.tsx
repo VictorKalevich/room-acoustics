@@ -47,7 +47,7 @@ export function ScoreBlock({ objective, objScore, flatScore, context, delta, fla
         <span class="score__unit">дБ</span>
       </div>
       <div class="score__text">
-        {context && <span class="score__context small">{context}</span>}
+        {context && <span class="score__context">{context}</span>}
         <span class="score__label">{flat ? S.placement.score : S.objective.short[id]}</span>
         <span class="small">{main != null ? t.explain[id](fmt(main, 1)) : ''}</span>
         {g && <span class={`score__grade is-${g}`}>{flat ? t.gradeFlat[g] : t.gradeDips[g]}</span>}

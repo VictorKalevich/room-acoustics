@@ -5,7 +5,7 @@ import { serializeProject } from '../../state/storage';
 import { buildReport, clearErrors, deviceInfo, onErrors, readErrors, reportFileName } from '../../state/errlog';
 import { shareFile } from '../audio/mic';
 import { BUILD } from '../updates';
-import { Note, Panel } from './Fields';
+import { Note, Panel } from '../design-system';
 import { S } from '../strings';
 
 export function ProblemReport({ project }: { project: Project }) {

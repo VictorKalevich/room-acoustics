@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'preact/hooks';
 import type { ComponentProps } from 'preact';
 import { ResponseChart } from './Charts';
-import { Segmented } from './Fields';
+import { Segmented } from '../design-system';
 import { normalizeSmoothing, smoothChart, smoothingOptions, type ChartScreen, type ChartSmoothing } from '../chartSmoothing';
 
 export function SmoothedResponseChart({ screen, ...chart }: ComponentProps<typeof ResponseChart> & { screen: ChartScreen }) {

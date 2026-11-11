@@ -5,7 +5,7 @@ import { ScoreBlock } from '../components/ScoreBlock';
 import type { Project } from '../../state/project';
 import { defaultSetup, validateSources } from '../../state/project';
 import type { BassObjective, Constraints, PlacementResult, SourceSpec, Placement, Setup } from '../../core/types';
-import { NumberField, Panel, Segmented, Note, Details } from '../components/Fields';
+import { NumberField, Panel, Segmented, Note, Details } from '../design-system';
 import { SystemSettings } from './placement/SystemSettings';
 import { compute, type ComputeJob } from '../compute';
 import { ManualScreen } from './ManualScreen';
@@ -19,7 +19,7 @@ import { Term } from '../components/Term';
 import { fmt, fmtInt } from '../format';
 import { ROBUST_GOOD, ROBUST_MID } from '../../core/metric';
 import { placementLayout, sameLayout, setupFromPlacement, shouldAdoptBest } from '../../state/variant';
-import { CalculationStatus } from '../components/CalculationStatus';
+import { CalculationStatus } from '../design-system';
 
 interface Props {
   project: Project;

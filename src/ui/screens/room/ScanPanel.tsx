@@ -9,7 +9,7 @@ import type { DetectResult, Units } from '../../../scan/detect';
 import type { LayoutResult, ScanLabels } from '../../../scan/layout';
 import { toRoomItem, type WallItemKind } from '../../../core/wallItems';
 import { LayoutEditor, type Rect } from '../../components/LayoutEditor';
-import { Panel, SelectField, Note, Details, Segmented } from '../../components/Fields';
+import { Panel, SelectField, Note, Details, Segmented } from '../../design-system';
 import { S } from '../../strings';
 import { fmt, fmtInt } from '../../format';
 import { logError } from '../../../state/errlog';

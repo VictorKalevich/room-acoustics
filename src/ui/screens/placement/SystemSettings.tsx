@@ -3,7 +3,7 @@ import type { Project } from '../../../state/project';
 import { defaultSources, validateSources } from '../../../state/project';
 import type { BassObjective, Constraints, SourceSpec, SubZone, PhaseMode } from '../../../core/types';
 import { evalBand } from '../../../core/system';
-import { NumberField, Segmented, Note, Details, SelectField } from '../../components/Fields';
+import { NumberField, Segmented, Note, Details, SelectField } from '../../design-system';
 import { SetupCard } from '../../components/SetupCard';
 import { ObjectivePicker } from '../../components/ObjectivePicker';
 import { S } from '../../strings';

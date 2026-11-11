@@ -10,7 +10,7 @@ import {
   VOICE_BAND, VOICE_DEFAULTS, FACINGS, type MicPattern, type VoiceMap, type VoiceSettings, type VoiceSpot, type VoiceGoal,
 } from '../../core/voice';
 import { compute, type ComputeJob } from '../compute';
-import { Details, Note, NumberField, Panel, Segmented } from '../components/Fields';
+import { Details, Note, NumberField, Panel, Segmented } from '../design-system';
 import { HeatLegend, PlanView, type PlanMark, type WallMark } from '../components/PlanView';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { S } from '../strings';
@@ -211,7 +211,7 @@ export function VoiceScreen({ project, onVoice }: Props) {
             <span class="score__unit">дБ</span>
           </div>
           <div class="score__text">
-            <span class="score__context small">{t.here}</span>
+            <span class="score__context">{t.here}</span>
             <span class="score__label">{t.scoreTitle}</span>
             <span class="small">{ev ? t.scoreExplain(fmt(ev.score, 1)) : ''}</span>
             {grade && <span class={`score__grade is-${grade}`}>{t.grade[grade]}</span>}
