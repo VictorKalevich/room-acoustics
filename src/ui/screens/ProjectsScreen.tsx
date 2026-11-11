@@ -1,24 +1,49 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { newProject } from '../../state/project';
-import { deleteProject, downloadProject, listProjects, parseProjectFile, saveProject, storageAvailable } from '../../state/storage';
-import { Panel, Note } from '../design-system';
+import { deleteProject, deleteScan, downloadProject, listProjects, parseProjectFile, saveProject, storageAvailable } from '../../state/storage';
+import { ConfirmSheet, Panel, Note } from '../design-system';
 import { S } from '../strings';
 import { BUILD, checkForUpdate, getStatus, onStatus, type UpdateStatus } from '../updates';
 import { fmt } from '../format';
-import { dropRoomDraft } from '../roomDraft';
+import { dropRoomDraft, loadRoomDraft } from '../roomDraft';
+import type { Destination } from '../navigation';
 
 interface Props {
   project: Project;
   onReplace: (p: Project) => void;
   onRename: (name: string) => void;
+  /** 023: назад, на экран, с которого открыли «Проекты». */
+  onBack: () => void;
+  onGo: (t: Destination) => void;
 }
 
-export function ProjectsScreen({ project, onReplace, onRename }: Props) {
+/**
+ * Проекты. 023: «← Назад» возвращает на прежний экран; «Сохранить» и «Экспорт» — только у созданной
+ * комнаты; «Новый проект» рядом с «Сохранить» и, если введённое пропадёт, спрашивает; файл проекта — отдельной строкой.
+ */
+export function ProjectsScreen({ project, onReplace, onRename, onBack, onGo }: Props) {
   const [list, setList] = useState<Project[]>([]);
   const [canStore, setCanStore] = useState(true);
   const [msg, setMsg] = useState<{ text: string; tone: 'good' | 'warn' } | null>(null);
+  const [askNew, setAskNew] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const ready = project.roomReady;
+  const draft = ready ? null : loadRoomDraft(project.id);
+  // комната задана частично: начата ручная настройка или распознан скан, но «Сохранить» ещё не нажато
+  const partial = !ready && (!!draft || !!project.scanInfo);
+  const savedCopy = list.find((p) => p.id === project.id);
+  // созданная комната, которой нет в списке или которая изменилась после сохранения
+  const unsaved = ready && (!savedCopy || project.updatedAt > savedCopy.updatedAt);
+  const toRoom = () => onGo(draft ? `room/${draft.reached}` : 'room/overview');
+  const openNew = () => {
+    setAskNew(false);
+    // незаконченная настройка текущего проекта больше не нужна; скан проекта, которого нет в списке, — тоже
+    dropRoomDraft(project.id);
+    if (!savedCopy) void deleteScan(project.id).catch(() => undefined);
+    onReplace(newProject());
+  };
 
   const refresh = () => listProjects().then(setList).catch(() => setList([]));
   useEffect(() => {
@@ -47,7 +72,10 @@ export function ProjectsScreen({ project, onReplace, onRename }: Props) {
 
   return (
     <div class="screen">
-      <Panel>
+      <div class="btn-row">
+        <button type="button" class="btn btn--ghost btn--small" onClick={onBack}>← {S.projects.back}</button>
+      </div>
+      <Panel title={S.projects.current}>
         <div class="field">
           <label for="pname">{S.projects.name}</label>
           <div class="field__box">
@@ -55,12 +83,21 @@ export function ProjectsScreen({ project, onReplace, onRename }: Props) {
           </div>
         </div>
         <div class="btn-row">
-          <button type="button" class="btn btn--primary" onClick={save} disabled={!canStore}>{S.projects.save}</button>
-          <button type="button" class="btn" onClick={() => downloadProject(project)}>{S.projects.exportFile}</button>
+          <button type="button" class="btn btn--primary" onClick={save} disabled={!canStore || !ready}>{S.projects.save}</button>
+          <button type="button" class="btn btn--tonal" onClick={() => (partial || unsaved ? setAskNew(true) : openNew())}>{S.projects.newProject}</button>
         </div>
+        {!ready && (
+          <>
+            <Note>{partial ? S.projects.needRoomPartial : S.projects.needRoom}</Note>
+            <div class="btn-row">
+              <button type="button" class="btn btn--ghost" onClick={toRoom}>{partial ? S.projects.continueRoom : S.projects.createRoom} →</button>
+            </div>
+          </>
+        )}
+        <h3 class="subhead">{S.projects.file}</h3>
         <div class="btn-row">
-          <button type="button" class="btn btn--ghost" onClick={() => fileInput.current?.click()}>{S.projects.importFile}</button>
-          <button type="button" class="btn btn--ghost" onClick={() => onReplace(newProject())}>{S.projects.newProject}</button>
+          <button type="button" class="btn" onClick={() => fileInput.current?.click()}><ImportIcon /> {S.projects.importFile}</button>
+          <button type="button" class="btn" disabled={!ready} onClick={() => downloadProject(project)}><ExportIcon /> {S.projects.exportFile}</button>
         </div>
         <input
           ref={fileInput}
@@ -75,6 +112,10 @@ export function ProjectsScreen({ project, onReplace, onRename }: Props) {
         />
         {msg && <Note tone={msg.tone}>{msg.text}</Note>}
         {!canStore && <Note tone="warn">{S.projects.storageOff}</Note>}
+        {askNew && (
+          <ConfirmSheet title={S.projects.newTitle} text={partial ? S.projects.newTextPartial : S.projects.newTextUnsaved}
+            confirm={S.projects.newConfirm} cancel={S.projects.cancel} onCancel={() => setAskNew(false)} onConfirm={openNew} />
+        )}
       </Panel>
 
       <Panel title={S.projects.list}>
@@ -87,7 +128,7 @@ export function ProjectsScreen({ project, onReplace, onRename }: Props) {
                 <div>
                   <strong>{p.name}</strong>
                   <span class="muted small">
-                    {fmt(p.room.depth, 2)} × {fmt(p.room.width, 2)} × {fmt(p.room.height, 2)} м, {new Date(p.updatedAt).toLocaleDateString('ru-RU')}
+                    {p.roomReady ? `${fmt(p.room.depth, 2)} × ${fmt(p.room.width, 2)} × ${fmt(p.room.height, 2)} м` : S.projects.noRoom}, {new Date(p.updatedAt).toLocaleDateString('ru-RU')}
                   </span>
                 </div>
                 <div class="btn-row btn-row--tight">
@@ -138,3 +179,11 @@ export function AboutPanel() {
     </Panel>
   );
 }
+
+// Значки файла проекта (023)
+const ImportIcon = () => (
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12 M7 10l5 5 5-5 M5 21h14" /></svg>
+);
+const ExportIcon = () => (
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3 M7 8l5-5 5 5 M5 21h14" /></svg>
+);

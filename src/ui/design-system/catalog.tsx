@@ -55,6 +55,7 @@ function Catalog() {
       <div class="btn-row"><button type="button" class="btn btn--primary">Основная</button><button type="button" class="btn">Обычная</button></div>
       <div class="btn-row"><button type="button" class="btn btn--ghost">Без фона</button><button type="button" class="btn" disabled>Недоступна</button></div>
       <div class="btn-row"><button type="button" class="btn btn--small">Компактная</button><button type="button" class="btn btn--danger" onClick={() => setConfirm(true)}>Подтверждение</button><button type="button" class="btn" onClick={() => setChoice(true)}>Три действия</button></div>
+      <div class="btn-row"><button type="button" class="btn btn--primary">Основное</button><button type="button" class="btn btn--tonal">Заметное второе</button></div>
       <button type="button" class="btn btn--primary btn--wide">Широкая</button>
       <ActionMenu label="Добавить проём" actions={['Окно', 'Дверь', 'Проём без двери'].map(label => ({ label, onSelect: () => setMessage(label) }))} />
       <p class="small" role="status">{message}</p>

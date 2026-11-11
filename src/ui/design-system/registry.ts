@@ -6,7 +6,7 @@ export const componentFamilies = [
   ['Поля', 'NumberField (пустое — NaN) · SelectField (hint) · .field · .field--compact · .field--error'],
   ['Переключатели', 'Segmented · .segmented · .tabs · .segmented--wrap'],
   ['Навигация разделов', 'SectionNav · .section-nav'],
-  ['Кнопки', '.btn · --primary · --ghost · --danger · --small · --wide'],
+  ['Кнопки', '.btn · --primary · --tonal · --ghost · --danger · --small · --wide'],
   ['Выбор действия', 'ActionMenu · .action-menu'],
   ['Флажки и фильтры', '.check · .chip · .plan-layers · .smoothing-stops'],
   ['Ползунки', '.smoothing-slider · .freq-slider · .hrange · .miniplayer__vol'],

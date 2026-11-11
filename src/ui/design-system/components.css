@@ -133,6 +133,8 @@ textarea { font-size: var(--text-body); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn--primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .btn--ghost { background: none; border-color: transparent; color: var(--accent); padding: 0 var(--space-8); align-self: flex-start; }
+/* 023: заметное второе действие рядом с основным (например, «Новый проект» рядом с «Сохранить») */
+.btn--tonal { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-soft); }
 .btn--wide { width: 100%; min-height: var(--control-large); font-size: var(--text-input); }
 .btn--small { min-height: var(--touch-min); padding: 0 var(--space-12); font-size: var(--text-small); }
 .btn-row { display: flex; gap: var(--space-10); flex-wrap: wrap; }

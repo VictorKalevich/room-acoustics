@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Room } from '../core/types';
 import { useProject } from './useProject';
 import type { Project } from '../state/project';
@@ -59,6 +59,10 @@ const TITLES: Record<Tab, string> = {
 export function App() {
   const { route, go } = useNavigation();
   const { tab, placement: placementMode, analysis: modesView } = route;
+  // 023: «Проекты» возвращают туда, откуда их открыли (кнопка «← Назад» и повторное нажатие «Проекты»)
+  const lastTab = useRef<Tab>(tab === 'projects' ? 'room' : tab);
+  useEffect(() => { if (tab !== 'projects') lastTab.current = tab; }, [tab]);
+  const back = () => go(lastTab.current);
   const [drawer, setDrawer] = useState(false);
   const [wizard, setWizard] = useState(wizardOn());
   const [, setWizardTick] = useState(0);
@@ -99,7 +103,7 @@ export function App() {
             type="button"
             class={`topbar__projects${tab === 'projects' ? ' is-on' : ''}`}
             aria-current={tab === 'projects' ? 'page' : undefined}
-            onClick={() => go('projects')}
+            onClick={() => (tab === 'projects' ? back() : go('projects'))}
           >
             <TabIcon tab="projects" />
             <span>{S.tabs.projects}</span>
@@ -168,8 +172,10 @@ export function App() {
         {tab === 'projects' && (
           <ProjectsScreen
             project={project}
-            onReplace={(p) => { setProject(p); go('room'); }}
+            onReplace={(p) => { setProject(p); go('room/overview'); }}
             onRename={(name) => touch({ name }, false)}
+            onBack={back}
+            onGo={go}
           />
         )}
         {roomReady && <RetainedSection active={tab === 'measure'}>
