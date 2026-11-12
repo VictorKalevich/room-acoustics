@@ -1,4 +1,5 @@
 // Эквалайзер по расчёту или замеру и экспорт фильтров.
+import { evalPpo } from '../../../core/precision';
 import { useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
 import { evaluateSetup, type SetupEval } from '../../../core/system';
@@ -35,10 +36,10 @@ export function EqPanel({ project, active = true }: { project: Project; active?:
     setError(null);
     if (isWave(room)) {
       setEqBusy(true);
-      compute<SetupEval>('evaluate', { room, sources, constraints: c, setup: current, ppo: 48 }).promise
+      compute<SetupEval>('evaluate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision, 48) }).promise
         .then((e) => { setEqBusy(false); finish(e); })
         .catch((e) => { setEqBusy(false); setError(e.message); });
-    } else finish(evaluateSetup(room, sources, c, current, { ppo: 48 }));
+    } else finish(evaluateSetup(room, sources, c, current, { ppo: evalPpo(project.precision, 48) }));
   };
   const finish = (e: SetupEval) => {
     let f = e.response.f;
@@ -47,6 +48,7 @@ export function EqPanel({ project, active = true }: { project: Project; active?:
     if (source === 'measured' && m) {
       const meas = measurementAt(m, f);
       const idx = meas.map((v, i) => (v == null ? -1 : i)).filter((i) => i >= 0);
+      if (idx.length < 2) { setRes(null); setError('Замер не перекрывает полосу расчёта — коррекцию по нему посчитать нельзя.'); return; }
       f = idx.map((i) => e.response.f[i]);
       target = idx.map((i) => e.response.target[i]);
       const raw = idx.map((i) => meas[i] as number);

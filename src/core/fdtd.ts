@@ -820,7 +820,17 @@ export function pointSpectrum(sim: SimResult, p: Vec3, freqs: number[], cache: M
   }
   if (wsum < 1e-6) {
     const n = nearestNode(g, { ...p, z: g.z0 + k * g.h });
-    return sim.recIndex[n] >= 0 ? get(n) : nodeSpectrum(sim, n, freqs);
+    if (sim.recIndex[n] >= 0) return get(n);
+    // точка вне воздуха записанного слоя (например, над скосом потолка): ближайший записанный узел слоя
+    let best = -1, bd = Infinity;
+    for (let j = 0; j < g.ny; j++)
+      for (let i = 0; i < g.nx; i++) {
+        const m = g.cellNode[i + g.nx * (j + g.ny * k)];
+        if (m < 0 || sim.recIndex[m] < 0) continue;
+        const d = (i - fi) * (i - fi) + (j - fj) * (j - fj);
+        if (d < bd) { bd = d; best = m; }
+      }
+    return best >= 0 ? get(best) : nodeSpectrum(sim, n, freqs);
   }
   for (let f = 0; f < nF; f++) { re[f] /= wsum; im[f] /= wsum; }
   return { re, im };

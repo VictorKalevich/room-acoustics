@@ -14,7 +14,8 @@ export function useSetupEval(
   const sync = useMemo(() => (!wave && setup ? evaluateSetup(room, sources, c, setup, { ppo }) : null), [wave, room, sources, c, setup, ppo]);
   const [state, setState] = useState<{ ev: SetupEval | null; busy: boolean; error: string | null }>({ ev: null, busy: false, error: null });
   useEffect(() => {
-    if (!wave || !setup) return;
+    // расстановки больше нет (проба убрана, сравнение выключено) — прежний результат не показываем
+    if (!wave || !setup) { setState((s) => (s.ev || s.busy || s.error ? { ev: null, busy: false, error: null } : s)); return; }
     setState((s) => ({ ...s, busy: true, error: null }));
     const job = compute<SetupEval>('evaluate', { room, sources, constraints: c, setup, ppo });
     job.promise

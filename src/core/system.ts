@@ -10,7 +10,7 @@ import { sourceFilter } from './filters';
 import { applyKernel, modeShapes, prepareModes, receiverKernel, type PreparedModes } from './response';
 import { flatnessScore } from './metric';
 import { isFlat, makeScorer } from './objective';
-import { isWave } from './geometry';
+import { ceilingAt, isWave } from './geometry';
 import { hasSim, waveFMax, waveSpectra, waveSystemModes } from './acoustics';
 
 export const MIN_LISTEN_DIST = 1.0; // м, минимум между колонками и слушателем
@@ -166,13 +166,18 @@ export function inZone(z: Zone, x: number, y: number, margin = 0): boolean {
 }
 
 /** Можно ли поставить источник в точку (вне всех зон). */
-export function sourceAllowed(room: Room, p: { x: number; y: number }, margin = 0.05): boolean {
-  return !(room.zones ?? []).some((z) => inZone(z, p.x, p.y, margin));
+/** Точка на своей высоте помещается под скосом потолка (у точки без высоты проверки нет). */
+function underCeiling(room: Room, p: { x: number; y: number; z?: number }): boolean {
+  return p.z == null || !room.slope || ceilingAt(room, p.x, p.y) >= p.z + 0.05;
+}
+
+export function sourceAllowed(room: Room, p: { x: number; y: number; z?: number }, margin = 0.05): boolean {
+  return underCeiling(room, p) && !(room.zones ?? []).some((z) => inZone(z, p.x, p.y, margin));
 }
 
 /** Можно ли сидеть в точке (вне зон, где сидеть нельзя). */
-export function seatAllowed(room: Room, p: { x: number; y: number }): boolean {
-  return !(room.zones ?? []).some((z) => !z.canSit && inZone(z, p.x, p.y));
+export function seatAllowed(room: Room, p: { x: number; y: number; z?: number }): boolean {
+  return underCeiling(room, p) && !(room.zones ?? []).some((z) => !z.canSit && inZone(z, p.x, p.y));
 }
 
 // ---------- Геометрические штрафы колонок ----------
@@ -183,9 +188,11 @@ export function speakerPenalties(ctx: EvalCtx, listener: Vec3, spk: Vec3[]): { p
   if (!spk.length) return { penalties, angle };
   const { room, c, fHi } = ctx;
   if (spk.length === 2) {
-    const a1 = Math.atan2(spk[0].y - listener.y, listener.x - spk[0].x);
-    const a2 = Math.atan2(spk[1].y - listener.y, listener.x - spk[1].x);
-    angle = (Math.abs(a1 - a2) * 180) / Math.PI;
+    // угол между направлениями от слушателя на колонки (через скалярное произведение): верен и тогда, когда
+    // слушатель оказался между передней стеной и колонками (разность азимутов давала там 270° вместо 90°)
+    const ax = spk[0].x - listener.x, ay = spk[0].y - listener.y, bx = spk[1].x - listener.x, by = spk[1].y - listener.y;
+    const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+    angle = la > 1e-9 && lb > 1e-9 ? (Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by) / (la * lb)))) * 180) / Math.PI : 0;
     const off = angle < 50 ? 50 - angle : angle > 70 ? angle - 70 : 0;
     if (off > 0) penalties.push({ name: `Угол раскрытия ${angle.toFixed(0)}° вне 50–70°`, value: 0.1 * off });
   }

@@ -1,4 +1,5 @@
 // «Замер»: свип (АЧХ в нескольких точках → замер проекта), хлопок (RT60 по октавам), живой анализатор баса.
+import { evalPpo } from '../../core/precision';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { shownTreatments } from '../../core/treatments';
 import type { Project } from '../../state/project';
@@ -378,7 +379,7 @@ function RtaTool({ project, applyCal, active }: { project: Project; applyCal: (f
   useEffect(() => () => mic.current?.close(), []);
   // прогноз модели в точке, где стоит телефон
   const probeSetup = useMemo(() => (here ? { ...current, listener: { x: here.x, y: here.y, z: c.earHeight } } : null), [here, current, c.earHeight]);
-  const { ev } = useSetupEval(room, sources, c, probeSetup);
+  const { ev } = useSetupEval(room, sources, c, probeSetup, evalPpo(project.precision));
   const lines = [];
   for (const s of snaps) lines.push({ f: freqs, db: s.db, cls: 'is-take' });
   if (curve) lines.push({ f: freqs, db: curve, cls: 'is-room' });

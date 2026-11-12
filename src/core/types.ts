@@ -249,6 +249,12 @@ export interface CrossoverSpec {
   adjustable: boolean;
   min: number;
   max: number;
+  /**
+   * Необязательные пределы самой техники (026): ниже spkLimit колонки не играют, выше subLimit не играет сабвуфер.
+   * Подбор частоты раздела не выходит за них. Диапазоны источников при этом могут быть любыми, в том числе условными.
+   */
+  spkLimit?: number;
+  subLimit?: number;
 }
 
 export type SubZone = 'corners' | 'walls' | 'anywhere';

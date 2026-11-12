@@ -20,12 +20,14 @@ import { fmt, fmtInt } from '../format';
 import { ROBUST_GOOD, ROBUST_MID } from '../../core/metric';
 import { placementLayout, sameLayout, setupFromPlacement, shouldAdoptBest } from '../../state/variant';
 import { CalculationStatus } from '../design-system';
+import { gridPpo, type Precision } from '../../core/precision';
 
 interface Props {
   project: Project;
   onSources: (s: SourceSpec[]) => void;
   onConstraints: (c: Constraints) => void;
-  onResult: (r: PlacementResult, selected: number) => void;
+  onPrecision: (p: Precision) => void;
+  onResult: (r: PlacementResult & { stale?: boolean }, selected: number) => void;
   onSelect: (i: number) => void;
   mode: 'auto' | 'manual';
   onMode: (m: 'auto' | 'manual') => void;
@@ -35,8 +37,8 @@ interface Props {
   onSetups: (list: Setup[]) => void;
 }
 
-export function PlacementScreen({ project, onSources, onConstraints, onResult, onSelect, mode, onMode, onSetup, onSetups, onGo }: Props) {
-  const { room, sources, constraints: c, result } = project;
+export function PlacementScreen({ project, onSources, onConstraints, onPrecision, onResult, onSelect, mode, onMode, onSetup, onSetups, onGo }: Props) {
+  const { room, sources, constraints: c, result, precision } = project;
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,9 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
   const resultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => job.current?.cancel(), []);
+  // подбор идёт секунды: к его концу проект мог измениться — решения принимаются по последнему состоянию
+  const latest = useRef(project);
+  useEffect(() => { latest.current = project; }, [project]);
   const layers = usePlanLayers();
 
   const subs = sources.filter((s) => s.kind === 'sub');
@@ -56,15 +61,18 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
     setRunning(true);
     setProgress(0);
     job.current?.cancel();
-    const j = compute<PlacementResult>('optimize', { room, sources, constraints: c }, setProgress);
+    const j = compute<PlacementResult>('optimize', { room, sources, constraints: c, precision }, setProgress);
     job.current = j;
     j.promise
       .then((r) => {
         setRunning(false);
-        onResult(r, 0);
+        const now = latest.current;
+        // комнату, систему, цель или точность изменили, пока шёл подбор — результат сразу помечается устаревшим
+        const changed = now.room !== room || now.sources !== sources || now.constraints !== c || now.precision !== precision;
+        onResult(changed ? { ...r, stale: true } : r, 0);
         // своей расстановки ещё нет (стоит исходная) — лучший вариант сразу становится текущим:
         // по нему считаются «Настройка», «Обзор», 3D и замер
-        if (shouldAdoptBest(project.current, r.best[0])) applyVariant(r.best[0]);
+        if (!changed && shouldAdoptBest(now.current, r.best[0])) onSetup(setupFromPlacement(now.current, r.best[0]));
         requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       })
       .catch((e) => { setRunning(false); setError(e.message || S.errors.generic); });
@@ -72,7 +80,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
 
   /** Вариант становится текущей расстановкой (её используют настройка, обзор, 3D и замер). */
   const applyVariant = (p: Placement) => {
-    onSetup(setupFromPlacement(project.current, p));
+    onSetup(setupFromPlacement(latest.current.current, p));
   };
   const openManual = (p: Placement) => {
     applyVariant(p);
@@ -97,28 +105,31 @@ export function PlacementScreen({ project, onSources, onConstraints, onResult, o
   useEffect(() => {
     if (!layers.map || !current) { heatJob.current?.cancel(); setHeatBusy(false); return; }
     // кэш карт на результат подбора и ограничения: переключение туда-обратно — мгновенно
-    const owner = [result, room, sources, c];
+    const owner = [result, room, sources, c, precision];
     const cache = heatCache.current;
     if (cache.owner === null || (cache.owner as unknown[]).some((v, i) => v !== owner[i])) { cache.owner = owner; cache.map.clear(); }
     const key = `${sel}|${effKind}|${effSub}`;
     const hit = cache.map.get(key);
-    if (hit) { heatJob.current?.cancel(); setHeat(hit); setHeatBusy(false); return; }
+    // прежний расчёт (другой вариант или входы) больше не нужен: его карта не должна появиться под новым ключом
+    heatJob.current?.cancel();
+    heatJob.current = null;
+    if (hit) { setHeat(hit); setHeatBusy(false); return; }
     setHeat(null);
     setHeatBusy(true);
     const t = setTimeout(() => {
       heatJob.current?.cancel();
       const setup = { ...placementLayout(current), subSettings: current.subSettings ?? {}, crossoverHz: null };
-      const j = compute<Heatmap>(effKind === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup, subId: effSub });
+      const j = compute<Heatmap>(effKind === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup, subId: effSub, ppo: gridPpo(precision, c.objective) });
       heatJob.current = j;
       j.promise
-        .then((h) => { cache.map.set(key, h); if (heatJob.current === j) { setHeat(h); setHeatBusy(false); } })
+        .then((h) => { if (heatJob.current === j) { cache.map.set(key, h); setHeat(h); setHeatBusy(false); } })
         .catch(() => { if (heatJob.current === j) setHeatBusy(false); });
     }, 120);
     return () => clearTimeout(t);
-  }, [layers.map, current, sel, effKind, effSub, result, room, sources, c]);
+  }, [layers.map, current, sel, effKind, effSub, result, room, sources, c, precision]);
   useEffect(() => () => heatJob.current?.cancel(), []);
 
-  const sharedCard = <SystemSettings project={project} onSources={onSources} onConstraints={onConstraints} />;
+  const sharedCard = <SystemSettings project={project} onSources={onSources} onConstraints={onConstraints} onPrecision={onPrecision} />;
   // переключатель режима — как остальные переключатели, в карточке вместе с настройками своего режима
   const modeSwitch = (
     <Segmented

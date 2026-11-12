@@ -164,7 +164,13 @@ export function ProjectsScreen({ project, onReplace, onRename, onGo }: Props) {
                   <button
                     type="button"
                     class="btn btn--small btn--ghost"
-                    onClick={async () => { await deleteProject(p.id); dropRoomDraft(p.id); refresh(); }}
+                    onClick={async () => {
+                      // копия открытого проекта: его скан и черновик комнаты ещё нужны
+                      const open = p.id === project.id;
+                      await deleteProject(p.id, open).catch(() => undefined);
+                      if (!open) dropRoomDraft(p.id);
+                      refresh();
+                    }}
                     aria-label={`${S.projects.remove} ${p.name}`}
                   >
                     {S.projects.remove}

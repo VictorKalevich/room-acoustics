@@ -20,6 +20,7 @@ import { roomPatches, patchContains, cornerLegs, type Patch } from './patches';
 import { alphaAt, getMaterial } from './materials';
 import { prepareModes } from './response';
 import { ceilingAt } from './geometry';
+import { PRECISION, normalizePrecision, type Precision } from './precision';
 
 export type MicPattern = 'cardioid' | 'supercardioid';
 export type Posture = 'standing' | 'sitting';
@@ -161,9 +162,13 @@ export interface VoiceBands {
   f2: number[];
 }
 
-export function voiceBands(fLo: number, fHi: number): VoiceBands {
+/**
+ * Полосы оценки. perOctave = 6 — полосы 1/6 октавы (стандарт). Более узкие полосы (026, точность расчёта) делят
+ * каждую полосу 1/6 октавы на равные по логарифму части, поэтому оценку всегда можно привести к 1/6 октавы.
+ */
+export function voiceBands(fLo: number, fHi: number, perOctave = 6): VoiceBands {
   const L = Math.log2(fHi / fLo);
-  const n = Math.max(3, Math.round(6 * L));
+  const n = Math.max(3, Math.round(6 * L)) * Math.max(1, Math.round(perOctave / 6));
   const fc: number[] = [], f1: number[] = [], f2: number[] = [];
   for (let k = 0; k < n; k++) {
     fc.push(fLo * 2 ** (((k + 0.5) * L) / n));
@@ -179,6 +184,8 @@ export interface VoiceCtx {
   c: number;
   bands: VoiceBands;
   nb: number;
+  /** Сколько полос расчёта в одной полосе 1/6 октавы (1 — стандарт). Неровность всегда считается по 1/6 октавы. */
+  group: number;
   /** Коэффициенты отражения (амплитуда, √(1 − α)) по полосам: отделка, участки, мебель на полу. */
   surf: Record<SurfaceId, Float64Array>;
   patches: { p: Patch; r: Float64Array | null }[];
@@ -210,9 +217,10 @@ interface ModalCtx {
 }
 
 /** Готовит всё, что не зависит от места и направления. */
-export function voiceContext(room: Room, s: VoiceSettings): VoiceCtx {
+export function voiceContext(room: Room, s: VoiceSettings, bandsPerOctave = 6): VoiceCtx {
   const c = speedOfSound(room.temperatureC);
-  const bands = voiceBands(s.fLo, s.fHi);
+  const group = Math.max(1, Math.round(bandsPerOctave / 6));
+  const bands = voiceBands(s.fLo, s.fHi, 6 * group);
   const nb = bands.fc.length;
   const at = (fn: (f: number) => number) => Float64Array.from(bands.fc, fn);
   const refl = (a: readonly number[]) => at((f) => Math.sqrt(Math.max(0, 1 - alphaAt(a, f))));
@@ -234,7 +242,7 @@ export function voiceContext(room: Room, s: VoiceSettings): VoiceCtx {
   const fM = Math.min(300, Math.max(150, 1.5 * rev.schroeder));
   const modalW = Float64Array.from(bands.fc, (f) => 1 - ramp(f, fM / 1.5, fM));
   const ctx: VoiceCtx = {
-    room, s, c, bands, nb, surf, patches,
+    room, s, c, bands, nb, group, surf, patches,
     furniture: (room.zones ?? []).filter((z) => z.kind === 'furniture'),
     furnR: refl(FURN_ALPHA),
     voiceBack,
@@ -257,7 +265,7 @@ function modalContext(ctx: VoiceCtx, rev: ReturnType<typeof computeReverb>, fM: 
   ctx.bands.fc.forEach((f, k) => {
     if (ctx.modalW[k] <= 0) { bandFreqs.push([]); return; }
     const idx: number[] = [];
-    for (const m of [-1, 0, 1]) { idx.push(freqs.length); freqs.push(f * 2 ** (m / 18)); }
+    for (const m of [-1, 0, 1]) { idx.push(freqs.length); freqs.push(f * 2 ** (m / (18 * ctx.group))); }
     bandFreqs.push(idx);
   });
   const nf = freqs.length, n = pm.count;
@@ -421,6 +429,8 @@ export function voicePaths(ctx: VoiceCtx, x: number, y: number, facing: number):
       const surface = SURF_OF[c.axis][c.wall];
       // потолок над скосом — не плоский: это отражение считается ниже, от наклонной плоскости
       if (surface === 'ceiling' && room.slope && ceilingAt(room, P[0], P[1]) < room.height - 1e-6) { ok = false; break; }
+      // стена под скосом кончается на высоте low: выше неё — наклонная плоскость, а не стена
+      if (room.slope && surface === room.slope.wall && P[2] > room.slope.low + 1e-6) { ok = false; break; }
       const { r, on } = reflAtPoint(ctx, surface, P);
       if (!r) { ok = false; break; }
       for (let k = 0; k < nb; k++) amp[k] *= r[k];
@@ -562,6 +572,22 @@ const std = (v: ArrayLike<number>) => {
   return Math.sqrt(s / v.length);
 };
 
+/**
+ * Уровни по полосам 1/6 октавы, дБ: мощность узких полос расчёта усредняется по частоте (с весом ширины полосы),
+ * как если бы полоса 1/6 октавы считалась целиком. При стандартных полосах — просто уровни полос.
+ */
+function sixthOctaveDb(ctx: VoiceCtx, p: ArrayLike<number>): number[] {
+  const g = ctx.group;
+  if (g <= 1) return Array.from(p, (w) => 10 * Math.log10(w));
+  const out: number[] = [];
+  for (let k = 0; k + g <= ctx.nb; k += g) {
+    let s = 0, w = 0;
+    for (let j = k; j < k + g; j++) { const df = ctx.bands.f2[j] - ctx.bands.f1[j]; s += p[j] * df; w += df; }
+    out.push(10 * Math.log10(s / w));
+  }
+  return out;
+}
+
 /** Подробная оценка одного места и направления. */
 export function evaluateVoice(ctx: VoiceCtx, spot: VoiceSpot): VoiceEval {
   const g = geometry(ctx, spot.x, spot.y, spot.facing);
@@ -571,7 +597,7 @@ export function evaluateVoice(ctx: VoiceCtx, spot: VoiceSpot): VoiceEval {
   const meanRefl = refl.reduce((a, v) => a + v, 0) / refl.length;
   const bandDb = (amp: Float64Array) => 10 * Math.log10(amp.reduce((a, v) => a + v * v, 0) / amp.length || 1e-12);
   return {
-    score: std(db),
+    score: std(sixthOctaveDb(ctx, p)),
     f: ctx.bands.fc,
     db,
     roomDb: 10 * Math.log10(meanRefl),
@@ -588,6 +614,8 @@ export function spotAllowed(room: Room, x: number, y: number, facing: number, s:
   if (x < body || y < body || x > room.depth - body || y > room.width - body) return false;
   const mx = x + s.distance * Math.cos(facing), my = y + s.distance * Math.sin(facing);
   if (mx < 0.08 || my < 0.08 || mx > room.depth - 0.08 || my > room.width - 0.08) return false;
+  // под скосом потолка: над головой и над микрофоном должно оставаться место
+  if (room.slope && Math.min(ceilingAt(room, x, y), ceilingAt(room, mx, my)) < s.mouthZ + 0.15) return false;
   const pad = 0.2;
   return !(room.zones ?? []).some((z) => x > z.x0 - pad && x < z.x1 + pad && y > z.y0 - pad && y < z.y1 + pad);
 }
@@ -609,17 +637,25 @@ export const facingAngle = (i: number) => (i * 2 * Math.PI) / FACINGS;
 
 /** Only the ranking changes; both metrics use the existing acoustic calculation. */
 export type VoiceGoal = 'flatness' | 'room';
-function voiceMapScore(p: Float64Array, refl: Float64Array, goal: VoiceGoal): number {
+function voiceMapScore(ctx: VoiceCtx, p: Float64Array, refl: Float64Array, goal: VoiceGoal): number {
   return goal === 'room'
     ? 10 * Math.log10(refl.reduce((sum, value) => sum + value, 0) / refl.length)
-    : std(Array.from(p, (w) => 10 * Math.log10(w)));
+    : std(sixthOctaveDb(ctx, p));
 }
 
-/** Карта: в каждом узле — лучшее из 16 направлений. */
-export function voiceMap(room: Room, s: VoiceSettings, onProgress?: (v: number) => void, goal: VoiceGoal = 'flatness'): VoiceMap {
+/** Шаг карты, м: около nodes узлов на комнату, но не мельче minStep (стандарт — 320 узлов, не мельче 15 см). */
+export function voiceMapStep(room: Room, precision?: Precision): number {
+  const { voiceNodes, voiceMinStep } = PRECISION[normalizePrecision(precision)];
+  return Math.max(voiceMinStep, Math.ceil(Math.sqrt((room.depth * room.width) / voiceNodes) * 20) / 20);
+}
+
+/**
+ * Карта: в каждом узле — лучшее из 16 направлений. Точность расчёта (026) меняет только шаг карты: полосы на
+ * карте всегда 1/6 октавы — она сравнивает места, а подробная АЧХ считается для выбранного места.
+ */
+export function voiceMap(room: Room, s: VoiceSettings, onProgress?: (v: number) => void, goal: VoiceGoal = 'flatness', precision?: Precision): VoiceMap {
   const ctx = voiceContext(room, s);
-  const area = room.depth * room.width;
-  const step = Math.max(0.15, Math.ceil(Math.sqrt(area / 320) * 20) / 20);
+  const step = voiceMapStep(room, precision);
   const nx = Math.max(1, Math.floor(room.depth / step)), ny = Math.max(1, Math.floor(room.width / step));
   const x0 = (room.depth - (nx - 1) * step) / 2, y0 = (room.width - (ny - 1) * step) / 2;
   const scores = new Float32Array(nx * ny).fill(NaN), facing = new Float32Array(nx * ny), allowed = new Uint8Array(nx * ny);
@@ -633,7 +669,7 @@ export function voiceMap(room: Room, s: VoiceSettings, onProgress?: (v: number) 
         if (!spotAllowed(room, x, y, phi, s)) continue;
         const g = geometry(ctx, x, y, phi);
         const { p, refl } = bandPower(ctx, voicePaths(ctx, x, y, phi), modalGain(ctx, g, psiS));
-        const v = voiceMapScore(p, refl, goal);
+        const v = voiceMapScore(ctx, p, refl, goal);
         if (v < best) { best = v; bf = phi; }
       }
       if (Number.isFinite(best)) { scores[i * ny + j] = best; facing[i * ny + j] = bf; allowed[i * ny + j] = 1; }
@@ -680,7 +716,7 @@ export function facingScores(ctx: VoiceCtx, x: number, y: number, goal: VoiceGoa
     const phi = facingAngle(q);
     if (!spotAllowed(ctx.room, x, y, phi, ctx.s)) return NaN;
     const { p, refl } = bandPower(ctx, voicePaths(ctx, x, y, phi), modalGain(ctx, geometry(ctx, x, y, phi), psiS));
-    return voiceMapScore(p, refl, goal);
+    return voiceMapScore(ctx, p, refl, goal);
   });
 }
 

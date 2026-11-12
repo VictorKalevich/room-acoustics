@@ -42,7 +42,9 @@ export function shouldAdoptBest(current: Setup, best: Placement | undefined): be
  * Настройки сабвуфера, кроссовер и замер места не меняют.
  */
 export function markPlaced(prev: Setup, next: Setup): Setup {
-  return next.placed || sameLayout(prev, next) ? next : { ...next, placed: true };
+  // выбранные места остаются выбранными и тогда, когда новая расстановка с ними совпадает, но признака не несёт
+  // (вариант, сохранённый до 022): иначе места сбрасывались к исходным
+  return next.placed ? next : prev.placed || !sameLayout(prev, next) ? { ...next, placed: true } : next;
 }
 
 /** Сколько прошлых замеров хранится у расстановки для сравнения «до и после». */

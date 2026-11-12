@@ -1,4 +1,5 @@
 // «Обзор»: оценка комнаты 0–100, подоценки, список проблем с переходами и время затухания мод.
+import { evalPpo } from '../../core/precision';
 import { useMemo, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import type { Mode, ReverbResult } from '../../core/types';
@@ -23,7 +24,7 @@ const SUB_TERM: Record<string, string> = { bass: 'flatness', decay: 'decay', sym
 
 export function OverviewScreen({ project, modes, reverb, onGo }: Props) {
   const { room, sources, constraints: c, current } = project;
-  const { ev, busy } = useSetupEval(room, sources, c, current);
+  const { ev, busy } = useSetupEval(room, sources, c, current, evalPpo(project.precision));
   const o = useMemo(() => buildOverview(room, sources, current, ev, modes, reverb), [room, sources, current, ev, modes, reverb]);
   const [all, setAll] = useState(false);
   const shown = all ? o.problems : o.problems.slice(0, 6);

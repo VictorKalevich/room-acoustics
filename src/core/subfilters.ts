@@ -23,7 +23,9 @@ const grid = (lo: number, hi: number, ppo: number) => {
   return out;
 };
 
-export function optimizeSubFilters(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike): SubFilterResult {
+export function optimizeSubFilters(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, opts: { ppo?: number } = {}): SubFilterResult {
+  // 026: оценки «до/после» и графики — на сетке точности; сам подбор фильтров — на прежней (24 точки на октаву)
+  const ppo = Math.max(24, opts.ppo ?? 24);
   const t0 = Date.now();
   const ctx = makeCtx(room, sources);
   const subs = sources.filter((s) => s.kind === 'sub' && setup.positions[s.id] && ((s.peqBands ?? 0) > 0 || s.allpass));
@@ -32,7 +34,7 @@ export function optimizeSubFilters(room: Room, sources: SourceSpec[], c: Constra
   const baseSettings: Record<string, SubSetting> = Object.fromEntries(
     Object.entries(setup.subSettings).map(([k, v]) => [k, { delayMs: v.delayMs, phaseDeg: v.phaseDeg, gainDb: v.gainDb }]),
   );
-  const beforeEval = evaluateSetup(room, sources, c, { ...setup, subSettings: baseSettings }, { ctx });
+  const beforeEval = evaluateSetup(room, sources, c, { ...setup, subSettings: baseSettings }, { ctx, ppo });
   if (!subs.length) {
     return {
       settings: baseSettings, before: beforeEval.score, after: beforeEval.score,
@@ -137,7 +139,7 @@ export function optimizeSubFilters(room: Room, sources: SourceSpec[], c: Constra
   subs.forEach((s, k) => {
     settings[s.id] = { ...(baseSettings[s.id] ?? { delayMs: 0, phaseDeg: 0, gainDb: 0 }), peq: chosen[k].peq, allpass: chosen[k].allpass };
   });
-  const afterEval = evaluateSetup(room, sources, c, { ...setup, subSettings: settings }, { ctx });
+  const afterEval = evaluateSetup(room, sources, c, { ...setup, subSettings: settings }, { ctx, ppo });
   if (startScore - cur < 0.1) notes.push('Свои фильтры сабвуферов почти не улучшают отклик в этой расстановке.');
   if ((c.seats?.count ?? 1) <= 1) notes.push('Фильтры подобраны для основного места (и сдвига головы ±30 см). При нескольких местах они выравнивают бас между местами.');
   return {

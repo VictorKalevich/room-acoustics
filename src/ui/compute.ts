@@ -40,6 +40,7 @@ function getWorker(): Worker {
     logError('worker', `${e.message || 'Воркер расчётов упал'}${e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : ''}`, types || undefined);
     for (const p of pending.values()) p.reject(new Error(e.message || 'Ошибка расчёта'));
     pending.clear();
+    w.terminate();
     worker = null;
   };
   worker = w;

@@ -3,8 +3,10 @@ import { baselinePositions } from '../core/placement';
 import { clampToRoom } from '../core/system';
 import { sameLayout } from './variant';
 import { rotateExtension, rotateOpening, validateExtension, validateSlope } from '../core/geometry';
-import type { DetectSummary } from '../scan/detect';
+import type { DetectSummary, Units } from '../scan/detect';
+import type { ScanRect } from '../scan/apply';
 import type { VoiceSettings } from '../core/voice';
+import type { Precision } from '../core/precision';
 
 export interface Project {
   id: string;
@@ -14,7 +16,14 @@ export interface Project {
   sources: SourceSpec[];
   constraints: Constraints;
   /** Сведения о применённом скане; rotation — сколько раз после скана нажимали «Колонки у другой стены» (020). */
-  scanInfo: (DetectSummary & { rotation?: number }) | null;
+  scanInfo: (DetectSummary & {
+    rotation?: number;
+    /**
+     * Границы скана, по которым сейчас построена комната (026), в координатах скана при этих единицах. Хранятся в
+     * проекте, чтобы откатываться вместе с ним: от них считается сдвиг при следующей поправке границ.
+     */
+    applied?: { rect: ScanRect; units: Units };
+  }) | null;
   result: (PlacementResult & { stale?: boolean }) | null;
   selectedIndex: number;
   /** Текущая расстановка (ручной режим, настройка). */
@@ -23,6 +32,8 @@ export interface Project {
   setups: Setup[];
   /** Запись голоса: микрофон, полоса частот, где стоит исполнитель. */
   voice?: VoiceSettings;
+  /** Точность расчёта (026): общая для расстановки, настройки и голоса. Нет — стандартная. */
+  precision?: Precision;
   /**
    * Комната создана (021): применён скан или ручной ввод сохранён кнопкой «Сохранить».
    * До этого экраны с расчётами предлагают сначала создать комнату.
@@ -77,7 +88,8 @@ export function clearedRoom(p: Project): Partial<Project> & { room: Room } {
   const d = defaultConstraints(room);
   const constraints: Constraints = { ...p.constraints, listenerMinX: d.listenerMinX, listenerMaxX: d.listenerMaxX };
   const b = baselinePositions(room, p.sources, constraints);
-  const current: Setup = { ...p.current, listener: b.listener, positions: b.positions, measurement: null, history: undefined };
+  // места — снова исходные по умолчанию: «не выбраны», иначе после новой комнаты они не пересчитались бы под неё
+  const current: Setup = { ...p.current, listener: b.listener, positions: b.positions, measurement: null, history: undefined, placed: false };
   return { room, constraints, current, scanInfo: null, result: null, selectedIndex: 0, roomReady: false };
 }
 

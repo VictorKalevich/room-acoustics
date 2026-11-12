@@ -59,7 +59,7 @@ export function App() {
   const [drawer, setDrawer] = useState(false);
   const [wizard, setWizard] = useState(wizardOn());
   const [, setWizardTick] = useState(0);
-  const { project, setProject, ready, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice } = useProject();
+  const { project, setProject, ready, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision } = useProject();
   const [justUpdated, setJustUpdated] = useState(consumeJustUpdated);
 
   const setModes = (v: AnalysisView) => go(v === 'list' ? 'analysis/list' : v === 'overview' ? 'analysis' : 'field');
@@ -146,6 +146,7 @@ export function App() {
             project={project}
             onSources={onSources}
             onConstraints={onConstraints}
+            onPrecision={onPrecision}
             onResult={(result, selectedIndex) => touch({ result, selectedIndex }, false)}
             onSelect={(selectedIndex) => setProject((p) => ({ ...p, selectedIndex }))}
             mode={placementMode}
@@ -170,7 +171,7 @@ export function App() {
         {roomReady && <RetainedSection active={tab === 'measure'}>
           <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} onPlacement={toPlacement} />
         </RetainedSection>}
-        {roomReady && tab === 'voice' && <VoiceScreen project={project} onVoice={onVoice} />}
+        {roomReady && tab === 'voice' && <VoiceScreen project={project} onVoice={onVoice} onPrecision={onPrecision} />}
         {roomReady && tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} onPlacement={toPlacement} />}
         {tab === 'help' && <HelpScreen project={project} onGo={(t) => go(t)} onWizard={refreshWizard} />}
         {tab === 'about' && <AboutScreen project={project} />}

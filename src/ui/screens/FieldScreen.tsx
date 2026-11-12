@@ -30,6 +30,8 @@ const saved: {
 export function setFieldFocus(f: number) {
   saved.pick = { f: Math.round(f * 10) / 10 };
   saved.view = 'single';
+  // частота выбрана для нынешней комнаты: сброс выбора «комната изменилась» к ней не относится
+  saved.roomKey = undefined;
 }
 
 /**

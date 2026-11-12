@@ -6,11 +6,14 @@ import { evalBand } from '../../../core/system';
 import { NumberField, Segmented, Note, Details, SelectField } from '../../design-system';
 import { SetupCard } from '../../components/SetupCard';
 import { ObjectivePicker } from '../../components/ObjectivePicker';
+import { PrecisionPicker } from '../../components/PrecisionPicker';
+import { normalizePrecision, type Precision } from '../../../core/precision';
 import { S } from '../../strings';
 import { fmtInt } from '../../format';
 
-export function SystemSettings({ project, onSources, onConstraints }: {
+export function SystemSettings({ project, onSources, onConstraints, onPrecision }: {
   project: Project; onSources: (sources: SourceSpec[]) => void; onConstraints: (constraints: Constraints) => void;
+  onPrecision: (p: Precision) => void;
 }) {
   const { room, sources, constraints: c } = project;
   const spk = sources.filter((s) => s.kind === 'speaker');
@@ -42,6 +45,7 @@ export function SystemSettings({ project, onSources, onConstraints }: {
   const updateSubs = (patch: Partial<SourceSpec>) =>
     onSources(sources.map((s) => (s.kind === 'sub' ? { ...s, ...patch } : s)));
   const setC = (patch: Partial<Constraints>) => onConstraints({ ...c, ...patch });
+  const limitsOn = c.crossover.spkLimit != null || c.crossover.subLimit != null;
 
   // общие настройки обоих режимов: система, места и высота ушей, где может стоять сабвуфер, цель подбора
   const sharedBody = (
@@ -125,6 +129,33 @@ export function SystemSettings({ project, onSources, onConstraints }: {
                     <NumberField id="xo-max" label={S.sub.xoMax} value={c.crossover.max} unit="Гц" min={c.crossover.min + 10} max={250} digits={0} onChange={(v) => setC({ crossover: { ...c.crossover, max: v } })} />
                   </div>
                 )}
+                {c.crossover.adjustable && (
+                  <>
+                    <label class="check">
+                      <input
+                        type="checkbox"
+                        checked={limitsOn}
+                        onChange={(e) => {
+                          const { spkLimit: _a, subLimit: _b, ...rest } = c.crossover;
+                          void _a; void _b;
+                          // при включении — текущие границы диапазонов как отправная точка
+                          setC({ crossover: (e.target as HTMLInputElement).checked ? { ...rest, spkLimit: spk[0].fLow, subLimit: Math.max(...subs.map((s) => s.fHigh)) } : rest });
+                        }}
+                      />
+                      <span>{S.sub.limits}</span>
+                    </label>
+                    {limitsOn && (
+                      <div class="grid-2">
+                        <NumberField id="xo-spk-limit" label={S.sub.spkLimit} value={c.crossover.spkLimit ?? spk[0].fLow} unit="Гц" min={10} max={500} digits={0} onChange={(v) => setC({ crossover: { ...c.crossover, spkLimit: v } })} />
+                        <NumberField id="xo-sub-limit" label={S.sub.subLimit} value={c.crossover.subLimit ?? subs[0].fHigh} unit="Гц" min={20} max={500} digits={0} onChange={(v) => setC({ crossover: { ...c.crossover, subLimit: v } })} />
+                      </div>
+                    )}
+                    {limitsOn && (c.crossover.spkLimit ?? 0) > (c.crossover.subLimit ?? Infinity) && <Note tone="warn">{S.sub.limitsGap}</Note>}
+                    <Details summary={S.sub.limitsWhy}>
+                      <p class="small">{S.sub.limitsWhyText}</p>
+                    </Details>
+                  </>
+                )}
               </>
             )}
           </Details>
@@ -162,13 +193,16 @@ export function SystemSettings({ project, onSources, onConstraints }: {
       <h3 class="subhead">{S.objective.title}</h3>
       <p class="muted small">{S.objective.intro}</p>
       <ObjectivePicker room={room} value={c.objective} onChange={(o: BassObjective) => setC({ objective: o })} band={band} />
+      <h3 class="subhead">{S.precision.title}</h3>
+      <PrecisionPicker value={project.precision} onChange={onPrecision} where="bass" />
     </>
   );
+  const precision = normalizePrecision(project.precision);
   const summary = S.setup.summary(
     spk.length, spk[0] ? `${fmtInt(spk[0].fLow)}–${fmtInt(spk[0].fHigh)}` : '',
     subs.length, subs[0] ? `${fmtInt(subs[0].fLow)}–${fmtInt(subs[0].fHigh)}` : '',
     c.seats.count, S.objective.names[c.objective?.id ?? 'flat'].toLowerCase(),
-  );
+  ) + (precision === 'standard' ? '' : ` · ${S.precision.summary(S.precision.names[precision].toLowerCase())}`);
   const sharedCard = <SetupCard title={S.setup.title} summary={summary}>{sharedBody}</SetupCard>;
   return sharedCard;
 }

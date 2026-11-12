@@ -9,6 +9,7 @@ import { MATERIAL_BY_ID } from '../core/materials';
 import { FURNITURE } from '../core/furniture';
 import { HISTORY_MAX } from './variant';
 import { normalizeObjective } from '../core/objective';
+import { normalizePrecision } from '../core/precision';
 import type { DetectResult, Units } from '../scan/detect';
 import type { LayoutResult, ScanLabels } from '../scan/layout';
 import type { ScanChoice, ScanRect } from '../scan/apply';
@@ -46,11 +47,27 @@ export function parseProjectFile(text: string): Project {
  * fit = false (черновик конструктора, 021): объекты за стенами остаются как есть — список удаляемого
  * пользователь увидит перед сохранением; проверка при этом идёт по вписанной копии.
  */
+const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object';
+
+/** Сведения о скане: неверные применённые границы (026) отбрасываются — тогда берутся сохранённые на устройстве. */
+function normalizeScanInfo(raw: unknown): Project['scanInfo'] {
+  if (!isObj(raw)) return null;
+  const a = raw.applied;
+  const ok = isObj(a) && isObj(a.rect) && ['m', 'cm', 'mm'].includes(a.units)
+    && [a.rect.x0, a.rect.x1, a.rect.y0, a.rect.y1].every((v) => typeof v === 'number' && Number.isFinite(v)) && a.rect.x1 > a.rect.x0 && a.rect.y1 > a.rect.y0;
+  if (ok || a === undefined) return raw as Project['scanInfo'];
+  const { applied: _bad, ...rest } = raw;
+  void _bad;
+  return rest as Project['scanInfo'];
+}
+const finite = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
 export function normalizeRoom(rawRoom: any, fit = true): Room {
   const room = { ...defaultRoom(), ...rawRoom };
+  if (!['empty', 'typical', 'heavy'].includes(room.furnishing)) room.furnishing = defaultRoom().furnishing;
   room.materials = { ...defaultRoom().materials, ...rawRoom?.materials };
   for (const s of SURFACES) if (!MATERIAL_BY_ID[room.materials[s]]) room.materials[s] = defaultRoom().materials[s];
-  if (!Array.isArray(room.zones)) room.zones = [];
+  room.zones = Array.isArray(room.zones) ? room.zones.filter(isObj) : [];
   if (!['sealed', 'typical', 'door', 'open'].includes(room.leakage)) room.leakage = 'typical';
   if (room.calibration && !(room.calibration.dampingScale > 0)) room.calibration = null;
   // множитель, подобранный для прежней модели затухания, к новой не подходит — подстройку нужно повторить
@@ -60,8 +77,8 @@ export function normalizeRoom(rawRoom: any, fit = true): Room {
     void _bad;
     room.calibration = rest;
   }
-  if (!Array.isArray(room.openings)) room.openings = [];
-  if (!Array.isArray(room.extensions)) room.extensions = [];
+  room.openings = Array.isArray(room.openings) ? room.openings.filter(isObj) : [];
+  room.extensions = Array.isArray(room.extensions) ? room.extensions.filter(isObj) : [];
   room.treatments = Array.isArray(room.treatments)
     ? room.treatments.filter((t: any) => t && ['corner', 'panel', 'cloud'].includes(t.kind) && t.width > 0 && t.height > 0 && t.thickness > 0)
     : [];
@@ -89,7 +106,14 @@ export function normalizeRoom(rawRoom: any, fit = true): Room {
   room.furnitureList = !!room.furnitureList;
   // 021: мебель, зоны, окна, ковры, скос и коридоры за стенами (после уменьшения комнаты) вписываются в комнату,
   // а не делают весь проект «неверным» — раньше такой проект не открывался и заменялся новым
-  const fitted = fitRoomObjects(room).room;
+  let fitted = fitRoomObjects(room).room;
+  // коридор, который не проходит проверку и после вписывания (например, мельче 0,3 м из скана), убирается —
+  // раньше из-за него не открывался весь проект
+  const badExt = new Set(validateRoom(fitted).filter((e) => e.field.startsWith('ext.')).map((e) => e.field.slice(4)));
+  if (badExt.size) {
+    room.extensions = room.extensions.filter((e: any) => !badExt.has(e.id));
+    fitted = { ...fitted, extensions: (fitted.extensions ?? []).filter((e) => !badExt.has(e.id)) };
+  }
   const roomErr = validateRoom(fitted);
   if (roomErr.length) throw new Error(`Неверные данные комнаты: ${roomErr.map((e) => e.message).join('; ')}`);
   return fit ? fitted : room;
@@ -98,8 +122,17 @@ export function normalizeRoom(rawRoom: any, fit = true): Room {
 /** Заполняет отсутствующие поля умолчаниями и проверяет диапазоны. */
 export function normalizeProject(raw: any): Project {
   const room = normalizeRoom(raw.room);
-  const rawSources: SourceSpec[] = Array.isArray(raw.sources) && raw.sources.length ? raw.sources : defaultSources(2, 1);
-  const sources = rawSources.map((s, i) => (s.kind === 'sub' ? { ...defaultSub(i + 1), ...s } : s));
+  const listed: SourceSpec[] = Array.isArray(raw.sources) ? raw.sources.filter((s: unknown) => isObj(s) && typeof (s as SourceSpec).id === 'string' && ((s as SourceSpec).kind === 'sub' || (s as SourceSpec).kind === 'speaker')) : [];
+  const rawSources = listed.length ? listed : defaultSources(2, 1);
+  // неверный диапазон или высота одного источника (например, поле правили и не закончили) — к значениям по
+  // умолчанию для него: раньше из-за этого проект не открывался и заменялся новым
+  const sources = rawSources.map((s, i) => {
+    const d = s.kind === 'sub' ? defaultSub(i + 1) : defaultSources(1, 0)[0];
+    const n = s.kind === 'sub' ? { ...d, ...s } : { ...s };
+    if (!(n.fLow >= 10 && n.fHigh <= 24000 && n.fLow < n.fHigh)) { n.fLow = d.fLow; n.fHigh = d.fHigh; }
+    if (!(n.height >= 0 && n.height <= 3)) n.height = d.height;
+    return n;
+  });
   const srcErr = validateSources(sources);
   if (srcErr.length) throw new Error(`Неверные источники: ${srcErr.map((e) => e.message).join('; ')}`);
   const dc = defaultConstraints(room);
@@ -110,12 +143,20 @@ export function normalizeProject(raw: any): Project {
     crossover: { ...dc.crossover, ...raw.constraints?.crossover },
     objective: normalizeObjective(raw.constraints?.objective),
   };
+  for (const k of ['speakerMinFront', 'speakerMinSide', 'listenerMinX', 'listenerMaxX', 'earHeight', 'subWallGap'] as const) constraints[k] = finite(constraints[k], dc[k]);
+  if (!['corners', 'walls', 'anywhere'].includes(constraints.subZone)) constraints.subZone = dc.subZone;
+  constraints.seats = { count: finite(constraints.seats.count, dc.seats.count), spacing: finite(constraints.seats.spacing, dc.seats.spacing) };
+  for (const k of ['spkLimit', 'subLimit'] as const) if (!(typeof constraints.crossover[k] === 'number' && constraints.crossover[k] >= 10 && constraints.crossover[k] <= 24000)) delete constraints.crossover[k];
+  const okPoint = (p: any) => isObj(p) && [p.x, p.y, p.z].every((v) => typeof v === 'number' && Number.isFinite(v));
   const fixSetup = (s: any, name: string): Setup =>
     syncSetup(
       {
         ...defaultSetup(room, sources, constraints, name),
-        ...s,
-        subSettings: s?.subSettings ?? {},
+        ...(isObj(s) ? s : {}),
+        // координаты-не-числа (NaN в JSON становится null) — к местам по умолчанию
+        ...(okPoint(s?.listener) ? {} : { listener: defaultSetup(room, sources, constraints, name).listener }),
+        positions: Object.fromEntries(Object.entries(isObj(s?.positions) ? s.positions : {}).filter(([, v]) => okPoint(v))) as Setup['positions'],
+        subSettings: isObj(s?.subSettings) ? s.subSettings : {},
         crossoverHz: s?.crossoverHz ?? null,
         measurement: validMeasurement(s?.measurement) ? s.measurement : null,
         history: Array.isArray(s?.history) && s.history.some(validMeasurement) ? s.history.filter(validMeasurement).slice(0, HISTORY_MAX) : undefined,
@@ -131,7 +172,7 @@ export function normalizeProject(raw: any): Project {
     room,
     sources,
     constraints,
-    scanInfo: raw.scanInfo ?? null,
+    scanInfo: normalizeScanInfo(raw.scanInfo),
     result: raw.result ?? null,
     selectedIndex: typeof raw.selectedIndex === 'number' ? raw.selectedIndex : 0,
     current: (() => {
@@ -139,8 +180,11 @@ export function normalizeProject(raw: any): Project {
       // 022: признак «места выбраны»; у проектов до 022 — по тому, стоят ли места по умолчанию
       return { ...cur, placed: typeof raw.current?.placed === 'boolean' ? raw.current.placed : legacyPlaced(cur, room, sources, constraints) };
     })(),
-    setups: Array.isArray(raw.setups) ? raw.setups.map((s: any) => fixSetup(s, s?.name ?? 'Вариант')) : [],
+    // сохранённый вариант — всегда выбранные места (до 022 признака не было)
+    setups: Array.isArray(raw.setups) ? raw.setups.filter(isObj).map((s: any) => ({ ...fixSetup(s, s?.name ?? 'Вариант'), placed: true })) : [],
     ...(raw.voice ? { voice: normalizeVoice(raw.voice) } : {}),
+    // 026: точность расчёта; стандартная в файл не пишется — прежние проекты и файлы не меняются
+    ...(normalizePrecision(raw.precision) !== 'standard' ? { precision: normalizePrecision(raw.precision) } : {}),
     roomReady: typeof raw.roomReady === 'boolean' ? raw.roomReady : legacyRoomReady(room, raw),
   };
 }
@@ -165,6 +209,7 @@ function open(): Promise<IDBDatabase> {
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('Хранилище занято другой вкладкой приложения — закройте её.'));
   });
 }
 
@@ -191,19 +236,55 @@ export async function storageAvailable(): Promise<boolean> {
 
 export const saveProject = (p: Project) =>
   tx(STORE, 'readwrite', (s) => s.put(JSON.parse(JSON.stringify(p))));
-export const deleteProject = (id: string) =>
-  tx(STORE, 'readwrite', (s) => s.delete(id)).then(() => deleteScan(id).catch(() => undefined));
+/** keepScan — сохранённая копия открытого проекта: скан на устройстве ещё нужен самому проекту. */
+export const deleteProject = (id: string, keepScan = false) =>
+  tx(STORE, 'readwrite', (s) => s.delete(id)).then(() => (keepScan ? undefined : deleteScan(id).catch(() => undefined)));
+/** Сохранённые проекты проходят ту же нормализацию, что черновик и файл: проект старой версии открывается как при запуске. */
 export const listProjects = () =>
   tx<Project[]>(STORE, 'readonly', (s) => s.getAll() as IDBRequest<Project[]>).then((all) =>
-    all.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    all.map((p) => { try { return normalizeProject(p); } catch { return p; } }).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
   );
 
 /** Черновик текущего проекта — восстанавливается при следующем запуске. */
 export const saveDraft = (p: Project) => tx(META, 'readwrite', (s) => s.put(JSON.parse(JSON.stringify(p)), 'draft'));
+/**
+ * Несохранённый проект на момент ухода со страницы. Отложенное сохранение (300 мс после последнего изменения)
+ * могло не успеть, а запись в IndexedDB при закрытии страницы браузер не гарантирует; localStorage пишется
+ * синхронно. При запуске такая запись важнее сохранённого черновика.
+ */
+const PENDING_KEY = 'ra-draft-pending';
+export function stashPendingDraft(p: Project): void {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch { /* нет места или хранилища — остаётся отложенное сохранение */ }
+}
+export function clearPendingDraft(): void {
+  try { localStorage.removeItem(PENDING_KEY); } catch { /* нет хранилища */ }
+}
+function readPendingDraft(): Project | undefined {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    return raw ? (JSON.parse(raw) as Project) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export const loadDraft = () =>
-  tx<Project | undefined>(META, 'readonly', (s) => s.get('draft') as IDBRequest<Project | undefined>).then((d) =>
-    d ? normalizeProject(d) : undefined,
-  );
+  tx<Project | undefined>(META, 'readonly', (s) => s.get('draft') as IDBRequest<Project | undefined>).catch(() => undefined).then(async (stored) => {
+    const pending = readPendingDraft();
+    // запись появляется только когда на устройстве состояние старее, и удаляется, как только оно сохранено
+    if (pending) {
+      try { return normalizeProject(pending); } catch { /* повреждён — берём сохранённый */ }
+    }
+    const d = stored;
+    if (!d) return undefined;
+    try {
+      return normalizeProject(d);
+    } catch (e) {
+      // черновик не прошёл проверку: копия остаётся на устройстве (ключ draft-failed), а не затирается новым проектом
+      await tx(META, 'readwrite', (s) => s.put(d, 'draft-failed')).catch(() => undefined);
+      throw e;
+    }
+  });
 
 /** Имя файла проекта по названию (024: экспорт идёт через «Поделиться» → «Сохранить в Файлы» или скачивание). */
 export const projectFileName = (p: Project) => `${p.name.replace(/[\\/:*?"<>|]+/g, '_') || 'room'}${FILE_EXT}`;

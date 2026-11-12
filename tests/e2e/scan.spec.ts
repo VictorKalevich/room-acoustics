@@ -132,3 +132,52 @@ test('новый скан поверх прежнего сбрасывает к�
   await page.goto('/#room/furniture');
   await expect(beds).toHaveCount(0);
 });
+
+test('026: границы скана откатываются вместе с проектом — поправка после возврата к сохранённой версии начинается с его границ', async ({ page }) => {
+  await page.goto('/#room');
+  await scanToSteps(page, 'tests/fixtures/out/sample-room.obj');
+  await finishRoomSteps(page);
+  const openProjects = async () => {
+    await page.getByRole('button', { name: 'Открыть меню' }).click();
+    await page.locator('.drawer__item', { hasText: 'Проекты' }).click();
+  };
+  await openProjects();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page.getByText('Сохранено')).toBeVisible();
+  await page.evaluate(() => { location.hash = 'room'; });
+
+  // сдвигаем левую стену внутрь и применяем: комната стала уже
+  await page.getByRole('button', { name: 'Поправить границы комнаты' }).click();
+  const dims = page.locator('.layout-editor__dims');
+  await expect(dims).toHaveText('5,00 × 4,00 м', { timeout: 15_000 });
+  const handle = page.locator('.layout-editor__handle').nth(2);
+  await handle.scrollIntoViewIfNeeded();
+  const box = (await handle.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 50, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect(dims).not.toHaveText('5,00 × 4,00 м');
+  const narrowed = (await dims.textContent())!;
+  await page.getByRole('button', { name: 'Применить размеры' }).click();
+  await expect(page.locator('.layout-editor')).toHaveCount(0);
+  await expect(page.locator('.topbar__room')).not.toContainText('5,00 × 4,00 × 2,50');
+
+  // возврат к сохранённой версии: комната снова 5 × 4
+  await openProjects();
+  await page.locator('.project-list li').first().getByRole('button', { name: 'Открыть' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Вернуться', exact: true }).click();
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
+  const plan = page.locator('svg.plan:visible').first();
+  const before = await plan.innerHTML();
+
+  // поправка открывается с границами проекта (а не с более поздними, сохранёнными вместе со сканом);
+  // «Применить» без изменений ничего не сдвигает
+  await page.getByRole('button', { name: 'Поправить границы комнаты' }).click();
+  await expect(dims).toHaveText('5,00 × 4,00 м', { timeout: 15_000 });
+  expect(narrowed).not.toBe('5,00 × 4,00 м');
+  await page.getByRole('button', { name: 'Применить размеры' }).click();
+  await expect(page.locator('.layout-editor')).toHaveCount(0);
+  await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
+  expect(await plan.innerHTML()).toBe(before);
+});

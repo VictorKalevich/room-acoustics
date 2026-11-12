@@ -18,8 +18,9 @@ import { NumberField, Panel, Segmented, Note, Details } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
-import { isFlat, objectivePpo } from '../../core/objective';
+import { isFlat } from '../../core/objective';
 import { useViewState } from '../useViewState';
+import { evalPpo, gridPpo } from '../../core/precision';
 
 interface Props {
   project: Project;
@@ -32,7 +33,10 @@ interface Props {
 type Mode = 'listener' | 'sub';
 
 export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
-  const { room, sources, constraints: c, current } = project;
+  const { room, sources, constraints: c, current, precision } = project;
+  // 026: текущая расстановка, проба и сравнение — на сетке графика; карта — на сетке поиска
+  const ppo = evalPpo(precision);
+  const mapPpo = gridPpo(precision, c.objective);
   const layers = usePlanLayers();
   const flatGoal = isFlat(c.objective);
   const subs = sources.filter((s) => s.kind === 'sub');
@@ -40,20 +44,23 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
   const [subId, setSubId] = useViewState(project.id, 'manual.sub', subs[0]?.id ?? '');
   const [symmetric, setSymmetric] = useViewState(project.id, 'manual.symmetric', true);
   const [selected, setSelected] = useViewState<string | null>(project.id, 'manual.selected', null);
-  const [heat, setHeat] = useState<Heatmap | null>(null);
+  const [heatRaw, setHeat] = useState<Heatmap | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [probe, setProbe] = useState<{ x: number; y: number } | null>(null);
   const [compareId, setCompareId] = useViewState<string | null>(project.id, 'manual.compare', null);
   const [layer, setLayer] = useViewState<'flat' | 'robust'>(project.id, 'manual.layer', 'flat');
-  const robustHeat = useMemo(() => (heat ? robustnessMap(heat, heat.kind === 'listener' ? ROBUST_LISTENER_SHIFT : ROBUST_SOURCE_SHIFT) : null), [heat]);
   const [name, setName] = useViewState(project.id, 'manual.name', '');
   const job = useRef<ComputeJob<Heatmap> | null>(null);
 
   const effMode: Mode = mode === 'sub' && subs.length ? 'sub' : 'listener';
   const effSub = subs.some((s) => s.id === subId) ? subId : subs[0]?.id ?? '';
+  // карта другого режима (место слушателя ↔ место сабвуфера, другой сабвуфер) не годится для нового: пока считается
+  // новая, прежние «лучшие места» и окраска не показываются — иначе «Поставить сюда» ставило сабвуфер в место кресла
+  const heat = heatRaw && heatRaw.kind === effMode && (effMode !== 'sub' || heatRaw.subId === effSub) ? heatRaw : null;
+  const robustHeat = useMemo(() => (heat ? robustnessMap(heat, heat.kind === 'listener' ? ROBUST_LISTENER_SHIFT : ROBUST_SOURCE_SHIFT) : null), [heat]);
 
-  const { ev: evalCurMaybe, busy: evalBusy } = useSetupEval(room, sources, c, current);
+  const { ev: evalCurMaybe, busy: evalBusy, error: evalError } = useSetupEval(room, sources, c, current, ppo);
   const wave = isWave(room);
 
   // Пересчёт карты с задержкой (во время перетаскивания не дёргаем воркер)
@@ -62,7 +69,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
       job.current?.cancel();
       setBusy(true);
       setError(null);
-      const j = compute<Heatmap>(effMode === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup: current, subId: effSub });
+      const j = compute<Heatmap>(effMode === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup: current, subId: effSub, ppo: mapPpo });
       job.current = j;
       j.promise
         .then((h) => { if (job.current === j) { setHeat(h); setBusy(false); } })
@@ -71,7 +78,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
     return () => clearTimeout(t);
     // только то, что меняет карту (переименование варианта пересчёта не требует)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room, sources, c, current.positions, current.listener, current.subSettings, current.crossoverHz, effMode, effSub]);
+  }, [room, sources, c, current.positions, current.listener, current.subSettings, current.crossoverHz, effMode, effSub, mapPpo]);
   useEffect(() => () => job.current?.cancel(), []);
   useEffect(() => setProbe(null), [effMode, effSub]);
 
@@ -96,10 +103,16 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
       ? { ...current, positions: { ...current.positions, [effSub]: { x: probe.x, y: probe.y, z: current.positions[effSub]?.z ?? 0.3 } } }
       : { ...current, listener: { x: probe.x, y: probe.y, z: c.earHeight } };
   }, [probe, current, effMode, effSub, c.earHeight]);
-  const { ev: probeEval } = useSetupEval(room, sources, c, probeSetup);
+  const { ev: probeEval } = useSetupEval(room, sources, c, probeSetup, ppo);
 
   const compareSetup = project.setups.find((s) => s.id === compareId) ?? null;
-  const { ev: compareEval } = useSetupEval(room, sources, c, compareSetup);
+  // оценки сохранённых вариантов — на той же сетке, что и текущая расстановка (раньше — на сетке поиска: у той же
+  // расстановки в списке было другое число), и не пересчитываются при каждой перерисовке
+  const variantScores = useMemo(
+    () => (isWave(room) ? null : Object.fromEntries(project.setups.map((s) => [s.id, evaluateSetup(room, sources, c, s, { ppo }).objScore]))),
+    [room, sources, c, project.setups, ppo],
+  );
+  const { ev: compareEval } = useSetupEval(room, sources, c, compareSetup, ppo);
 
   const items: PlanItem[] = [
     ...sources.filter((s) => current.positions[s.id]).map((s) => ({
@@ -245,6 +258,8 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
             </div>
             {evalCur.penalties.length > 0 && <ul class="plain-list small">{evalCur.penalties.map((p, ki) => <li key={ki}>{p.name}</li>)}</ul>}
           </>
+        ) : evalError ? (
+          <Note tone="warn">{evalError}</Note>
         ) : (
           <p class="progress-text small">{evalBusy && <span class="spinner" aria-hidden="true" />} {S.model.computing}</p>
         )}
@@ -255,6 +270,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
           <div class="grid-2">
             <NumberField
               id="sel-x"
+              key={`x-${selItem.id}`}
               label={S.manual.x}
               value={selItem.pos.x}
               unit="м"
@@ -264,6 +280,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
             />
             <NumberField
               id="sel-y"
+              key={`y-${selItem.id}`}
               label={S.manual.y}
               value={selItem.pos.y}
               unit="м"
@@ -293,7 +310,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
               <VariantRow
                 key={s.id}
                 setup={s}
-                score={wave ? null : evaluateSetup(room, sources, c, s, { ppo: objectivePpo(c.objective, 12) }).objScore}
+                score={variantScores ? variantScores[s.id] ?? null : null}
                 comparing={compareId === s.id}
                 onLoad={() => onSetup({ ...JSON.parse(JSON.stringify(s)), id: current.id, name: current.name })}
                 onCompare={() => setCompareId(compareId === s.id ? null : s.id)}
@@ -315,6 +332,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
           взаимность: отклик «сабвуфер → слушатель» равен отклику «слушатель → сабвуфер», поэтому карта — это цифровой аналог
           «ползания с сабвуфером». Блёклые клетки — места вне выбранной зоны сабвуфера.
         </p>
+        <p class="small">{S.precision.mapNote}</p>
       </Details>
     </div>
   );

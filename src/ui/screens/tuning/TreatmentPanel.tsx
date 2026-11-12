@@ -1,4 +1,5 @@
 // Акустическая обработка: точки первых отражений, план ловушек и «что если».
+import { evalPpo } from '../../../core/precision';
 import { useMemo, useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
 import type { Mode, Room, Treatment } from '../../../core/types';
@@ -25,7 +26,7 @@ export function TreatmentPanel({ project, modes, onRoom }: { project: Project; m
   const { room, sources, constraints: c, current } = project;
   const spk = sources.filter((s) => s.kind === 'speaker' && current.positions[s.id]).map((s) => ({ id: s.id, pos: current.positions[s.id] }));
   const refl = reflectionPoints(room, spk, current.listener);
-  const { ev } = useSetupEval(room, sources, c, current, 48);
+  const { ev } = useSetupEval(room, sources, c, current, evalPpo(project.precision, 48));
   const advice = ev ? bassAdvice(ev.response, modes) : [];
   const wallMarks: WallMark[] = refl.filter((r) => r.surface !== 'ceiling').map((r) => ({
     surface: r.surface as WallMark['surface'],
@@ -98,8 +99,8 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
   const dBare = useMemo(() => modeDecays(bare, modes, computeReverb(bare), 150), [bare, modes]);
   const dWith = useMemo(() => modeDecays(withT, modes, computeReverb(withT), 150), [withT, modes]);
   // без элементов обработки оба варианта совпадают: считаем один
-  const { ev: evBare } = useSetupEval(bare, sources, c, current);
-  const { ev: evWith } = useSetupEval(withT, sources, c, list.length ? current : null);
+  const { ev: evBare } = useSetupEval(bare, sources, c, current, evalPpo(project.precision));
+  const { ev: evWith } = useSetupEval(withT, sources, c, list.length ? current : null, evalPpo(project.precision));
   const evNow = room.treatmentsOn && list.length ? evWith : evBare;
   const [askClear, setAskClear] = useState(false);
   const scoreBlock = (

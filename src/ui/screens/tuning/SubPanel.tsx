@@ -1,4 +1,5 @@
 // Сабвуфер: задержка, фаза, частота раздела; свои фильтры PEQ и all-pass.
+import { evalPpo } from '../../../core/precision';
 import { useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
 import type { Setup, SubSetting } from '../../../core/types';
@@ -27,7 +28,7 @@ export function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: 
     setBusy(true);
     setError(null);
     setApplied(false);
-    compute<IntegrationResult>('integrate', { room, sources, constraints: c, setup: current }).promise
+    compute<IntegrationResult>('integrate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) }).promise
       .then((r) => { setRes(r); setBusy(false); })
       .catch((e) => { setError(e.message); setBusy(false); });
   };
@@ -90,7 +91,7 @@ export function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: 
               const hadFilters = Object.values(current.subSettings).some((v) => (v.peq?.length ?? 0) + (v.allpass?.length ?? 0) > 0);
               onSetup({ ...current, subSettings: res.settings, crossoverHz: res.crossoverHz });
               setApplied(true);
-              setFiltersReset(hadFilters);
+              setFiltersReset(hadFilters && !Object.values(res.settings).some((v) => (v.peq?.length ?? 0) + (v.allpass?.length ?? 0) > 0));
             }}
           >
             {applied ? S.tuning.applied : S.tuning.apply}
@@ -121,6 +122,9 @@ export function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: 
         {xoAdj && (
           <NumberField id="xo" label={S.tuning.xo} unit="Гц" value={current.crossoverHz ?? Math.max(...sources.filter((s) => s.kind === 'sub').map((s) => s.fHigh))} min={c.crossover.min} max={c.crossover.max} digits={0} onChange={(x) => onSetup({ ...current, crossoverHz: x })} />
         )}
+        {xoAdj && current.crossoverHz != null && (current.crossoverHz < (c.crossover.spkLimit ?? -Infinity) || current.crossoverHz > (c.crossover.subLimit ?? Infinity)) && (
+          <Note tone="warn">{S.sub.xoOutside(c.crossover.spkLimit != null ? fmt(c.crossover.spkLimit, 0) : '…', c.crossover.subLimit != null ? fmt(c.crossover.subLimit, 0) : '…')}</Note>
+        )}
       </Details>
       <Details summary={S.subf.title}>
         <SubFiltersBlock project={project} onSetup={onSetup} />
@@ -141,7 +145,7 @@ function SubFiltersBlock({ project, onSetup }: { project: Project; onSetup: (s: 
   const run = () => {
     setBusy(true);
     setApplied(false);
-    compute<SubFilterResult>('subFilters', { room, sources, constraints: c, setup: current })
+    compute<SubFilterResult>('subFilters', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) })
       .promise.then((r) => { setRes(r); setBusy(false); })
       .catch(() => setBusy(false));
   };
@@ -201,7 +205,13 @@ function SubFiltersBlock({ project, onSetup }: { project: Project; onSetup: (s: 
             ]}
           />
           {res.notes.map((t, ki) => <Note key={ki}>{t}</Note>)}
-          <button type="button" class="btn" disabled={applied} onClick={() => { onSetup({ ...current, subSettings: res.settings }); setApplied(true); }}>
+          <button type="button" class="btn" disabled={applied} onClick={() => {
+            // только фильтры: задержка, фаза и уровень могли измениться после подбора фильтров
+            const merged = { ...current.subSettings };
+            for (const [id, v] of Object.entries(res.settings)) merged[id] = { ...(merged[id] ?? { delayMs: v.delayMs, phaseDeg: v.phaseDeg, gainDb: v.gainDb }), peq: v.peq, allpass: v.allpass };
+            onSetup({ ...current, subSettings: merged });
+            setApplied(true);
+          }}>
             {applied ? S.tuning.applied : S.tuning.apply}
           </button>
           <h4 class="subhead">{S.tuning.eqExport}</h4>

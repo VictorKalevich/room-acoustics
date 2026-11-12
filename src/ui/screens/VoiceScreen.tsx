@@ -15,17 +15,21 @@ import { HeatLegend, PlanView, type PlanMark, type WallMark } from '../component
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { S } from '../strings';
 import { fmt } from '../format';
+import { PrecisionPicker } from '../components/PrecisionPicker';
+import { PRECISION, normalizePrecision, type Precision } from '../../core/precision';
 
 interface Props {
   project: Project;
   onVoice: (v: VoiceSettings) => void;
+  onPrecision: (p: Precision) => void;
 }
 
 const STEP = (2 * Math.PI) / FACINGS;
 const wrap = (a: number) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
 
-export function VoiceScreen({ project, onVoice }: Props) {
+export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
   const room = project.room;
+  const precision = normalizePrecision(project.precision);
   const v = project.voice ?? VOICE_DEFAULTS;
   const set = (patch: Partial<VoiceSettings>) => onVoice({ ...v, ...patch });
   const t = S.voice;
@@ -43,8 +47,8 @@ export function VoiceScreen({ project, onVoice }: Props) {
   const bandOk = v.fHi >= 2 * v.fLo;
 
   // карта — в воркере, с небольшой задержкой, пока меняют поля
-  const [mapResult, setMapResult] = useState<{ room: typeof room; settings: VoiceSettings; data: VoiceMap } | null>(null);
-  const map = mapResult?.room === room && mapResult.settings === calc && mapResult.data.goal === goal && bandOk ? mapResult.data : null;
+  const [mapResult, setMapResult] = useState<{ room: typeof room; settings: VoiceSettings; precision: Precision; data: VoiceMap } | null>(null);
+  const map = mapResult?.room === room && mapResult.settings === calc && mapResult.precision === precision && mapResult.data.goal === goal && bandOk ? mapResult.data : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const job = useRef<ComputeJob<VoiceMap> | null>(null);
@@ -56,12 +60,12 @@ export function VoiceScreen({ project, onVoice }: Props) {
     if (!bandOk) { setBusy(false); return; }
     setBusy(true);
     const tm = setTimeout(() => {
-      const j = compute<VoiceMap>('voiceMap', { room, settings: calc, goal });
+      const j = compute<VoiceMap>('voiceMap', { room, settings: calc, goal, precision });
       job.current = j;
-      j.promise.then((m) => { if (job.current === j) { setMapResult({ room, settings: calc, data: m }); setBusy(false); } }).catch((e) => { if (job.current === j) { setError((e as Error).message); setBusy(false); } });
+      j.promise.then((m) => { if (job.current === j) { setMapResult({ room, settings: calc, precision, data: m }); setBusy(false); } }).catch((e) => { if (job.current === j) { setError((e as Error).message); setBusy(false); } });
     }, 250);
     return () => { clearTimeout(tm); job.current?.cancel(); job.current = null; };
-  }, [room, calc, bandOk, goal]);
+  }, [room, calc, bandOk, goal, precision]);
   useEffect(() => () => job.current?.cancel(), []);
 
   const ctx = useMemo(() => (bandOk ? voiceContext(room, calc) : null), [room, calc, bandOk]);
@@ -71,9 +75,15 @@ export function VoiceScreen({ project, onVoice }: Props) {
     if (!spot && map && map.best[0]) set({ spot: { x: map.best[0].x, y: map.best[0].y, facing: map.best[0].facing } });
   }, [spot, map]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ev = useMemo(() => (ctx && spot ? evaluateVoice(ctx, spot) : null), [ctx, spot?.x, spot?.y, spot?.facing]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 026: карта и сравнение направлений — всегда на полосах 1/6 октавы (ctx); подробная АЧХ и оценка выбранного
+  // места — на полосах точности расчёта (fineCtx). При стандартной точности это один и тот же расчёт.
+  const bandsPerOctave = PRECISION[precision].voiceBands;
+  const fineCtx = useMemo(() => (!ctx || bandsPerOctave === 6 ? ctx : voiceContext(room, calc, bandsPerOctave)), [ctx, room, calc, bandsPerOctave]);
+  const evMap = useMemo(() => (ctx && spot ? evaluateVoice(ctx, spot) : null), [ctx, spot?.x, spot?.y, spot?.facing]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ev = useMemo(() => (fineCtx === ctx ? evMap : fineCtx && spot ? evaluateVoice(fineCtx, spot) : null), [fineCtx, ctx, evMap, spot?.x, spot?.y, spot?.facing]); // eslint-disable-line react-hooks/exhaustive-deps
   const dirs = useMemo(() => (ctx && spot ? facingScores(ctx, spot.x, spot.y, goal) : null), [ctx, spot?.x, spot?.y, goal]); // eslint-disable-line react-hooks/exhaustive-deps
-  const selectedScore = ev ? roomGoal ? ev.roomDb : ev.score : null;
+  // сравнение с картой и с другими направлениями — по тому же расчёту, что и они
+  const selectedScore = evMap ? roomGoal ? evMap.roomDb : evMap.score : null;
   const bestDir = useMemo(() => {
     if (!dirs) return null;
     let i = -1;
@@ -149,6 +159,7 @@ export function VoiceScreen({ project, onVoice }: Props) {
         {(v.fLo !== VOICE_BAND[0] || v.fHi !== VOICE_BAND[1]) && (
           <button type="button" class="btn btn--small btn--ghost" onClick={() => set({ fLo: VOICE_BAND[0], fHi: VOICE_BAND[1] })}>{t.bandReset}</button>
         )}
+        <PrecisionPicker value={project.precision} onChange={onPrecision} where="voice" />
       </Panel>
 
       <Panel title={t.mapTitle}>
@@ -254,7 +265,7 @@ export function VoiceScreen({ project, onVoice }: Props) {
           <>
             <h3 class="subhead">{t.response}</h3>
             <SmoothedResponseChart screen="voice" fLo={v.fLo} fHi={v.fHi} yRange={[-6, 6]} yTicks={[-5, 0, 5]} lines={[{ f: ev.f, db: ev.db, cls: 'is-room' }]} />
-            <p class="muted small">{t.responseHint(fmt(v.fLo, 0), fmt(v.fHi, 0))}</p>
+            <p class="muted small">{t.responseHint(fmt(v.fLo, 0), fmt(v.fHi, 0), `1/${bandsPerOctave}`)}</p>
           </>
         )}
       </Panel>

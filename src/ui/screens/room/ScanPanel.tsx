@@ -70,6 +70,11 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
   const [missing, setMissing] = useState(false);
   /** Выбор, применённый к комнате сейчас: от его границ считается сдвиг при поправке. */
   const applied = useRef<{ choice: ScanChoice; units: Units } | null>(null);
+  const relaySeq = useRef(0);
+  const [relaying, setRelaying] = useState(false);
+  // экран мог смениться (другой проект), пока файл разбирался: результат к новому проекту не применяем
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const found = useMemo(() => (layout ? foundWallItems(layout) : []), [layout]);
   const furn = useMemo(() => layout?.furniture ?? [], [layout]);
   const input = useRef<HTMLInputElement>(null);
@@ -130,20 +135,30 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
   };
 
   /** Повторный поиск проёмов и коридора для выбранного прямоугольника (контур скана сохраняется). */
-  const relayout = async (rc: Rect) => {
-    if (!loaded || !det || !layout) return;
-    const t = det.transform.slice();
+  const relayout = async (rc: Rect, from: { loaded: Loaded | null; det: DetectResult | null; layout: LayoutResult | null } = { loaded, det, layout }) => {
+    const { loaded: scan, det: found0, layout: base } = from;
+    if (!scan || !found0 || !base) return;
+    const t = found0.transform.slice();
     t[12] -= rc.x0;
     t[13] -= rc.y0;
+    // пока идёт поиск для новых границ, «Применить» закрыто: иначе новые границы применились бы с проёмами прежних;
+    // ответ на устаревший запрос (границы уже другие, «Сбросить») отбрасывается
+    const seq = ++relaySeq.current;
+    setRelaying(true);
     try {
-      const r = await runWorker<{ layout: LayoutResult }>({ type: 'layout', labels: loaded.labels, transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: det.height } }, loaded.triangles);
-      const next = { ...layout, openings: r.layout.openings, windows: r.layout.windows, furniture: r.layout.furniture, extension: r.layout.extension };
+      const r = await runWorker<{ layout: LayoutResult }>({ type: 'layout', labels: scan.labels, transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: found0.height } }, scan.triangles);
+      if (seq !== relaySeq.current) return;
+      const next = { ...base, openings: r.layout.openings, windows: r.layout.windows, furniture: r.layout.furniture, extension: r.layout.extension };
       setLayout(next);
       defaultsFor(next);
-    } catch { /* оставляем прежние */ }
+    } catch { /* оставляем прежние */ } finally {
+      if (seq === relaySeq.current) setRelaying(false);
+    }
   };
   const resetToInitial = () => {
     if (!initial) return;
+    relaySeq.current++;
+    setRelaying(false);
     setRect(initial.rect);
     setLayout(initial.layout);
     defaultsFor(initial.layout);
@@ -173,7 +188,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
     const room = scanRoom(reset?.room ?? project.room, c, 'first', NAMES);
     onRoom(room, {
       ...reset,
-      scanInfo: { ...summaryOf(d, l), rotation: 0 },
+      scanInfo: { ...summaryOf(d, l), rotation: 0, applied: { rect: c.rect, units: d.units } },
       constraints: { ...(reset?.constraints ?? project.constraints), ...zoneFor(room) },
       // 022: комната ещё не создана — её проверяют по тем же шагам, что и при ручном вводе, и сохраняют
       roomReady: false,
@@ -186,14 +201,19 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
 
   /** Поправка границ того же скана: найденное пересоздаётся, ручное остаётся на своих местах. */
   const applyFix = (l: Loaded, d: DetectResult, init: { layout: LayoutResult; rect: Rect }, c: ScanChoice, u: Units | 'auto') => {
-    const prev = applied.current && applied.current.units === d.units ? applied.current.choice.rect : c.rect;
+    // от каких границ считать сдвиг: от тех, по которым построена комната проекта (026 — хранятся в проекте и
+    // откатываются вместе с ним); у проектов до 026 — от сохранённых вместе со сканом
+    const known = project.scanInfo?.applied ?? (applied.current ? { rect: applied.current.choice.rect, units: applied.current.units } : null);
+    const prev = known && known.units === d.units ? known.rect : c.rect;
     const fixed = fixScan(project, c, prev, project.scanInfo?.rotation ?? 0, NAMES);
     onRoom(fixed.room, {
       current: fixed.current,
       setups: fixed.setups,
-      scanInfo: { ...summaryOf(d, l), rotation: project.scanInfo?.rotation ?? 0 },
+      scanInfo: { ...summaryOf(d, l), rotation: project.scanInfo?.rotation ?? 0, applied: { rect: c.rect, units: d.units } },
       constraints: { ...project.constraints, ...zoneFor(fixed.room) },
     });
+    // черновик конструктора снят с прежних границ — с новыми он вернул бы старую комнату
+    dropRoomDraft(project.id);
     applied.current = { choice: c, units: d.units };
     persist(l, d, init, c, u);
     // поправка во время проверки по шагам — назад к шагам
@@ -225,6 +245,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
       setLoaded(l);
       setState({ phase: 'detecting', fileName: file.name });
       const r = await detectAll(l, 'auto');
+      if (!alive.current) return;
       setState({ phase: 'done', fileName: file.name });
       if (scanProblem(r.det)) {
         // явно неверное распознавание: комнату не трогаем, сразу открываем поправку
@@ -257,12 +278,26 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
     }
   };
 
+  /**
+   * Проект мог вернуться к версии с другими границами (сохранённая копия, файл): поправка открывается с границами,
+   * по которым построена комната проекта, а проёмы и мебель для них ищутся заново.
+   */
+  const showProjectRect = (c: ScanChoice, from: { loaded: Loaded; det: DetectResult; layout: LayoutResult }) => {
+    const pr = project.scanInfo?.applied;
+    if (!pr || pr.units !== from.det.units) return;
+    const same = (['x0', 'x1', 'y0', 'y1'] as const).every((k) => Math.abs(pr.rect[k] - c.rect[k]) < 1e-6);
+    if (same) return;
+    setRect(pr.rect);
+    void relayout(pr.rect, from);
+  };
+
   /** «Поправить границы комнаты»: скан из памяти (этот сеанс) или из хранилища устройства. */
   const openEditor = async () => {
     setMissing(false);
     setJustApplied(false);
     if (loaded && det && initial && applied.current) {
       showChoice(applied.current.choice);
+      showProjectRect(applied.current.choice, { loaded, det, layout: applied.current.choice.layout });
       setEditing(true);
       return;
     }
@@ -281,6 +316,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
       setInitial(stored.initial);
       applied.current = { choice: stored.applied, units: stored.det.units };
       showChoice(stored.applied);
+      showProjectRect(stored.applied, { loaded: { preview: null, triangles: stored.triangles, labels: stored.labels, format: stored.format, count: stored.count, decimated: stored.decimated, dropped: stored.dropped, thinned: stored.thinned, fileName: stored.fileName }, det: stored.det, layout: stored.applied.layout });
       setEditing(true);
     } catch (e) {
       setState({ phase: 'error', message: (e as Error).message || S.errors.generic });
@@ -502,7 +538,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
           {!problem && <Note>{S.scan.recreateNote}</Note>}
           {rectProblem && <Note tone="warn">{S.scan.rectProblem}</Note>}
           <div class="btn-row">
-            <button type="button" class="btn btn--primary" onClick={apply} disabled={!!rectProblem || busy}>{S.room.apply}</button>
+            <button type="button" class="btn btn--primary" onClick={apply} disabled={!!rectProblem || busy || relaying}>{S.room.apply}</button>
             <button type="button" class="btn" onClick={cancel}>{S.scan.cancel}</button>
           </div>
         </div>

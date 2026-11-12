@@ -1,4 +1,5 @@
 // Отчёт: всё по комнате на одной странице. «Сохранить PDF» — системная печать (на iPhone — «Поделиться → Сохранить в Файлы»).
+import { evalPpo } from '../../core/precision';
 import { useMemo, useRef, useState } from 'preact/hooks';
 import { shownTreatments } from '../../core/treatments';
 import { shareFile } from '../audio/mic';
@@ -26,7 +27,7 @@ interface Props {
 export function ReportScreen({ project, modes, reverb, onPlacement }: Props) {
   const { room, sources, constraints: c, current } = project;
   const placed = !!current.placed;
-  const { ev, busy } = useSetupEval(room, sources, c, current, 48);
+  const { ev, busy } = useSetupEval(room, sources, c, current, evalPpo(project.precision, 48));
   const o = useMemo(() => buildOverview(room, sources, current, ev, modes, reverb), [room, sources, current, ev, modes, reverb]);
   const eq = useMemo(() => (ev ? designEq(ev.response.f, ev.response.db, ev.response.target) : null), [ev]);
   const items: PlanItem[] = [

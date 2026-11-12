@@ -84,13 +84,15 @@ export function settingNotes(room: Room, subs: SourceSpec[], spks: SourceSpec[],
   return out;
 }
 
-export function optimizeSubs(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike): IntegrationResult {
+/** ppo — сетка частот поиска и оценок «до/после», точек на октаву (026: точность расчёта; по умолчанию 24). */
+export function optimizeSubs(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, precision: { ppo?: number } = {}): IntegrationResult {
+  const ppo = Math.max(24, precision.ppo ?? 24);
   const t0 = Date.now();
   const ctx = makeCtx(room, sources);
   const subs = sources.filter((s) => s.kind === 'sub' && setup.positions[s.id]);
   const spks = sources.filter((s) => s.kind === 'speaker' && setup.positions[s.id]);
   const notes: string[] = [];
-  const beforeEval = evaluateSetup(room, sources, c, setup, { ctx });
+  const beforeEval = evaluateSetup(room, sources, c, setup, { ctx, ppo });
 
   const zero: SubSetting = { delayMs: 0, phaseDeg: 0, gainDb: 0 };
   if (!subs.length) {
@@ -105,7 +107,7 @@ export function optimizeSubs(room: Room, sources: SourceSpec[], c: Constraints, 
   }
 
   // 24 точки на октаву: модальные пики узкие, на более редкой сетке оценка неустойчива
-  const freqs = logFreqs(ctx.fLo, ctx.fHi, 24);
+  const freqs = logFreqs(ctx.fLo, ctx.fHi, ppo);
   const n = freqs.length;
   const { pts, weights } = receiverSet(room, c, setup.listener);
   const nR = pts.length;
@@ -114,7 +116,22 @@ export function optimizeSubs(room: Room, sources: SourceSpec[], c: Constraints, 
   const opts = subs.map(optionsFor);
 
   const xoAdjustable = c.crossover?.adjustable && spks.length > 0;
-  const xos: (number | null)[] = xoAdjustable ? steps(c.crossover.min, c.crossover.max, 10) : [setup.crossoverHz ?? null];
+  let xos: (number | null)[] = xoAdjustable ? steps(c.crossover.min, c.crossover.max, 10) : [setup.crossoverHz ?? null];
+  if (xoAdjustable) {
+    // пределы самой техники, если указаны: раздел не ниже того, что отыграют колонки, и не выше того, что отыграет сабвуфер
+    const lo = c.crossover.spkLimit ?? -Infinity, hi = c.crossover.subLimit ?? Infinity;
+    const fit = xos.filter((x) => x != null && x >= lo - 1e-9 && x <= hi + 1e-9);
+    if (fit.length < xos.length) {
+      if (fit.length) {
+        xos = fit;
+        notes.push(`Частота раздела подбиралась в пределах техники: ${fit[0]}–${fit[fit.length - 1]} Гц.`);
+      } else {
+        // пределы не оставляют ни одной частоты из диапазона регулировки — раздел не трогаем
+        xos = [setup.crossoverHz ?? null];
+        notes.push('Пределы техники не оставляют ни одной частоты раздела в диапазоне регулировки — частота раздела не подбиралась. Проверьте пределы в «Расстановка → Регулировки сабвуфера».');
+      }
+    }
+  }
 
   const dev = new Float64Array(n);
   const re = new Float64Array(n);
@@ -214,8 +231,8 @@ export function optimizeSubs(room: Room, sources: SourceSpec[], c: Constraints, 
     const b = best.settings[k];
     settings[s.id] = { delayMs: Math.round(b.delayMs * 10) / 10, phaseDeg: Math.round(b.phaseDeg) % 360, gainDb: Math.round(b.gainDb * 2) / 2 };
   });
-  const crossoverHz = xoAdjustable ? best.xo : setup.crossoverHz ?? null;
-  let afterEval = evaluateSetup(room, sources, c, { ...setup, subSettings: settings, crossoverHz }, { ctx });
+  const crossoverHz = best.xo ?? setup.crossoverHz ?? null;
+  let afterEval = evaluateSetup(room, sources, c, { ...setup, subSettings: settings, crossoverHz }, { ctx, ppo });
   // Не ухудшаем: если текущие настройки лучше (поиск идёт на более грубой сетке частот) — оставляем их
   let finalSettings = settings;
   let finalXo = crossoverHz;

@@ -4,6 +4,7 @@ import { logFreqs, db20 } from './frequency';
 import { receiverKernel, applyKernel, modeShapes, type Kernel } from './response';
 import { flatnessScore, ROBUST_LISTENER_SHIFT, ROBUST_SOURCE_SHIFT } from './metric';
 import { makeScorer, objectivePpo } from './objective';
+import { evalPpo, gridPpo, type Precision } from './precision';
 import {
   MIN_LISTEN_DIST, clampToRoom, evaluateSetup, filterSet, makeCtx, objectiveSys, receiverSet, seatAllowed, sourceAllowed,
   speakerPenalties, sumPenalties, type EvalCtx, type Spectrum,
@@ -16,6 +17,8 @@ export interface PlacementInput {
   room: Room;
   sources: SourceSpec[];
   constraints: Constraints;
+  /** Точность расчёта (026): сетка частот поиска и итоговой оценки. Нет — стандартная. */
+  precision?: Precision;
 }
 
 const EPS = 1e-9;
@@ -126,8 +129,8 @@ export function baselinePositions(room: Room, sources: SourceSpec[], c: Constrai
   return { listener: { x: listenerX, y: room.width / 2, z: c.earHeight }, positions };
 }
 
-function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listener: Vec3, positions: Record<string, Vec3>, subSettings: Record<string, SubSetting> = {}): Placement {
-  const e = evaluateSetup(ctx.room, sources, c, { listener, positions, subSettings, crossoverHz: null }, { ctx });
+function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listener: Vec3, positions: Record<string, Vec3>, subSettings: Record<string, SubSetting> = {}, ppo = 24): Placement {
+  const e = evaluateSetup(ctx.room, sources, c, { listener, positions, subSettings, crossoverHz: null }, { ctx, ppo });
   const single = (c.seats?.count ?? 1) <= 1;
   const others = e.perReceiver.slice(1);
   return {
@@ -137,7 +140,8 @@ function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listen
     score: e.score,
     objScore: e.objScore,
     scoreCenter: e.perReceiver[0],
-    scoreSeats: single ? (others[0] + others[1]) / 2 : e.perReceiver.reduce((a, b) => a + b, 0) / e.perReceiver.length,
+    // волновая модель при одном месте считает только центр — соседних точек нет
+    scoreSeats: single ? (others.length >= 2 ? (others[0] + others[1]) / 2 : e.perReceiver[0]) : e.perReceiver.reduce((a, b) => a + b, 0) / e.perReceiver.length,
     penalties: e.penalties,
     angleDeg: e.angleDeg,
     response: e.response,
@@ -145,15 +149,15 @@ function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listen
 }
 
 /** Базовый вариант: сабвуфер в переднем углу, колонки на ¼ ширины, слушатель на 38 % глубины. */
-export function baselinePlacement(room: Room, sources: SourceSpec[], c: Constraints): Placement {
+export function baselinePlacement(room: Room, sources: SourceSpec[], c: Constraints, ppo = 24): Placement {
   const ctx = makeCtx(room, sources);
   const b = baselinePositions(room, sources, c);
-  return toPlacement(ctx, sources, c, b.listener, b.positions);
+  return toPlacement(ctx, sources, c, b.listener, b.positions, {}, ppo);
 }
 
 /** Оценка произвольного варианта (например, расстановки пользователя) без регулировок. */
-export function evaluatePlacement(room: Room, sources: SourceSpec[], c: Constraints, listener: Vec3, positions: Record<string, Vec3>): Placement {
-  return toPlacement(makeCtx(room, sources), sources, c, listener, positions);
+export function evaluatePlacement(room: Room, sources: SourceSpec[], c: Constraints, listener: Vec3, positions: Record<string, Vec3>, ppo = 24): Placement {
+  return toPlacement(makeCtx(room, sources), sources, c, listener, positions, {}, ppo);
 }
 
 // ---------- Поиск ----------
@@ -175,6 +179,8 @@ const SPK_POOL = 8;
 export interface SearchTuning {
   spkPool?: number;
   ppo?: number;
+  /** Сетка итоговой оценки вариантов (и их графиков), точек на октаву. */
+  finalPpo?: number;
 }
 
 export function optimizePlacement(input: PlacementInput, onProgress?: (p: number) => void, tuning: SearchTuning = {}): PlacementResult {
@@ -186,7 +192,12 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   const wave = isWave(room);
   // волновая модель: поиск на более грубой сетке (≤ 180 Гц), итог — на полной
   const searchFMax = 180;
-  const freqs = logFreqs(ctx.fLo, wave ? Math.min(ctx.fHi, searchFMax / 1.08) : ctx.fHi, tuning.ppo ?? objectivePpo(c.objective, 12));
+  if (wave && ctx.fLo >= searchFMax / 1.08 / 1.2) {
+    throw new PlacementError('Источники играют только выше 140 Гц — в комнате со смежными помещениями или скосом автоподбор по басу для них не работает. Расставьте вручную.');
+  }
+  const freqs = logFreqs(ctx.fLo, wave ? Math.min(ctx.fHi, searchFMax / 1.08) : ctx.fHi, tuning.ppo ?? gridPpo(input.precision, c.objective));
+  // итоговые варианты оцениваются и упорядочиваются на сетке графика: на сетке поиска порядок близких вариантов бывает неверным
+  const finalPpo = tuning.finalPpo ?? evalPpo(input.precision);
   const nF = freqs.length;
   const { filt, target } = filterSet(sources, freqs);
   // оценка по цели подбора (ровный бас, меньше провалов внизу, моды…)
@@ -220,21 +231,24 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     throw new PlacementError('Все допустимые места колонок заняты запретными зонами — уменьшите зоны у передней стены.');
   }
 
-  const subH = subSpecs[0]?.height ?? 0.3;
+  // места сабвуферов общие, а отклик каждого считается на его высоте; под скосом место проверяется по самому высокому
+  const subH = subSpecs.length ? Math.max(...subSpecs.map((s) => s.height)) : 0.3;
   const subPts = subSpecs.length ? subCandidates(room, c, subH) : [];
+  const subHs = [...new Set(subSpecs.map((s) => s.height))];
+  const subLevel = subSpecs.map((s) => subHs.indexOf(s.height));
   if (subSpecs.length && subPts.length < subSpecs.length) {
     throw new PlacementError('Для сабвуферов не осталось мест вне запретных зон — расширьте зону сабвуфера или уменьшите зоны.');
   }
 
   const cfgPts = cfgs.map((cfg) => speakerPoints(cfg, room, spkH));
   const cfgPsi = wave ? [] : cfgPts.map((pts) => pts.map((p) => modeShapes(pm, p)));
-  const subPsi = wave ? [] : subPts.map((p) => modeShapes(pm, p));
+  const subPsi = wave ? [] : subHs.map((h) => subPts.map((p) => modeShapes(pm, { ...p, z: h })));
   // волновая модель: все точки-кандидаты одним списком
   const cfgOffset: number[] = [];
   const allPts: Vec3[] = [];
   cfgPts.forEach((pts) => { cfgOffset.push(allPts.length); allPts.push(...pts); });
   const subOffset = allPts.length;
-  allPts.push(...subPts);
+  for (const h of subHs) allPts.push(...subPts.map((p) => ({ ...p, z: h })));
 
   const listeners = listenerPositions(room, c);
   if (!listeners.length) {
@@ -310,7 +324,8 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     const recordFound = (score: number, se: SpkEval | null, subs: number[]) => {
       const positions: Record<string, Vec3> = {};
       if (se) cfgPts[se.idx].forEach((p, k) => (positions[spkIds[k]] = p));
-      subs.forEach((pi, k) => (positions[subSpecs[k].id] = subPts[pi]));
+      // у каждого сабвуфера — своя высота
+      subs.forEach((pi, k) => (positions[subSpecs[k].id] = { ...subPts[pi], z: subSpecs[k].height }));
       found.push({ score, listener, positions });
     };
 
@@ -320,8 +335,8 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
       return;
     }
 
-    const subResp: Resp[][][] = subSpecs.map((s) =>
-      subPts.map((_, pi) => rcv.map((_r, r) => withFilter(respAt(r, subOffset + pi, subPsi[pi]), s.id))),
+    const subResp: Resp[][][] = subSpecs.map((s, k) =>
+      subPts.map((_, pi) => rcv.map((_r, r) => withFilter(respAt(r, subOffset + subLevel[k] * subPts.length + pi, subPsi[subLevel[k]]?.[pi]), s.id))),
     );
 
     // пул колонок для перебора с сабвуферами: 8 лучших по ровности в своей полосе. Проверка полным перебором
@@ -414,11 +429,15 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   }
 
   const base = baselinePositions(room, sources, c);
-  const baseline = toPlacement(ctx, sources, c, base.listener, base.positions);
+  const baseline = toPlacement(ctx, sources, c, base.listener, base.positions, {}, finalPpo);
 
   found.sort((a, b) => a.score - b.score);
-  const shortlist = found.slice(0, wave ? 4 : 8).map((f) => toPlacement(ctx, sources, c, f.listener, f.positions));
-  shortlist.push(baseline);
+  const shortlist = found.slice(0, wave ? 4 : 8).map((f) => toPlacement(ctx, sources, c, f.listener, f.positions, {}, finalPpo));
+  // базовая расстановка показывается для сравнения всегда, но в «лучшие» попадает, только если сама не нарушает
+  // ограничений: источники вне запретных зон, слушатель там, где можно сидеть
+  const baseOk = Object.values(base.positions).every((p) => sourceAllowed(room, p))
+    && (() => { const { pts } = receiverSet(room, c, base.listener); return ((c.seats?.count ?? 1) > 1 ? pts : [pts[0]]).every((p) => seatAllowed(room, p)); })();
+  if (baseOk) shortlist.push(baseline);
   const rank = (p: Placement) => p.objScore ?? p.score;
   shortlist.sort((a, b) => rank(a) - rank(b));
 
@@ -437,7 +456,7 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   // схема DBA: сабвуферы у передней и задней стен, задние — с задержкой и в противофазе
   const notes = [...ctx.notes];
   if (c.dba && sources.filter((s) => s.kind === 'sub').length >= 2) {
-    const d = dbaVariant(ctx, sources, c, best[0]);
+    const d = dbaVariant(ctx, sources, c, best[0], finalPpo);
     best.push(d);
     if (d.notes?.length) notes.push(...d.notes);
   }
@@ -488,12 +507,12 @@ export function dbaLayout(room: Room, sources: SourceSpec[], c: Constraints): { 
   return { positions, settings, notes: [...new Set(notes)] };
 }
 
-function dbaVariant(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, base: Placement): Placement {
+function dbaVariant(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, base: Placement, ppo = 24): Placement {
   const { positions: subPos, settings, notes } = dbaLayout(ctx.room, sources, c);
   const positions: Record<string, Vec3> = {};
   for (const s of base.sources) if (s.pos) positions[s.id] = s.pos;
   Object.assign(positions, subPos);
-  const p = toPlacement(ctx, sources, c, base.listener, positions, settings);
+  const p = toPlacement(ctx, sources, c, base.listener, positions, settings, ppo);
   return { ...p, subSettings: settings, scheme: 'dba', notes };
 }
 

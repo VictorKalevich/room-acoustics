@@ -166,6 +166,8 @@ export function PlanView(p: PlanProps) {
       onClick={(e) => {
         if (moved.current) { moved.current = false; return; }
         if (!p.onTap) return;
+        // касание значка (выбор, начало перетаскивания) — не касание плана
+        if ((e.target as Element | null)?.closest?.('[data-id]')) return;
         const r = toRoom(e);
         if (r.x < 0 || r.y < 0 || r.x > depth || r.y > width) return;
         p.onTap(r);

@@ -1,6 +1,5 @@
 import { useEffect, useId, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import { fmt } from '../format';
 
 interface NumberFieldProps {
   label: string;
@@ -24,7 +23,8 @@ export function NumberField(p: NumberFieldProps) {
   const [focused, setFocused] = useState(false);
 
   useEffect(() => {
-    if (!focused) setText(fmtPlain(p.value, digits));
+    // значение сменили снаружи (другой объект, сброс) — прежняя ошибка ввода к нему не относится
+    if (!focused) { setText(fmtPlain(p.value, digits)); setError(null); }
   }, [p.value, focused, digits]);
 
   const commit = (s: string) => {
@@ -34,7 +34,7 @@ export function NumberField(p: NumberFieldProps) {
       return;
     }
     if (v < p.min || v > p.max) {
-      setError(`От ${fmt(p.min, digits > 0 ? undefinedDigits(p.min) : 0)} до ${fmt(p.max, undefinedDigits(p.max))}${p.unit ? ' ' + p.unit : ''}`);
+      setError(`От ${fmtPlain(p.min, digits)} до ${fmtPlain(p.max, digits)}${p.unit ? ' ' + p.unit : ''}`);
       return;
     }
     setError(null);
@@ -71,8 +71,6 @@ export function NumberField(p: NumberFieldProps) {
     </div>
   );
 }
-
-const undefinedDigits = (v: number) => (Number.isInteger(v) ? 0 : 1);
 
 function fmtPlain(v: number, digits: number): string {
   if (!Number.isFinite(v)) return '';

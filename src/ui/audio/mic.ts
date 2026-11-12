@@ -33,6 +33,17 @@ export async function openMic(): Promise<Mic> {
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } as MediaTrackConstraints,
   });
   micOpened(true);
+  try {
+    return await openWith(ctx, stream);
+  } catch (e) {
+    // сбой после получения доступа: микрофон закрываем, иначе он остаётся занятым до перезапуска
+    stream.getTracks().forEach((t) => t.stop());
+    micOpened(false);
+    throw e;
+  }
+}
+
+async function openWith(ctx: AudioContext, stream: MediaStream): Promise<Awaited<ReturnType<typeof openMic>>> {
   if (ctx.state !== 'running') await ctx.resume().catch(() => undefined);
   const src = ctx.createMediaStreamSource(stream);
   const label = stream.getAudioTracks()[0]?.label ?? '';

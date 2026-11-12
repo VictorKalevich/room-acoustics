@@ -46,6 +46,9 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
       setError((e as Error).message);
     }
   };
+  // подстройка считается секунды: к её концу комнату могли изменить — правим последнюю, а не ту, что была при нажатии
+  const roomRef = useRef(room);
+  useEffect(() => { roomRef.current = room; }, [room]);
   const runCal = () => {
     if (!m) return;
     setBusy(true);
@@ -54,8 +57,9 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
         setCal(r);
         setBusy(false);
         // 022: запоминаем, по какому замеру подстроено и какая герметичность была выбрана до подстройки
-        const leakageBefore = room.calibration?.leakageBefore ?? room.leakage;
-        onRoom({ ...room, leakage: r.leakage, calibration: { dampingScale: r.dampingScale, model: DAMPING_MODEL, source: m.name, leakageBefore } });
+        const now = roomRef.current;
+        const leakageBefore = now.calibration?.leakageBefore ?? now.leakage;
+        onRoom({ ...now, leakage: r.leakage, calibration: { dampingScale: r.dampingScale, model: DAMPING_MODEL, source: m.name, leakageBefore } });
       })
       .catch((e) => { setError(e.message); setBusy(false); });
   };

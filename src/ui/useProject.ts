@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../state/project';
 import { defaultConstraints, newProject, syncSetup } from '../state/project';
-import { loadDraft, saveDraft } from '../state/storage';
+import { clearPendingDraft, loadDraft, saveDraft, stashPendingDraft } from '../state/storage';
 import type { Constraints, Room, Setup, SourceSpec } from '../core/types';
 import type { VoiceSettings } from '../core/voice';
+import type { Precision } from '../core/precision';
 import { clampToRoom } from '../core/system';
 import { baselinePositions } from '../core/placement';
 import { markPlaced } from '../state/variant';
 import { setBeforeReload } from './updates';
+import { logError } from '../state/errlog';
 
 /**
  * Приводит расстановку к текущим источникам и размерам комнаты. 022: пока места текущей расстановки не выбраны,
@@ -36,7 +38,7 @@ export function useProject() {
   useEffect(() => {
     loadDraft()
       .then((d) => d && setProject(d))
-      .catch(() => undefined)
+      .catch((e) => logError('error', e, 'черновик проекта не открылся; копия сохранена как draft-failed'))
       .finally(() => setReady(true));
   }, []);
 
@@ -44,11 +46,35 @@ export function useProject() {
     if (ready) setBeforeReload(() => saveDraft(project));
   }, [project, ready]);
 
+  // последнее состояние и то, что уже записано на устройство
+  const latest = useRef(project);
+  const saved = useRef<Project | null>(null);
   useEffect(() => {
+    latest.current = project;
     if (!ready) return;
-    const t = setTimeout(() => saveDraft(project).catch(() => undefined), 300);
+    const t = setTimeout(() => {
+      saveDraft(project)
+        .then(() => { saved.current = project; if (latest.current === project) clearPendingDraft(); })
+        .catch(() => undefined);
+    }, 300);
     return () => clearTimeout(t);
   }, [project, ready]);
+
+  // Страницу закрывают, перезагружают или сворачивают раньше, чем сработало отложенное сохранение (оно ждёт 300 мс
+  // после последнего изменения): несохранённое состояние пишется сразу. Иначе правка, сделанная за мгновение до
+  // закрытия, пропадала, а при быстрой череде правок не сохранялась ни одна.
+  useEffect(() => {
+    if (!ready) return;
+    const flush = () => {
+      if (saved.current === latest.current) return;
+      stashPendingDraft(latest.current);
+      saveDraft(latest.current).catch(() => undefined);
+    };
+    const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
+    addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onHide);
+    return () => { removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onHide); };
+  }, [ready]);
 
   const touch = (patch: Partial<Project> | ((prev: Project) => Partial<Project>), invalidate = true) =>
     setProject((prev) => {
@@ -75,5 +101,7 @@ export function useProject() {
   const onSetup = (current: Setup) => touch((prev) => ({ current: markPlaced(prev.current, current) }), false);
   const onSetups = (setups: Setup[]) => touch({ setups }, false);
   const onVoice = (voice: VoiceSettings) => touch({ voice }, false);
-  return { project, setProject, ready, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice };
+  // 026: другая точность — другие числа; результат подбора помечается устаревшим
+  const onPrecision = (precision: Precision) => touch({ precision: precision === 'standard' ? undefined : precision });
+  return { project, setProject, ready, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision };
 }

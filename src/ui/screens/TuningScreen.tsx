@@ -23,7 +23,7 @@ export function TuningScreen({ project, modes, onSetup, onRoom, view, active, on
   const { sources, current } = project;
   const subs = sources.filter((s) => s.kind === 'sub' && current.positions[s.id]);
   // Preserve drafts across navigation, but never show results from different inputs.
-  const setupKey = JSON.stringify([project.room, sources, project.constraints, current.positions, current.listener]);
+  const setupKey = JSON.stringify([project.room, sources, project.constraints, current.positions, current.listener, project.precision]);
   const eqKey = JSON.stringify([setupKey, current.subSettings, current.crossoverHz, current.measurement]);
   return (
     <div class="screen">

@@ -24,16 +24,16 @@ function run(job: Job) {
     let result: unknown;
     switch (type) {
       case 'optimize': result = optimizePlacement(p, progress); break;
-      case 'listenerMap': result = listenerHeatmap(p.room, p.sources, p.constraints, p.setup, { onProgress: progress }); break;
-      case 'subMap': result = subHeatmap(p.room, p.sources, p.constraints, p.setup, p.subId, { onProgress: progress }); break;
-      case 'integrate': result = optimizeSubs(p.room, p.sources, p.constraints, p.setup); break;
+      case 'listenerMap': result = listenerHeatmap(p.room, p.sources, p.constraints, p.setup, { ppo: p.ppo, onProgress: progress }); break;
+      case 'subMap': result = subHeatmap(p.room, p.sources, p.constraints, p.setup, p.subId, { ppo: p.ppo, onProgress: progress }); break;
+      case 'integrate': result = optimizeSubs(p.room, p.sources, p.constraints, p.setup, { ppo: p.ppo }); break;
       case 'calibrate': result = calibrate(p.room, p.sources, p.constraints, p.setup, p.measurement); break;
       case 'compare': result = compareMeasurement(p.room, p.sources, p.constraints, p.setup, p.measurement); break;
       case 'evaluate': result = evaluateSetup(p.room, p.sources, p.constraints, p.setup, { ppo: p.ppo, onProgress: progress }); break;
       case 'modes': result = waveSystemModes(p.room, p.fMax, progress); break;
       case 'field': result = computeField(p, progress); break;
-      case 'subFilters': result = optimizeSubFilters(p.room, p.sources, p.constraints, p.setup); break;
-      case 'voiceMap': result = voiceMap(p.room, p.settings, progress, p.goal); break;
+      case 'subFilters': result = optimizeSubFilters(p.room, p.sources, p.constraints, p.setup, { ppo: p.ppo }); break;
+      case 'voiceMap': result = voiceMap(p.room, p.settings, progress, p.goal, p.precision); break;
       default: throw new Error(`Неизвестная задача ${type}`);
     }
     const fr = result as { energy?: Float32Array; mask?: Uint8Array };

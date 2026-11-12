@@ -287,7 +287,7 @@ export function findExtension(T: Tris, vertical: number[], d: Dims, o: LayoutOpe
   for (const i of vertical) {
     if (Math.abs(T.nr[i * 3 + w.axis]) < 0.8) continue;
     const dd = beyond(i);
-    if (dd < 0.25 || dd >= 4) continue;
+    if (dd < 0.3 || dd >= 4) continue; // коридор мельче 0,3 м комната не принимает (validateExtension)
     const z = T.c[i * 3 + 2];
     if (z < 0.5 * d.height) continue;
     hist[Math.floor(dd / bin)] += T.a[i];
