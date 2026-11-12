@@ -471,30 +471,9 @@ function FurnitureStep({ pid, room, reverb, onRoom, isDefault }: { pid: string; 
     setSelected(id);
     requestAnimationFrame(() => document.getElementById(`furn-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   };
-  return (
+  const list = !!room.furnitureList;
+  const furnitureList = (
     <>
-      <Panel class="panel--hero">
-        <PlanView depth={room.depth} width={room.width} zones={zones} extensions={room.extensions} openings={room.openings} features={room.features} slope={room.slope}
-          selectedZone={selected} onZoneSelect={pick} label={S.editor.furniturePlan} />
-        <p class="muted small">{S.furniture.intro}</p>
-      </Panel>
-      <Panel title={S.furniture.furnishing}>
-        {/* 022: явный выбор способа вместо галочки «Указать мебель списком» */}
-        <Segmented label={S.furniture.mode} value={room.furnitureList ? 'list' : 'general'}
-          options={[{ value: 'general', label: S.furniture.modeGeneral }, { value: 'list', label: S.furniture.modeList }]}
-          onChange={(v) => onRoom({ ...room, furnitureList: v === 'list' })} />
-        <p class="muted small">{room.furnitureList ? S.furniture.listHint : S.furniture.generalHint}</p>
-        <SelectField label={S.furniture.level} value={room.furnishing}
-          options={(Object.keys(FURNISHING_LABEL) as Furnishing[]).map((k) => ({ value: k, label: FURNISHING_LABEL[k] }))}
-          hint={isDefault?.('furnishing') ? S.editor.byDefault : undefined}
-          onChange={(v) => onRoom({ ...room, furnishing: v as Furnishing })} />
-        <p class="muted small">{room.furnitureList ? S.furniture.levelBass : S.furniture.furnishingHint}</p>
-        <p class="small" role="status">{S.furniture.rtNow(fmt(reverb.tMid, 2))}</p>
-        <Details summary={S.furniture.whyTitle}>
-          {S.furniture.why.map((t, ki) => <p key={ki} class="small">{t}</p>)}
-        </Details>
-      </Panel>
-      <Panel title={S.furniture.title}>
         {items.length === 0 && <p class="muted small">{S.furniture.none}</p>}
         <div class="wall-items">
           {items.map((z, i) => {
@@ -502,7 +481,7 @@ function FurnitureStep({ pid, room, reverb, onRoom, isDefault }: { pid: string; 
             const dx = z.x1 - z.x0, dy = z.y1 - z.y0;
             const effect = !isAcoustic(t)
               ? S.furniture.effect.none
-              : room.furnitureList ? S.furniture.effect[contribution(furnitureAbsorption(z), reverb.absorptionArea)] : S.furniture.listOff;
+              : list ? S.furniture.effect[contribution(furnitureAbsorption(z), reverb.absorptionArea)] : S.furniture.listOff;
             return (
               <div key={z.id} id={`furn-${z.id}`} class={`zone-card${selected === z.id ? ' is-selected' : ''}`}>
                 <div class="zone-card__head">
@@ -532,8 +511,52 @@ function FurnitureStep({ pid, room, reverb, onRoom, isDefault }: { pid: string; 
           })}
         </div>
         <ActionMenu label={S.furniture.add} actions={FURNITURE_ORDER.map((t) => ({ label: S.furniture.types[t], onSelect: () => add(t) }))} />
+    </>
+  );
+  return (
+    <>
+      <Panel class="panel--hero">
+        <PlanView depth={room.depth} width={room.width} zones={zones} extensions={room.extensions} openings={room.openings} features={room.features} slope={room.slope}
+          selectedZone={selected} onZoneSelect={pick} label={S.editor.furniturePlan} />
+        <p class="muted small">{list ? S.furniture.intro : S.furniture.introGeneral}</p>
       </Panel>
-      <ZonesPanel room={room} onRoom={onRoom} />
+      <Panel title={S.furniture.furnishing}>
+        {/* 022: явный выбор способа вместо галочки «Указать мебель списком» */}
+        <Segmented label={S.furniture.mode} value={room.furnitureList ? 'list' : 'general'}
+          options={[{ value: 'general', label: S.furniture.modeGeneral }, { value: 'list', label: S.furniture.modeList }]}
+          onChange={(v) => onRoom({ ...room, furnitureList: v === 'list' })} />
+        <p class="muted small">{room.furnitureList ? S.furniture.listHint : S.furniture.generalHint}</p>
+        {/* 027: при «Списком предметов» общая оценка остаётся только для баса — подпись говорит об этом прямо */}
+        <SelectField label={list ? S.furniture.levelBassLabel : S.furniture.level} value={room.furnishing}
+          options={(Object.keys(FURNISHING_LABEL) as Furnishing[]).map((k) => ({ value: k, label: FURNISHING_LABEL[k] }))}
+          hint={isDefault?.('furnishing') ? S.editor.byDefault : undefined}
+          onChange={(v) => onRoom({ ...room, furnishing: v as Furnishing })} />
+        <p class="muted small">{list ? S.furniture.levelBass : S.furniture.furnishingHint}</p>
+        {list && <p class="muted small">{S.furniture.listUses}</p>}
+        <p class="small" role="status">{S.furniture.rtNow(fmt(reverb.tMid, 2))}</p>
+        {/* пояснение относится к списку предметов: при общей оценке отдельные предметы не учитываются вовсе */}
+        {list && (
+          <Details summary={S.furniture.whyTitle}>
+            {S.furniture.why.map((t, ki) => <p key={ki} class="small">{t}</p>)}
+          </Details>
+        )}
+      </Panel>
+      {list ? (
+        <>
+          <Panel title={S.furniture.title}>{furnitureList}</Panel>
+          <ZonesPanel room={room} onRoom={onRoom} />
+        </>
+      ) : (
+        // 027: при «Общей оценкой» мебель на звук не влияет — она и другие зоны собраны в один блок по назначению;
+        // блок сворачивается и помнит состояние, как прежний блок зон
+        <Panel title={S.zones.title} collapseKey="ra-room-zones" summary={`Мест: ${zones.length}`}>
+          <p class="small">{S.furniture.placesIntro}</p>
+          <h3 class="subhead">{S.furniture.subFurniture}</h3>
+          {furnitureList}
+          <h3 class="subhead">{S.furniture.subOther}</h3>
+          <ZonesPanel room={room} onRoom={onRoom} bare />
+        </Panel>
+      )}
     </>
   );
 }

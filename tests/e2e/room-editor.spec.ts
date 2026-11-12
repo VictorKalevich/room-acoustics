@@ -97,6 +97,9 @@ test('без списка ковры и мебель не меняют RT60; с�
 test('пояснение «Почему учитывается только эта мебель» свёрнуто; касание предмета на плане выбирает карточку', async ({ page }) => {
   await page.goto('/#room/furniture');
   const why = page.locator('details').filter({ hasText: 'Почему учитывается только эта мебель' });
+  // 027: пояснение относится к списку предметов — при «Общей оценкой» его нет
+  await expect(why).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Списком предметов' }).click();
   await expect(why).not.toHaveAttribute('open', '');
   await expect(why.getByText(/рассеивают/)).toBeHidden();
   await why.locator('summary').click();
@@ -175,4 +178,41 @@ test('021: уменьшение комнаты — список удаляемо
   await expect(page.locator('.topbar__room')).toContainText('3,00 × 4,00');
   await steps(page).getByRole('button', { name: /Мебель/ }).click();
   await expect(page.locator('.zone-card select').filter({ has: page.locator('option:checked', { hasText: 'Диван' }) })).toHaveCount(0);
+});
+
+test('027: шаг «Мебель» — при «Общей оценкой» один блок «Где нельзя ставить колонки», при «Списком предметов» — список мебели и оценка только для баса', async ({ page }) => {
+  await page.goto('/#room/furniture');
+  const title = (name: string) => page.locator('.panel__title', { hasText: new RegExp(`^${name}$`) });
+  // общая оценка: мебель и зоны — в одном блоке по назначению; отдельного списка мебели нет
+  await expect(page.getByRole('radio', { name: 'Общей оценкой' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByLabel('Общая оценка обстановки', { exact: true })).toBeVisible();
+  await expect(title('Где нельзя ставить колонки')).toBeVisible();
+  await expect(title('Мебель')).toHaveCount(0);
+  await expect(title('Другие места, где нельзя ставить колонки')).toHaveCount(0);
+  const places = page.locator('.panel').filter({ has: title('Где нельзя ставить колонки') });
+  await places.getByRole('button', { name: 'Добавить мебель', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Диван сложенный', exact: true }).click();
+  await expect(places.locator('.zone-card')).toContainText('Только место: при общей оценке на звук не влияет');
+  await places.getByRole('button', { name: 'Добавить зону', exact: true }).click();
+  await expect(places.locator('.zone-card')).toHaveCount(2);
+  await expect(page.locator('svg.plan:visible .plan__zone-rect')).toHaveCount(2);
+
+  // список предметов: те же предметы — в «Мебели» с вкладом в поглощение; общая оценка — только для баса
+  await page.getByRole('radio', { name: 'Списком предметов' }).click();
+  await expect(page.getByLabel('Обстановка для баса (до 125 Гц)', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Общая оценка обстановки', { exact: true })).toHaveCount(0);
+  await expect(title('Где нельзя ставить колонки')).toHaveCount(0);
+  const furniture = page.locator('.panel').filter({ has: title('Мебель') });
+  await expect(furniture.locator('.zone-card')).toHaveCount(1);
+  await expect(furniture.locator('.zone-card')).toContainText(/Вклад в поглощение/);
+  await expect(page.locator('.panel').filter({ has: title('Другие места, где нельзя ставить колонки') }).locator('.zone-card')).toHaveCount(1);
+
+  // обратно: ничего не потеряно
+  await page.getByRole('radio', { name: 'Общей оценкой' }).click();
+  await expect(places.locator('.zone-card')).toHaveCount(2);
+  for (const width of [320, 393]) {
+    await page.setViewportSize({ width, height: 852 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  if (process.env.UI_SCREENSHOTS) await page.screenshot({ path: 'test-results/furniture-general.png', fullPage: true });
 });

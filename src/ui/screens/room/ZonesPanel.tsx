@@ -7,7 +7,7 @@ import { S } from '../../strings';
 
 const KINDS: ZoneKind[] = ['door', 'window', 'other'];
 
-export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
+export function ZonesPanel({ room, onRoom, bare }: { room: Room; onRoom: (r: Room) => void; bare?: boolean }) {
   const all = room.zones ?? [];
   const zones = all.filter((z) => z.kind !== 'furniture');
   const setZone = (id: string, patch: Partial<Zone>) => {
@@ -27,9 +27,10 @@ export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
     const z: Zone = { id: makeId(), kind: 'door', x0: Math.max(0, room.depth - 1), x1: room.depth, y0: 0, y1: Math.min(1, room.width), canSit: false };
     onRoom({ ...room, zones: [...all, z] });
   };
-  return (
-    <Panel title={S.furniture.otherZones} collapseKey="ra-room-zones" summary={`Зон: ${zones.length}`}>
-      <p class="small">{S.zones.intro}</p>
+  // 027: body — содержимое без панели, для общего блока «Где нельзя ставить колонки» при обстановке «Общей оценкой»
+  const body = (
+    <>
+      {!bare && <p class="small">{S.zones.intro}</p>}
       {zones.length === 0 && <p class="muted small">{S.zones.none}</p>}
       {zones.map((z, i) => (
         <div key={z.id} class="zone-card">
@@ -57,6 +58,12 @@ export function ZonesPanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
         </div>
       ))}
       <button type="button" class="btn" onClick={add}>{S.zones.add}</button>
+    </>
+  );
+  if (bare) return body;
+  return (
+    <Panel title={S.furniture.otherZones} collapseKey="ra-room-zones" summary={`Зон: ${zones.length}`}>
+      {body}
     </Panel>
   );
 }
