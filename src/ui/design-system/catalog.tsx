@@ -89,6 +89,8 @@ function Catalog() {
       actions={<><button type="button" class="btn btn--primary" onClick={() => setMessage('Попробовать снова')}>Попробовать снова</button><button type="button" class="btn" onClick={() => setMessage('Экспорт')}>Экспортировать проект</button><button type="button" class="btn" onClick={() => setMessage('Отчёт')}>Сообщить о проблеме</button></>}>
       <Note tone="good">Итог действия, например экспорта</Note>
     </FailurePanel>
+    <FailurePanel title="Не удалось открыть сохранённый проект" text="Пример сообщения при запуске (029, DraftFailure): данные на устройстве не тронуты, рабочий проект не перезаписывается до выбора."
+      actions={<><button type="button" class="btn btn--primary" onClick={() => setMessage('Повторить')}>Повторить</button><button type="button" class="btn" onClick={() => setConfirm(true)}>Начать новый проект</button></>} />
     <Panel title="Отступы и вложенные карточки">
       <p class="small">Между секциями — 14 px, внутри панели — 12 px, поля панели — 16 px, между подписью и вводом — 4 px.</p>
       <div class="wall-items"><div class="zone-card"><strong>Первая карточка</strong><p class="small">Единый фон, радиус и отступы</p></div><div class="zone-card"><strong>Вторая карточка</strong><p class="small">Интервал 12 px сохраняется</p></div></div>

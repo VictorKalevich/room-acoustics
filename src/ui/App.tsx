@@ -15,6 +15,7 @@ import { Drawer } from './components/Drawer';
 import { SectionNav } from './design-system';
 import { RetainedSection } from './components/RetainedSection';
 import { ScreenBoundary } from './components/ErrorBoundary';
+import { DraftFailure } from './components/DraftFailure';
 import { useNavigation, type Tab, type AnalysisView } from './navigation';
 import { TermSheet } from './components/Term';
 import { MiniPlayer } from './components/MiniPlayer';
@@ -61,7 +62,7 @@ export function App() {
   const [drawer, setDrawer] = useState(false);
   const [wizard, setWizard] = useState(wizardOn());
   const [, setWizardTick] = useState(0);
-  const { project, setProject, ready, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision } = useProject();
+  const { project, setProject, ready, problem, retry, startNew, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision } = useProject();
   const [justUpdated, setJustUpdated] = useState(consumeJustUpdated);
 
   const setModes = (v: AnalysisView) => go(v === 'list' ? 'analysis/list' : v === 'overview' ? 'analysis' : 'field');
@@ -90,6 +91,8 @@ export function App() {
   const guard = (name: string, node: ComponentChildren) => (
     <ScreenBoundary name={name} project={project} onReport={name === TITLES.about ? undefined : () => go('about')}>{node}</ScreenBoundary>
   );
+  // 029: рабочий проект не открылся — только сообщение; разделы не монтируются и не работают с пустым проектом
+  if (problem) return <DraftFailure problem={problem} onRetry={retry} onNew={() => { startNew(); go('room/overview'); }} />;
   if (!ready) return <div class="screen"><p role="status">Открываем проект…</p></div>;
   return (
     <div class={`app${roomReady ? '' : ' app--start'}`}>

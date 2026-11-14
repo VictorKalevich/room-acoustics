@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../state/project';
 import { defaultConstraints, newProject, syncSetup } from '../state/project';
-import { clearPendingDraft, loadDraft, saveDraft, stashPendingDraft } from '../state/storage';
+import { clearPendingDraft, DraftLoadError, loadDraft, releaseDraft, saveDraft, stashPendingDraft } from '../state/storage';
 import type { Constraints, Room, Setup, SourceSpec } from '../core/types';
 import type { VoiceSettings } from '../core/voice';
 import type { Precision } from '../core/precision';
@@ -32,15 +32,33 @@ function fitConstraints(c: Constraints, room: Room): Constraints {
   return bad ? { ...c, listenerMinX: d.listenerMinX, listenerMaxX: d.listenerMaxX } : c;
 }
 
+/** 029: рабочий проект есть, но не открылся при запуске — что показать вместо приложения. */
+export type DraftProblem = { kind: 'unreadable' } | { kind: 'invalid'; reason: string; raw: unknown };
+
 export function useProject() {
   const [project, setProject] = useState<Project>(() => newProject());
+  // проект открыт (или черновика нет) — только тогда работают приложение и все пути записи черновика ниже
   const [ready, setReady] = useState(false);
+  // 029: черновик не открылся — вместо приложения сообщение; прежний черновик до выбора пользователя не перезаписывается
+  const [problem, setProblem] = useState<DraftProblem | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     loadDraft()
-      .then((d) => d && setProject(d))
-      .catch((e) => logError('error', e, 'черновик проекта не открылся; копия сохранена как draft-failed'))
-      .finally(() => setReady(true));
-  }, []);
+      .then((d) => { if (d) setProject(d); setReady(true); })
+      .catch((e: unknown) => {
+        if (e instanceof DraftLoadError && e.kind === 'invalid') {
+          logError('error', e.error, 'черновик проекта не открылся; копия сохранена как draft-failed');
+          setProblem({ kind: 'invalid', reason: e.message, raw: e.raw });
+        } else {
+          logError('error', e instanceof DraftLoadError ? e.error : e, 'черновик проекта не прочитан');
+          setProblem({ kind: 'unreadable' });
+        }
+      });
+  }, [attempt]);
+  /** «Повторить»: прочитать черновик снова (с повторами), пока видно «Открываем проект…». */
+  const retry = () => { setProblem(null); setAttempt((n) => n + 1); };
+  /** «Начать новый проект» после подтверждения: новый проект, прежний черновик заменит отложенное сохранение. */
+  const startNew = () => { releaseDraft(); setProject(newProject()); setProblem(null); setReady(true); };
 
   useEffect(() => {
     if (ready) setBeforeReload(() => saveDraft(project));
@@ -103,5 +121,5 @@ export function useProject() {
   const onVoice = (voice: VoiceSettings) => touch({ voice }, false);
   // 026: другая точность — другие числа; результат подбора помечается устаревшим
   const onPrecision = (precision: Precision) => touch({ precision: precision === 'standard' ? undefined : precision });
-  return { project, setProject, ready, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision };
+  return { project, setProject, ready, problem, retry, startNew, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision };
 }
