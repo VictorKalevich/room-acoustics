@@ -133,7 +133,7 @@ npm run build       # статическая сборка в dist/
 ```
 
 Структура: `src/core` — расчётное ядро (без DOM), `src/scan` — импорт и распознавание скана,
-`src/workers` — фоновые расчёты, `src/ui` — интерфейс. Спецификации и планы — в
+`src/workers` — фоновые расчёты и договор обмена с ними (таблицы задач, общие с интерфейсом), `src/ui` — интерфейс. Спецификации и планы — в
 [индексе Spec Kit](specs/README.md), актуальное поведение — в
 [specs/current-state.md](specs/current-state.md), принципы — в
 [конституции](.specify/memory/constitution.md), решения — в [журнале](specs/decisions.md).
