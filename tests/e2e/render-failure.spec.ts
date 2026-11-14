@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
+import { errlog, fits } from './helpers';
 
 // 028: сбой отрисовки не выводит приложение из строя. Сбой вызывается без тестовых веток в приложении: до загрузки
 // страницы подменяется встроенный метод, который при отрисовке вызывает только проверяемая часть.
@@ -26,27 +27,11 @@ const failShell = (page: Page) => page.addInitScript(() => {
   } as typeof orig;
 });
 
-const errlog = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('ra-errors') ?? '[]') as { msg: string; ctx?: string }[]);
 const tab = (page: Page, name: string) => page.locator('.tabbar').getByRole('button', { name, exact: true });
 const menu = async (page: Page, item: string) => {
   await page.getByRole('button', { name: 'Открыть меню' }).click();
   await page.locator('.drawer__item', { hasText: item }).click();
 };
-
-/** Сообщение помещается без горизонтальной прокрутки на 320 и 393 px в светлой и тёмной темах. */
-async function fits(page: Page, what: string) {
-  for (const theme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    for (const width of [320, 393]) {
-      await page.setViewportSize({ width, height: 852 });
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), { message: `${what}: ${theme} ${width}` }).toBe(true);
-      expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe(theme === 'dark' ? 'rgb(228, 234, 236)' : 'rgb(23, 34, 43)');
-      await expect(page.locator('[role=alert] .panel .small').first()).toHaveCSS('font-size', '14px');
-    }
-  }
-  await page.emulateMedia({ colorScheme: 'light' });
-  await page.setViewportSize({ width: 393, height: 852 });
-}
 
 test('028: проект с результатом подбора неверной формы открывается — содержимое, нижняя панель, подбор заново', async ({ page }) => {
   const errors: string[] = [];
