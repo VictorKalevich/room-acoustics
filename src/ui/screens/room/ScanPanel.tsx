@@ -17,6 +17,7 @@ import type { LayoutResult, ScanLabels } from '../../../scan/layout';
 import type { WallItemKind } from '../../../core/wallItems';
 import { SIT_DEFAULT, defaultChoice, fixScan, foundWallItems, scanProblem, scanRoom, type ScanChoice, type ScanNames } from '../../../scan/apply';
 import { loadStoredScan, saveScan, thinScan } from '../../../state/storage';
+import type { DetectDone, LayoutDone, RunScanWorker, ScanMessage, ScanReply, ScanRequest } from '../../../workers/detectJobs';
 import { LayoutEditor, type Rect } from '../../components/LayoutEditor';
 import { Panel, SelectField, Note, Segmented } from '../../design-system';
 import { S } from '../../strings';
@@ -96,20 +97,23 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
     // место под модель появляется и после поправки, и когда комната создана (021)
   }, [editing, RoomModel, project.roomReady]);
 
-  const runWorker = <T,>(msg: Record<string, unknown>, tri: Float32Array) =>
-    new Promise<T>((resolve, reject) => {
+  // 030: запросы и ответы воркера — в detectJobs.ts; тип ответа выводится из вида запроса (RunScanWorker).
+  // На каждый запрос воркер отвечает одним ответом того же вида — это и закрепляет приведение.
+  const runWorker = ((msg: ScanRequest, tri: Float32Array) =>
+    new Promise<DetectDone | LayoutDone>((resolve, reject) => {
       const w = new Worker(new URL('../../../workers/detect.worker.ts', import.meta.url), { type: 'module' });
-      w.addEventListener('message', (e) => {
+      w.addEventListener('message', (e: MessageEvent<ScanReply>) => {
         w.terminate();
-        if (e.data.ok) resolve(e.data as T);
+        if (e.data.ok) resolve(e.data);
         else reject(new Error(e.data.error));
       });
       w.addEventListener('error', (e) => { w.terminate(); reject(new Error(e.message || 'Ошибка анализа скана')); });
       const copy = tri.slice();
-      w.postMessage({ ...msg, triangles: copy }, [copy.buffer]);
-    });
+      const m: ScanMessage = { ...msg, triangles: copy };
+      w.postMessage(m, [copy.buffer]);
+    })) as RunScanWorker;
   const detect = (l: Loaded, u: Units | 'auto') =>
-    runWorker<{ result: DetectResult; layout: LayoutResult }>({ units: u === 'auto' ? undefined : u, labels: l.labels }, l.triangles);
+    runWorker({ units: u === 'auto' ? undefined : u, labels: l.labels }, l.triangles);
 
   /** Показать выбор в блоке поправки. */
   const showChoice = (c: ScanChoice) => {
@@ -146,7 +150,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
     const seq = ++relaySeq.current;
     setRelaying(true);
     try {
-      const r = await runWorker<{ layout: LayoutResult }>({ type: 'layout', labels: scan.labels, transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: found0.height } }, scan.triangles);
+      const r = await runWorker({ type: 'layout', labels: scan.labels, transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: found0.height } }, scan.triangles);
       if (seq !== relaySeq.current) return;
       const next = { ...base, openings: r.layout.openings, windows: r.layout.windows, furniture: r.layout.furniture, extension: r.layout.extension };
       setLayout(next);
