@@ -69,7 +69,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
       job.current?.cancel();
       setBusy(true);
       setError(null);
-      const j = compute<Heatmap>(effMode === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup: current, subId: effSub, ppo: mapPpo });
+      const j = compute(effMode === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup: current, subId: effSub, ppo: mapPpo });
       job.current = j;
       j.promise
         .then((h) => { if (job.current === j) { setHeat(h); setBusy(false); } })

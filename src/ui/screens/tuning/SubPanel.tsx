@@ -28,7 +28,7 @@ export function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: 
     setBusy(true);
     setError(null);
     setApplied(false);
-    compute<IntegrationResult>('integrate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) }).promise
+    compute('integrate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) }).promise
       .then((r) => { setRes(r); setBusy(false); })
       .catch((e) => { setError(e.message); setBusy(false); });
   };
@@ -145,7 +145,7 @@ function SubFiltersBlock({ project, onSetup }: { project: Project; onSetup: (s: 
   const run = () => {
     setBusy(true);
     setApplied(false);
-    compute<SubFilterResult>('subFilters', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) })
+    compute('subFilters', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) })
       .promise.then((r) => { setRes(r); setBusy(false); })
       .catch(() => setBusy(false));
   };

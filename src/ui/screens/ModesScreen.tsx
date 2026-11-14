@@ -123,7 +123,7 @@ function SystemModesPanel({ room, fMax }: { room: Room; fMax: number }) {
     setBusy(true);
     setError(null);
     const t = setTimeout(() => {
-      const j = compute<SystemMode[]>('modes', { room, fMax }, setProgress);
+      const j = compute('modes', { room, fMax }, setProgress);
       j.promise.then((m) => { setModes(m); setBusy(false); }).catch((e) => { setError(e.message); setBusy(false); });
       cancel = j.cancel;
     }, 400);

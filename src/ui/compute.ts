@@ -1,7 +1,9 @@
 // Расчёты в постоянном воркере (очередь, отмена ещё не начатых задач, кэш волновой модели).
+// 030: вид задачи определяет тип входных данных и результата (таблица ComputeJobs, общая с воркером).
 import { logError } from '../state/errlog';
+import type { ComputeMessage, ComputePayload, ComputeReply, ComputeResult, ComputeType } from '../workers/computeJobs';
 
-export type ComputeType = 'optimize' | 'listenerMap' | 'subMap' | 'integrate' | 'calibrate' | 'compare' | 'evaluate' | 'modes' | 'field' | 'subFilters' | 'voiceMap';
+export type { ComputePayload, ComputeResult, ComputeType } from '../workers/computeJobs';
 
 export interface ComputeJob<T> {
   promise: Promise<T>;
@@ -10,7 +12,7 @@ export interface ComputeJob<T> {
 
 interface Pending {
   type: ComputeType;
-  resolve: (v: any) => void;
+  resolve: (v: ComputeResult<ComputeType>) => void;
   reject: (e: Error) => void;
   progress?: (v: number) => void;
 }
@@ -19,10 +21,13 @@ let worker: Worker | null = null;
 let seq = 0;
 const pending = new Map<number, Pending>();
 
+/** Сообщение воркеру: состав проверяет компилятор. */
+const send = (w: Worker, m: ComputeMessage) => w.postMessage(m);
+
 function getWorker(): Worker {
   if (worker) return worker;
   const w = new Worker(new URL('../workers/compute.worker.ts', import.meta.url), { type: 'module' });
-  w.onmessage = (e) => {
+  w.onmessage = (e: MessageEvent<ComputeReply>) => {
     const m = e.data;
     const p = pending.get(m.id);
     if (!p) return;
@@ -47,27 +52,32 @@ function getWorker(): Worker {
   return w;
 }
 
-export function compute<T>(type: ComputeType, payload: unknown, onProgress?: (v: number) => void): ComputeJob<T> {
+/** Данные проекта — обычные объекты; JSON-копия отбрасывает всё лишнее (что до воркера доходит — см. JsonSafe). */
+function jsonCopy<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T;
+}
+
+export function compute<K extends ComputeType>(type: K, payload: ComputePayload<K>, onProgress?: (v: number) => void): ComputeJob<ComputeResult<K>> {
   const w = getWorker();
   const id = ++seq;
   let settled = false;
-  const promise = new Promise<T>((resolve, reject) => {
+  const promise = new Promise<ComputeResult<K>>((resolve, reject) => {
     pending.set(id, {
       type,
-      resolve: (v) => { settled = true; resolve(v); },
+      // ответ с этим id — результат этой задачи, то есть вида K
+      resolve: (v) => { settled = true; resolve(v as ComputeResult<K>); },
       reject: (e) => { settled = true; reject(e); },
       progress: onProgress,
     });
   });
-  // данные проекта — обычные объекты; JSON-копия отбрасывает всё лишнее
-  w.postMessage({ id, type, payload: JSON.parse(JSON.stringify(payload)) });
+  send(w, { id, type, payload: jsonCopy(payload) });
   return {
     promise,
     cancel: () => {
       if (settled) return;
       settled = true;
       pending.delete(id);
-      w.postMessage({ cancel: id });
+      send(w, { cancel: id });
     },
   };
 }

@@ -17,7 +17,7 @@ export function useSetupEval(
     // расстановки больше нет (проба убрана, сравнение выключено) — прежний результат не показываем
     if (!wave || !setup) { setState((s) => (s.ev || s.busy || s.error ? { ev: null, busy: false, error: null } : s)); return; }
     setState((s) => ({ ...s, busy: true, error: null }));
-    const job = compute<SetupEval>('evaluate', { room, sources, constraints: c, setup, ppo });
+    const job = compute('evaluate', { room, sources, constraints: c, setup, ppo });
     job.promise
       .then((ev) => setState({ ev, busy: false, error: null }))
       .catch((e) => setState((s) => ({ ...s, busy: false, error: e.message })));

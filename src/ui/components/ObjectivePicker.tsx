@@ -26,7 +26,7 @@ export function ObjectivePicker({ room, value, onChange, band }: { room: Room; v
   useEffect(() => {
     setSys(null);
     if (!needSys) return;
-    const job = compute<SystemMode[]>('modes', { room, fMax: SYS_MODES_FMAX });
+    const job = compute('modes', { room, fMax: SYS_MODES_FMAX });
     job.promise.then(setSys).catch(() => setSys(null));
     return () => job.cancel();
   }, [needSys, room]);

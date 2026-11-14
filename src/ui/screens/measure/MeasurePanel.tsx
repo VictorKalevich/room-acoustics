@@ -31,7 +31,7 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
   const [cmpAsync, setCmpAsync] = useState<Comparison | { error: string } | null>(null);
   useEffect(() => {
     if (!m || !wave) { setCmpAsync(null); return; }
-    const j = compute<Comparison>('compare', { room, sources, constraints: c, setup: current, measurement: m });
+    const j = compute('compare', { room, sources, constraints: c, setup: current, measurement: m });
     j.promise.then(setCmpAsync).catch((e) => setCmpAsync({ error: e.message }));
     return () => j.cancel();
   }, [m, room, sources, c, current, wave]);
@@ -52,7 +52,7 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
   const runCal = () => {
     if (!m) return;
     setBusy(true);
-    compute<CalibrationResult>('calibrate', { room, sources, constraints: c, setup: current, measurement: m }).promise
+    compute('calibrate', { room, sources, constraints: c, setup: current, measurement: m }).promise
       .then((r) => {
         setCal(r);
         setBusy(false);

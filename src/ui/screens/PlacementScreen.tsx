@@ -61,7 +61,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
     setRunning(true);
     setProgress(0);
     job.current?.cancel();
-    const j = compute<PlacementResult>('optimize', { room, sources, constraints: c, precision }, setProgress);
+    const j = compute('optimize', { room, sources, constraints: c, precision }, setProgress);
     job.current = j;
     j.promise
       .then((r) => {
@@ -119,7 +119,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
     const t = setTimeout(() => {
       heatJob.current?.cancel();
       const setup = { ...placementLayout(current), subSettings: current.subSettings ?? {}, crossoverHz: null };
-      const j = compute<Heatmap>(effKind === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup, subId: effSub, ppo: gridPpo(precision, c.objective) });
+      const j = compute(effKind === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup, subId: effSub, ppo: gridPpo(precision, c.objective) });
       heatJob.current = j;
       j.promise
         .then((h) => { if (heatJob.current === j) { cache.map.set(key, h); setHeat(h); setHeatBusy(false); } })

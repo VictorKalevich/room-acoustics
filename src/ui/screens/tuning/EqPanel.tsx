@@ -36,7 +36,7 @@ export function EqPanel({ project, active = true }: { project: Project; active?:
     setError(null);
     if (isWave(room)) {
       setEqBusy(true);
-      compute<SetupEval>('evaluate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision, 48) }).promise
+      compute('evaluate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision, 48) }).promise
         .then((e) => { setEqBusy(false); finish(e); })
         .catch((e) => { setEqBusy(false); setError(e.message); });
     } else finish(evaluateSetup(room, sources, c, current, { ppo: evalPpo(project.precision, 48) }));

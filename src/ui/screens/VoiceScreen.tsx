@@ -60,7 +60,7 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
     if (!bandOk) { setBusy(false); return; }
     setBusy(true);
     const tm = setTimeout(() => {
-      const j = compute<VoiceMap>('voiceMap', { room, settings: calc, goal, precision });
+      const j = compute('voiceMap', { room, settings: calc, goal, precision });
       job.current = j;
       j.promise.then((m) => { if (job.current === j) { setMapResult({ room, settings: calc, precision, data: m }); setBusy(false); } }).catch((e) => { if (job.current === j) { setError((e as Error).message); setBusy(false); } });
     }, 250);

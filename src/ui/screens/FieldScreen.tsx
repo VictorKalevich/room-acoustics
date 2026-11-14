@@ -99,7 +99,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     // прежние моды другой комнаты не показываем, пока считаются новые
     setSysModes(null);
     if (!wave) return;
-    const j = compute<SystemMode[]>('modes', { room, fMax: Math.min(200, fTop) });
+    const j = compute('modes', { room, fMax: Math.min(200, fTop) });
     j.promise.then(setSysModes).catch(() => setSysModes([]));
     return () => j.cancel();
   }, [room, wave, fTop]);
@@ -157,7 +157,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
       setBusy(true);
       setError(null);
       setProgress(0);
-      const j = compute<FieldResult>('field', { room, sources, setup: current, kind, ...request }, setProgress);
+      const j = compute('field', { room, sources, setup: current, kind, ...request }, setProgress);
       job.current = j;
       j.promise
         .then((r) => {
