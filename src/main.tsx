@@ -9,9 +9,11 @@ import './styles.css';
 import { App } from './ui/App';
 import { startUpdates } from './ui/updates';
 import { installErrorLog } from './state/errlog';
+import { AppBoundary } from './ui/components/ErrorBoundary';
 
 installErrorLog();
-render(<App />, document.getElementById('app')!);
+// 028: сбой оболочки — сообщение «Приложение не открылось» вместо пустой страницы
+render(<AppBoundary><App /></AppBoundary>, document.getElementById('app')!);
 
 // Офлайн-режим и автообновление: service worker регистрируется только в собранной версии по HTTPS
 // (на localhost — с параметром ?sw, для проверки обновлений в тестах)

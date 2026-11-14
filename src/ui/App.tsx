@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
 import type { Room } from '../core/types';
 import { useProject } from './useProject';
 import { computeReverb } from '../core/reverb';
@@ -13,6 +14,7 @@ import { FieldScreen } from './screens/FieldScreen';
 import { Drawer } from './components/Drawer';
 import { SectionNav } from './design-system';
 import { RetainedSection } from './components/RetainedSection';
+import { ScreenBoundary } from './components/ErrorBoundary';
 import { useNavigation, type Tab, type AnalysisView } from './navigation';
 import { TermSheet } from './components/Term';
 import { MiniPlayer } from './components/MiniPlayer';
@@ -84,6 +86,10 @@ export function App() {
     hint: project.scanInfo ? S.drawer.startScan : draft ? S.drawer.startDraft(S.editor.stepLabels[draft.reached]) : S.drawer.startHint,
     onPick: () => { setDrawer(false); go('room/overview'); },
   };
+  // 028: каждый раздел — в своей границе ошибок; сбой одного не трогает остальные, шапку, меню и нижнюю панель
+  const guard = (name: string, node: ComponentChildren) => (
+    <ScreenBoundary name={name} project={project} onReport={name === TITLES.about ? undefined : () => go('about')}>{node}</ScreenBoundary>
+  );
   if (!ready) return <div class="screen"><p role="status">Открываем проект…</p></div>;
   return (
     <div class={`app${roomReady ? '' : ' app--start'}`}>
@@ -123,13 +129,13 @@ export function App() {
           </div>
         )}
         <div hidden={tab !== 'room' || route.room !== 'overview'}>
-          <RoomScreen project={project} reverb={reverb} onRoom={onRoom} onGo={(t) => go(t)} />
+          {guard(TITLES.room, <RoomScreen project={project} reverb={reverb} onRoom={onRoom} onGo={(t) => go(t)} />)}
         </div>
-        {tab === 'room' && route.room !== 'overview' && (
-          <RoomEditor project={project} step={route.room} onStep={(s) => go(`room/${s}`)} onRoom={onRoom} onBack={() => go('room/overview')} />
+        {tab === 'room' && route.room !== 'overview' && guard(S.editor.title,
+          <RoomEditor project={project} step={route.room} onStep={(s) => go(`room/${s}`)} onRoom={onRoom} onBack={() => go('room/overview')} />,
         )}
         {!roomReady && NEEDS_ROOM.includes(tab) && <RoomFirst onGo={() => go('room/overview')} />}
-        {roomReady && tab === 'modes' && (
+        {roomReady && tab === 'modes' && guard(TITLES.modes,
           <>
             <div class="screen modes-switch">
               <SectionNav label="Раздел анализа" value={modesView} options={[{ value: 'overview', label: S.modesView.overview }, { value: 'list', label: S.modesView.list }, { value: 'field', label: S.modesView.field }]} onChange={setModes} />
@@ -139,10 +145,10 @@ export function App() {
             {modesView === 'overview' && (placed ? (
               <OverviewScreen project={project} modes={modes} reverb={reverb} onGo={(t, f) => { if (t === 'field') { if (f) setFieldFocus(f); setModes('field'); } else go(t); }} />
             ) : <PlacementFirst onGo={toPlacement} />)}
-          </>
+          </>,
         )}
         {roomReady && <div hidden={tab !== 'placement'}>
-          <PlacementScreen
+          {guard(TITLES.placement, <PlacementScreen
             project={project}
             onSources={onSources}
             onConstraints={onConstraints}
@@ -154,27 +160,27 @@ export function App() {
             onSetup={onSetup}
             onSetups={onSetups}
             onGo={(t) => go(t)}
-          />
+          />)}
         </div>}
         {roomReady && placed && <RetainedSection active={tab === 'tuning'}>
-          <TuningScreen project={project} modes={modes} onSetup={onSetup} onRoom={(room) => onRoom(room)} view={route.tuning} active={tab === 'tuning'} onGo={go} />
+          {guard(TITLES.tuning, <TuningScreen project={project} modes={modes} onSetup={onSetup} onRoom={(room) => onRoom(room)} view={route.tuning} active={tab === 'tuning'} onGo={go} />)}
         </RetainedSection>}
         {roomReady && !placed && tab === 'tuning' && <PlacementFirst onGo={toPlacement} />}
-        {tab === 'projects' && (
+        {tab === 'projects' && guard(TITLES.projects,
           <ProjectsScreen
             project={project}
             onReplace={(p) => { setProject(p); go('room/overview'); }}
             onRename={(name) => touch({ name }, false)}
             onGo={go}
-          />
+          />,
         )}
         {roomReady && <RetainedSection active={tab === 'measure'}>
-          <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} onPlacement={toPlacement} />
+          {guard(TITLES.measure, <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} onPlacement={toPlacement} />)}
         </RetainedSection>}
-        {roomReady && tab === 'voice' && <VoiceScreen project={project} onVoice={onVoice} onPrecision={onPrecision} />}
-        {roomReady && tab === 'report' && <ReportScreen project={project} modes={modes} reverb={reverb} onPlacement={toPlacement} />}
-        {tab === 'help' && <HelpScreen project={project} onGo={(t) => go(t)} onWizard={refreshWizard} />}
-        {tab === 'about' && <AboutScreen project={project} />}
+        {roomReady && tab === 'voice' && guard(TITLES.voice, <VoiceScreen project={project} onVoice={onVoice} onPrecision={onPrecision} />)}
+        {roomReady && tab === 'report' && guard(TITLES.report, <ReportScreen project={project} modes={modes} reverb={reverb} onPlacement={toPlacement} />)}
+        {tab === 'help' && guard(TITLES.help, <HelpScreen project={project} onGo={(t) => go(t)} onWizard={refreshWizard} />)}
+        {tab === 'about' && guard(TITLES.about, <AboutScreen project={project} />)}
       </main>
 
       <MiniPlayer />
