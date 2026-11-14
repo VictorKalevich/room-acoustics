@@ -96,3 +96,58 @@ describe('операции хранилища: запросы и результ�
     await expect(st.saveProject(project('Другой'))).rejects.toThrow('запрос не выполнен');
   });
 });
+
+describe('соединение с базой (029)', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+
+  it('одно соединение на вкладку для всех операций', async () => {
+    await st.saveDraft(project('Студия'));
+    await st.saveProject(project('Первый'));
+    await Promise.all([st.listProjects(), st.loadDraft(), st.storageAvailable()]);
+    expect(idb.opens).toBe(1);
+    expect(idb.connections.size).toBe(1);
+  });
+
+  it('versionchange закрывает соединение — удаление или смена версии не ждут; следующая операция выполняется', async () => {
+    await st.saveDraft(project('Студия'));
+    expect(idb.versionChange()).toBe('done');
+    expect(idb.connections.size).toBe(0);
+    await st.saveDraft(project('После'));
+    expect((await st.loadDraft())?.name).toBe('После');
+    expect(idb.opens).toBe(2);
+  });
+
+  it('браузер закрыл соединение с событием close — следующая операция открывает новое', async () => {
+    await st.saveDraft(project('Студия'));
+    idb.dropConnections(true);
+    expect((await st.loadDraft())?.name).toBe('Студия');
+    expect(idb.opens).toBe(2);
+  });
+
+  it('браузер закрыл соединение молча — операция повторяется один раз с новым', async () => {
+    await st.saveDraft(project('Студия'));
+    idb.dropConnections(false);
+    await st.saveDraft(project('После'));
+    expect((await st.loadDraft())?.name).toBe('После');
+    expect(idb.opens).toBe(2);
+  });
+
+  it('после ошибки запроса следующая операция идёт по новому соединению', async () => {
+    await st.saveDraft(project('Студия'));
+    idb.failRequests = 1;
+    await expect(st.saveDraft(project('Сбой'))).rejects.toThrow('запрос не выполнен');
+    await st.saveDraft(project('После'));
+    expect((await st.loadDraft())?.name).toBe('После');
+    expect(idb.opens).toBe(2);
+    expect(idb.connections.size).toBe(1);
+  });
+
+  it('ожидание «Хранилище занято…» отклоняет операцию; открывшееся позже соединение закрывается', async () => {
+    idb.blockOpens = 1;
+    await expect(st.saveDraft(project('Студия'))).rejects.toThrow(/Хранилище занято/);
+    await tick();
+    expect(idb.connections.size).toBe(0);
+    await st.saveDraft(project('После'));
+    expect((await st.loadDraft())?.name).toBe('После');
+  });
+});

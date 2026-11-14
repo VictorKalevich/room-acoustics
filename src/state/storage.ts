@@ -232,9 +232,25 @@ const META = 'meta';
 /** 020: облегчённая сетка скана проекта — для «Поправить границы комнаты»; в файл проекта не входит. */
 const SCANS = 'scans';
 
+/**
+ * 029: соединение с базой одно на вкладку. Раньше каждая операция открывала своё и не закрывала его, поэтому удаление
+ * или смена версии базы в другой вкладке ждали эту вкладку («Хранилище занято…»). Теперь соединение закрывается при
+ * versionchange и когда его закрыл сам браузер (close), а следующая операция открывает новое.
+ */
+let conn: Promise<IDBDatabase> | null = null;
+
+/** Закрыть соединение; следующая операция откроет новое. */
+function drop(db: IDBDatabase, from: Promise<IDBDatabase>) {
+  if (conn === from) conn = null;
+  try { db.close(); } catch { /* уже закрыто */ }
+}
+
 function open(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (conn) return conn;
+  const p = new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB недоступна'));
+    // операция уже отклонена (ожидание закончилось «Хранилище занято…») — открывшееся позже соединение не нужно
+    let settled = false;
     const req = indexedDB.open(DB, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -242,22 +258,41 @@ function open(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(META)) db.createObjectStore(META);
       if (!db.objectStoreNames.contains(SCANS)) db.createObjectStore(SCANS, { keyPath: 'projectId' });
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error('Хранилище занято другой вкладкой приложения — закройте её.'));
+    req.onsuccess = () => {
+      const db = req.result;
+      if (settled) { db.close(); return; }
+      settled = true;
+      db.onversionchange = () => drop(db, p);
+      db.onclose = () => drop(db, p);
+      resolve(db);
+    };
+    req.onerror = () => { settled = true; reject(req.error); };
+    req.onblocked = () => { settled = true; reject(new Error('Хранилище занято другой вкладкой приложения — закройте её.')); };
   });
+  conn = p;
+  p.catch(() => { if (conn === p) conn = null; });
+  return p;
 }
 
-function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return open().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const t = db.transaction(store, mode);
-        const req = fn(t.objectStore(store));
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      }),
-  );
+function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>, again = true): Promise<T> {
+  const p = open();
+  return p.then((db) => {
+    let t: IDBTransaction;
+    try {
+      t = db.transaction(store, mode);
+    } catch (e) {
+      // соединение закрыто, а браузер об этом не сообщил: один повтор с новым — как прежде с отдельным соединением
+      drop(db, p);
+      if (!again) throw e;
+      return tx(store, mode, fn, false);
+    }
+    return new Promise<T>((resolve, reject) => {
+      const req = fn(t.objectStore(store));
+      req.onsuccess = () => resolve(req.result);
+      // после ошибки следующая операция открывает новое соединение (так было, когда у каждой было своё)
+      req.onerror = () => { drop(db, p); reject(req.error); };
+    });
+  });
 }
 
 export async function storageAvailable(): Promise<boolean> {
