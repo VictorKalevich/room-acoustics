@@ -116,7 +116,7 @@ export class FakeIndexedDB {
   }
 
   /** Значение из хранилища напрямую, минуя приложение. */
-  peek(store: string, key: unknown) { return structuredClone(this.stores.get(store)?.data.get(key)); }
+  peek(store: string, key: unknown): any { return structuredClone(this.stores.get(store)?.data.get(key)); }
   /** Записать значение напрямую, минуя приложение (до запуска). */
   seed(store: string, key: unknown, value: unknown) {
     if (!this.stores.has(store)) this.stores.set(store, { data: new Map() });

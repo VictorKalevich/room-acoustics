@@ -151,3 +151,99 @@ describe('соединение с базой (029)', () => {
     expect((await st.loadDraft())?.name).toBe('После');
   });
 });
+
+describe('черновик не открылся — прежний не перезаписывается (029)', () => {
+  const quick = [0, 0, 0];
+  const stored = (p: unknown) => JSON.parse(JSON.stringify(p));
+  const failure = (e: unknown) => e as InstanceType<Storage['DraftLoadError']>;
+
+  it('кратковременный сбой (первые две попытки) незаметен — проект открывается', async () => {
+    const p = project('Студия');
+    idb.seed('meta', 'draft', p);
+    idb.failOpens = 2;
+    expect((await st.loadDraft(quick))?.id).toBe(p.id);
+    expect(idb.opens).toBe(3);
+    await st.saveDraft(project('Правка'));
+    expect(idb.peek('meta', 'draft').name).toBe('Правка');
+  });
+
+  it('по умолчанию — четыре попытки с паузами 200, 400 и 800 мс', async () => {
+    expect(st.DRAFT_READ_PAUSES).toEqual([200, 400, 800]);
+    idb.seed('meta', 'draft', project('Студия'));
+    idb.failOpens = 100;
+    const t0 = Date.now();
+    await expect(st.loadDraft()).rejects.toBeInstanceOf(st.DraftLoadError);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(1350);
+    expect(idb.opens).toBe(4);
+  });
+
+  it('хранилище не читается — DraftLoadError unreadable; ни черновик, ни ra-draft-pending не пишутся до выбора', async () => {
+    const p = project('Студия');
+    idb.seed('meta', 'draft', p);
+    idb.failOpens = 100;
+    const e = failure(await st.loadDraft(quick).catch((x) => x));
+    expect(e).toBeInstanceOf(st.DraftLoadError);
+    expect(e.kind).toBe('unreadable');
+    expect(e.message).toContain('хранилище не открылось');
+    expect(idb.opens).toBe(4);
+    // хранилище снова доступно, но пользователь ещё не выбрал: отложенное сохранение, уход со страницы, обновление
+    idb.failOpens = 0;
+    await expect(st.saveDraft(project('Пустой'))).rejects.toThrow(/не перезаписывается/);
+    st.stashPendingDraft(project('Пустой'));
+    expect(mem.getItem('ra-draft-pending')).toBeNull();
+    expect(idb.peek('meta', 'draft')).toEqual(stored(p));
+  });
+
+  it('«Повторить», когда хранилище доступно, — тот же проект с теми же данными; запись снова разрешена', async () => {
+    const p = project('Студия');
+    idb.seed('meta', 'draft', p);
+    idb.failOpens = 100;
+    await expect(st.loadDraft(quick)).rejects.toBeInstanceOf(st.DraftLoadError);
+    idb.failOpens = 0;
+    const again = await st.loadDraft(quick);
+    expect(again).toEqual(st.normalizeProject(stored(p)));
+    await st.saveDraft(again!);
+    expect(idb.peek('meta', 'draft').id).toBe(p.id);
+  });
+
+  it('«Начать новый проект» после подтверждения снимает запрет — черновик заменяется', async () => {
+    idb.seed('meta', 'draft', project('Студия'));
+    idb.failOpens = 100;
+    await expect(st.loadDraft(quick)).rejects.toBeInstanceOf(st.DraftLoadError);
+    idb.failOpens = 0;
+    st.releaseDraft();
+    const fresh = project('Новый');
+    await st.saveDraft(fresh);
+    st.stashPendingDraft(fresh);
+    expect(idb.peek('meta', 'draft').id).toBe(fresh.id);
+    expect(mem.getItem('ra-draft-pending')).not.toBeNull();
+  });
+
+  it('черновик не прошёл проверку — DraftLoadError invalid с причиной и данными как есть; запись запрещена', async () => {
+    const b = broken();
+    idb.seed('meta', 'draft', b);
+    const e = failure(await st.loadDraft(quick).catch((x) => x));
+    expect(e.kind).toBe('invalid');
+    expect(e.message).toBe('Неверные данные комнаты: Глубина: от 1 до 50 м');
+    expect(e.raw).toEqual(stored(b));
+    expect(idb.peek('meta', 'draft-failed')).toEqual(stored(b));
+    await expect(st.saveDraft(project('Пустой'))).rejects.toThrow(/не перезаписывается/);
+    expect(idb.peek('meta', 'draft')).toEqual(stored(b));
+    // без повторов: проверка не зависит от попытки
+    expect(idb.opens).toBe(1);
+  });
+
+  it('исправная ra-draft-pending открывается без чтения IndexedDB', async () => {
+    st.stashPendingDraft(project('При уходе'));
+    idb.failOpens = 100;
+    expect((await st.loadDraft(quick))?.name).toBe('При уходе');
+    expect(idb.opens).toBe(0);
+  });
+
+  it('в браузере нет IndexedDB — черновика нет, запись не запрещена', async () => {
+    vi.stubGlobal('indexedDB', undefined);
+    expect(await st.loadDraft(quick)).toBeUndefined();
+    st.stashPendingDraft(project('При уходе'));
+    expect(mem.getItem('ra-draft-pending')).not.toBeNull();
+  });
+});

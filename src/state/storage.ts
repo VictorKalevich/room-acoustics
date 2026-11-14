@@ -315,8 +315,21 @@ export const listProjects = () =>
     all.map((p) => { try { return normalizeProject(p); } catch { return p; } }).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
   );
 
+/**
+ * 029: прежний рабочий проект не открылся (loadDraft отклонён) — он не перезаписывается, пока пользователь не выбрал
+ * «Начать новый проект» (releaseDraft) или повтор чтения не удался. Запрет — здесь, в одном месте для всех путей
+ * записи: отложенное сохранение, сохранение при уходе со страницы и перед обновлением приложения.
+ */
+let draftKept = false;
+/** Пользователь выбрал продолжить без прежнего рабочего проекта: запись черновика снова разрешена. */
+export function releaseDraft(): void {
+  draftKept = false;
+}
+
 /** Черновик текущего проекта — восстанавливается при следующем запуске. */
-export const saveDraft = (p: Project) => tx(META, 'readwrite', (s) => s.put(JSON.parse(JSON.stringify(p)), 'draft'));
+export const saveDraft = (p: Project) => draftKept
+  ? Promise.reject(new Error('Прежний рабочий проект не открылся — черновик не перезаписывается'))
+  : tx(META, 'readwrite', (s) => s.put(JSON.parse(JSON.stringify(p)), 'draft'));
 /**
  * Несохранённый проект на момент ухода со страницы. Отложенное сохранение (300 мс после последнего изменения)
  * могло не успеть, а запись в IndexedDB при закрытии страницы браузер не гарантирует; localStorage пишется
@@ -324,6 +337,8 @@ export const saveDraft = (p: Project) => tx(META, 'readwrite', (s) => s.put(JSON
  */
 const PENDING_KEY = 'ra-draft-pending';
 export function stashPendingDraft(p: Project): void {
+  // 029: запись важнее черновика — пока прежний не открылся, она заслонила бы его при следующем запуске
+  if (draftKept) return;
   try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch { /* нет места или хранилища — остаётся отложенное сохранение */ }
 }
 export function clearPendingDraft(): void {
@@ -338,23 +353,62 @@ function readPendingDraft(): Project | undefined {
   }
 }
 
-export const loadDraft = () =>
-  tx<Project | undefined>(META, 'readonly', (s) => s.get('draft') as IDBRequest<Project | undefined>).catch(() => undefined).then(async (stored) => {
-    const pending = readPendingDraft();
-    // запись появляется только когда на устройстве состояние старее, и удаляется, как только оно сохранено
-    if (pending) {
-      try { return normalizeProject(pending); } catch { /* повреждён — берём сохранённый */ }
-    }
-    const d = stored;
-    if (!d) return undefined;
+/**
+ * 029: рабочий проект есть, но не открылся. unreadable — хранилище не читается и после повторов; invalid — черновик
+ * не прошёл проверку (raw — его данные как есть, error — причина из проверки). Черновик на устройстве не тронут.
+ */
+export class DraftLoadError extends Error {
+  constructor(readonly kind: 'unreadable' | 'invalid', readonly error: unknown, readonly raw?: unknown) {
+    super(error instanceof Error ? error.message : String(error));
+    this.name = 'DraftLoadError';
+  }
+}
+
+/** 029: паузы между попытками прочитать черновик — до четырёх попыток, около 1,4 с: такие сбои обычно кратковременны. */
+export const DRAFT_READ_PAUSES: readonly number[] = [200, 400, 800];
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Рабочий проект при запуске (029 — три исхода): проект — открыт; undefined — черновика нет (первый запуск);
+ * DraftLoadError — черновик есть, но не открылся: до решения пользователя он не перезаписывается (releaseDraft).
+ */
+export async function loadDraft(pauses: readonly number[] = DRAFT_READ_PAUSES): Promise<Project | undefined> {
+  // запись при уходе со страницы появляется только когда на устройстве состояние старее, и удаляется, как только оно
+  // сохранено. Она читается независимо от IndexedDB: исправная открывается, даже если база не читается.
+  const pending = readPendingDraft();
+  if (pending) {
+    try { return opened(normalizeProject(pending)); } catch { /* повреждена — берём сохранённый */ }
+  }
+  // браузера без IndexedDB черновик не касается: на устройстве его нет — ни прочитать, ни перезаписать
+  if (typeof indexedDB === 'undefined') return opened(undefined);
+  let stored: unknown;
+  for (let attempt = 0; ; attempt++) {
     try {
-      return normalizeProject(d);
+      stored = await tx<unknown>(META, 'readonly', (s) => s.get('draft'));
+      break;
     } catch (e) {
-      // черновик не прошёл проверку: копия остаётся на устройстве (ключ draft-failed), а не затирается новым проектом
-      await tx(META, 'readwrite', (s) => s.put(d, 'draft-failed')).catch(() => undefined);
-      throw e;
+      if (attempt >= pauses.length) {
+        draftKept = true;
+        throw new DraftLoadError('unreadable', e);
+      }
+      await pause(pauses[attempt]);
     }
-  });
+  }
+  if (!stored) return opened(undefined);
+  try {
+    return opened(normalizeProject(stored));
+  } catch (e) {
+    draftKept = true;
+    // копия остаётся на устройстве и под ключом draft-failed (как раньше)
+    await tx(META, 'readwrite', (s) => s.put(stored, 'draft-failed')).catch(() => undefined);
+    throw new DraftLoadError('invalid', e, stored);
+  }
+}
+/** Черновик открыт или его нет — запись снова разрешена (в том числе после удачного «Повторить»). */
+function opened<T>(v: T): T {
+  draftKept = false;
+  return v;
+}
 
 /** Имя файла проекта по названию (024: экспорт идёт через «Поделиться» → «Сохранить в Файлы» или скачивание). */
 export const projectFileName = (p: Project) => `${p.name.replace(/[\\/:*?"<>|]+/g, '_') || 'room'}${FILE_EXT}`;

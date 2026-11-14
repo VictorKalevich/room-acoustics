@@ -6,7 +6,7 @@ import { Component, type ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { newProject } from '../../state/project';
-import { clearPendingDraft, loadDraft, saveDraft } from '../../state/storage';
+import { clearPendingDraft, loadDraft, releaseDraft, saveDraft } from '../../state/storage';
 import { logError } from '../../state/errlog';
 import { ConfirmSheet, FailurePanel, Note } from '../design-system';
 import { exportProject } from '../projectExport';
@@ -80,6 +80,8 @@ function AppFailure() {
   const exportNow = async () => { if (draft && await exportProject(draft)) setMsg({ text: S.projects.exported, tone: 'good' }); };
   const startNew = async () => {
     setAsk(false);
+    // 029: пользователь подтвердил замену — запрет записи, если рабочий проект не открылся, снимается
+    releaseDraft();
     clearPendingDraft();
     try {
       await saveDraft(newProject());
