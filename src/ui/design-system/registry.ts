@@ -10,7 +10,7 @@ export const componentFamilies = [
   ['Выбор действия', 'ActionMenu · .action-menu'],
   ['Флажки и фильтры', '.check · .chip · .plan-layers · .smoothing-stops'],
   ['Ползунки', '.smoothing-slider · .freq-slider · .hrange · .miniplayer__vol'],
-  ['Сообщения', 'Note · CalculationStatus · RoomFirst/PlacementFirst (закрытый экран) · .note · .progress · .spinner'],
+  ['Сообщения', 'Note · CalculationStatus · RoomFirst/PlacementFirst (закрытый экран) · FailurePanel (сбой раздела или приложения) · .note · .progress · .spinner'],
   ['Раскрытие', 'Details · .details · .setup-card'],
   ['Шторки', 'ConfirmSheet (danger/primary, cancel, extra, список .plain-list) · .sheet · .sheet-backdrop · .sheet__close'],
   ['Карточки объектов', '.zone-card · .zone-card.is-selected · .wall-items · .found-opening · .problem'],

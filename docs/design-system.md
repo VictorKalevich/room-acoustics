@@ -16,7 +16,7 @@
 
 Компоненты импортируются из [design-system/index.ts](../src/ui/design-system/index.ts):
 NumberField, SelectField, Segmented, Panel, Note, Details, SectionNav, ActionMenu,
-CalculationStatus, ConfirmSheet. Старые пути components/Fields и другие оставлены только
+CalculationStatus, ConfirmSheet, FailurePanel. Старые пути components/Fields и другие оставлены только
 как совместимые переэкспорты, без второй реализации. Новый код использует публичный вход.
 
 Классы CSS тоже являются API дизайн-системы: для обычной кнопки используется
@@ -107,6 +107,7 @@ CalculationStatus, ConfirmSheet. Старые пути components/Fields и др
 | Состояния | Note info/good/warn; CalculationStatus; progress/spinner; status badges |
 | Раскрытие/диалоги | Details; ConfirmSheet (danger/primary, своя отмена, третье действие, список — 021); общая sheet и close для терминов/подтверждений |
 | Закрытые экраны | RoomFirst, PlacementFirst (022): Panel с пояснением и кнопками перехода |
+| Сообщение о сбое | FailurePanel (028): раздел или приложение не открылись — Panel, пояснение, ряд действий, итог действия |
 | Предметные виды | План, графики, 3D/сканы, score/stat, таблицы, списки, отчёт, аудио |
 | Развёртка стены | WallView: стена изнутри комнаты, окна, двери, проёмы, ковры, шторы, мебель у стены (019) |
 
@@ -228,6 +229,16 @@ CalculationStatus, ConfirmSheet. Старые пути components/Fields и др
 - Шаг «Мебель»: при «Общей оценкой» — одна сворачиваемая `Panel` «Где нельзя ставить колонки» с двумя `.subhead`
   («Мебель», «Двери, проходы и другое») и прежними `.zone-card`; при «Списком предметов» — прежние две панели.
   `ZonesPanel` получил вариант без собственной панели (`bare`). Новых стилей, ролей и отступов не потребовалось.
+
+## Что добавлено в 028
+
+- **FailurePanel** (`design-system/FailurePanel.tsx`) — сообщение о сбое отрисовки по образцу закрытых экранов:
+  `.screen` с `role="alert"`, `Panel` с заголовком, пояснение `.small`, `.btn-row` с действиями (первое —
+  `btn--primary`, остальные — `btn`), ниже — необязательный итог действия (`Note good` после экспорта).
+  Используется границами ошибок (`components/ErrorBoundary.tsx`): «Раздел не открылся» на месте упавшего
+  раздела и «Приложение не открылось» без шапки и нижней панели (каркас `.app--start`); подтверждение
+  «Начать новый проект?» — существующий ConfirmSheet. Пример — в каталоге.
+- Новых стилей, текстовых ролей и отступов не потребовалось.
 
 ## Обязательный порядок дальнейшей работы
 

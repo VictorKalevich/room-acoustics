@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { newProject } from '../../state/project';
-import { deleteProject, deleteScan, listProjects, parseProjectFile, projectFileName, saveProject, serializeProject, storageAvailable } from '../../state/storage';
-import { shareFile } from '../audio/mic';
+import { deleteProject, deleteScan, listProjects, parseProjectFile, saveProject, storageAvailable } from '../../state/storage';
+import { exportProject, readLastExport } from '../projectExport';
 import { ConfirmSheet, Panel, Note } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -20,9 +20,6 @@ interface Props {
 type Replace = { kind: 'new' } | { kind: 'open'; p: Project } | { kind: 'import'; p: Project };
 type Msg = { text: string; tone: 'good' | 'warn'; at: 'project' | 'file' };
 
-/** Последний экспорт в файл — отметка на устройстве; ключ прежнего экрана «Импорт и экспорт» (024). */
-const exportKey = (id: string) => `ra-sync-${id}`;
-const readExport = (id: string) => { try { return localStorage.getItem(exportKey(id)); } catch { return null; } };
 const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 
 /**
@@ -37,7 +34,7 @@ export function ProjectsScreen({ project, onReplace, onRename, onGo }: Props) {
   const [canStore, setCanStore] = useState(true);
   const [msg, setMsg] = useState<Msg | null>(null);
   const [ask, setAsk] = useState<Replace | null>(null);
-  const [lastExport, setLastExport] = useState(() => readExport(project.id));
+  const [lastExport, setLastExport] = useState(() => readLastExport(project.id));
   const fileInput = useRef<HTMLInputElement>(null);
 
   const ready = project.roomReady;
@@ -77,9 +74,8 @@ export function ProjectsScreen({ project, onReplace, onRename, onGo }: Props) {
 
   // 024: экспорт — через «Поделиться» (на iPhone «Сохранить в Файлы» → iCloud Drive), на компьютере — скачивание
   const exportFile = async () => {
-    if (!(await shareFile(serializeProject(project), projectFileName(project), 'application/json'))) return;
-    const now = new Date().toISOString();
-    try { localStorage.setItem(exportKey(project.id), now); } catch { /* без хранилища — только до перезапуска */ }
+    const now = await exportProject(project);
+    if (!now) return;
     setLastExport(now);
     setMsg({ text: S.projects.exported, tone: 'good', at: 'file' });
   };
