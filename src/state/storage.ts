@@ -13,6 +13,7 @@ import { normalizePrecision } from '../core/precision';
 import type { DetectResult, Units } from '../scan/detect';
 import type { LayoutResult, ScanLabels } from '../scan/layout';
 import type { ScanChoice, ScanRect } from '../scan/apply';
+import { cleanResult, cleanSubSettings, dropBad, isNum, isObj, isPoint, oneOf, WALLS } from './shape';
 
 export const FILE_FORMAT = 'room-acoustics-project';
 export const FILE_VERSION = 5; // 4: обработка, скос потолка, окна и двери, фильтры сабвуферов; 5: история замеров
@@ -43,25 +44,26 @@ export function parseProjectFile(text: string): Project {
 }
 
 /**
+ * Сведения о скане: неверные применённые границы (026) отбрасываются — тогда берутся сохранённые на устройстве.
+ * 028: поля, которые читает приложение, — своего типа: имя файла — строка (иначе пустое), уверенность распознавания
+ * и число поворотов неверного типа убираются (читаются как «без предупреждения» и 0). Остальные поля только хранятся.
+ */
+function normalizeScanInfo(raw: unknown): Project['scanInfo'] {
+  if (!isObj(raw)) return null;
+  const okApplied = (a: any) => isObj(a) && isObj(a.rect) && ['m', 'cm', 'mm'].includes(a.units)
+    && [a.rect.x0, a.rect.x1, a.rect.y0, a.rect.y1].every(isNum) && a.rect.x1 > a.rect.x0 && a.rect.y1 > a.rect.y0;
+  const info = dropBad(raw, { applied: okApplied, confidence: isNum, rotation: Number.isInteger });
+  return (typeof info.fileName === 'string' ? info : { ...info, fileName: '' }) as Project['scanInfo'];
+}
+const finite = (v: unknown, d: number) => (isNum(v) ? v : d);
+const ZONE_KINDS = ['door', 'window', 'furniture', 'other'] as const;
+const CORNERS = ['front-left', 'front-right', 'back-left', 'back-right'] as const;
+
+/**
  * Комната: отсутствующие поля — умолчания, неверные элементы отбрасываются, диапазоны проверяются.
  * fit = false (черновик конструктора, 021): объекты за стенами остаются как есть — список удаляемого
  * пользователь увидит перед сохранением; проверка при этом идёт по вписанной копии.
  */
-const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object';
-
-/** Сведения о скане: неверные применённые границы (026) отбрасываются — тогда берутся сохранённые на устройстве. */
-function normalizeScanInfo(raw: unknown): Project['scanInfo'] {
-  if (!isObj(raw)) return null;
-  const a = raw.applied;
-  const ok = isObj(a) && isObj(a.rect) && ['m', 'cm', 'mm'].includes(a.units)
-    && [a.rect.x0, a.rect.x1, a.rect.y0, a.rect.y1].every((v) => typeof v === 'number' && Number.isFinite(v)) && a.rect.x1 > a.rect.x0 && a.rect.y1 > a.rect.y0;
-  if (ok || a === undefined) return raw as Project['scanInfo'];
-  const { applied: _bad, ...rest } = raw;
-  void _bad;
-  return rest as Project['scanInfo'];
-}
-const finite = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-
 export function normalizeRoom(rawRoom: any, fit = true): Room {
   const room = { ...defaultRoom(), ...rawRoom };
   if (!['empty', 'typical', 'heavy'].includes(room.furnishing)) room.furnishing = defaultRoom().furnishing;
@@ -69,7 +71,9 @@ export function normalizeRoom(rawRoom: any, fit = true): Room {
   for (const s of SURFACES) if (!MATERIAL_BY_ID[room.materials[s]]) room.materials[s] = defaultRoom().materials[s];
   room.zones = Array.isArray(room.zones) ? room.zones.filter(isObj) : [];
   if (!['sealed', 'typical', 'door', 'open'].includes(room.leakage)) room.leakage = 'typical';
-  if (room.calibration && !(room.calibration.dampingScale > 0)) room.calibration = null;
+  // 028: множитель — число (строка проходила сравнение «> 0»)
+  if (room.calibration && !(isNum(room.calibration.dampingScale) && room.calibration.dampingScale > 0)) room.calibration = null;
+  if (room.calibration) room.calibration = dropBad(room.calibration, { source: (v) => typeof v === 'string' });
   // множитель, подобранный для прежней модели затухания, к новой не подходит — подстройку нужно повторить
   if (room.calibration && room.calibration.model !== DAMPING_MODEL) room.calibration = null;
   if (room.calibration && room.calibration.leakageBefore !== undefined && !['sealed', 'typical', 'door', 'open'].includes(room.calibration.leakageBefore)) {
@@ -77,13 +81,23 @@ export function normalizeRoom(rawRoom: any, fit = true): Room {
     void _bad;
     room.calibration = rest;
   }
-  room.openings = Array.isArray(room.openings) ? room.openings.filter(isObj) : [];
-  room.extensions = Array.isArray(room.extensions) ? room.extensions.filter(isObj) : [];
+  // 028: стена из четырёх, участок и высоты — числа; иначе проём или коридор убирается (без арки коридор раньше
+  // ронял открытие проекта)
+  room.openings = Array.isArray(room.openings)
+    ? room.openings.filter((o: any) => isObj(o) && oneOf(WALLS, o.wall) && [o.a0, o.a1, o.height].every(isNum))
+    : [];
+  room.extensions = Array.isArray(room.extensions)
+    ? room.extensions.filter((e: any) => isObj(e) && oneOf(WALLS, e.wall) && [e.a0, e.a1, e.depth, e.height].every(isNum)
+      && isObj(e.arch) && [e.arch.a0, e.arch.a1, e.arch.height].every(isNum))
+    : [];
   room.treatments = Array.isArray(room.treatments)
-    ? room.treatments.filter((t: any) => t && ['corner', 'panel', 'cloud'].includes(t.kind) && t.width > 0 && t.height > 0 && t.thickness > 0)
+    ? room.treatments
+      .filter((t: any) => t && ['corner', 'panel', 'cloud'].includes(t.kind) && [t.width, t.height, t.thickness].every(isNum) && t.width > 0 && t.height > 0 && t.thickness > 0)
+      // 028: необязательные угол, стена, положение и зазор неверного типа убираются — читаются умолчания
+      .map((t: any) => dropBad(t, { corner: (v) => oneOf(CORNERS, v), wall: (v) => oneOf(WALLS, v), at: isNum, z: isNum, x: isNum, y: isNum, gap: isNum }))
     : [];
   room.treatmentsOn = !!room.treatmentsOn;
-  if (!room.slope || !['front', 'back', 'left', 'right'].includes(room.slope.wall) || !(room.slope.low > 0) || !(room.slope.run > 0)) room.slope = null;
+  if (!room.slope || !oneOf(WALLS, room.slope.wall) || !(isNum(room.slope.low) && room.slope.low > 0) || !(isNum(room.slope.run) && room.slope.run > 0)) room.slope = null;
   room.features = Array.isArray(room.features)
     ? room.features.filter((f: any) => f && (f.kind === 'window' || f.kind === 'door') && ['front', 'back', 'left', 'right'].includes(f.wall) && f.a1 > f.a0)
     : [];
@@ -91,6 +105,9 @@ export function normalizeRoom(rawRoom: any, fit = true): Room {
   // 019: тип и высота мебели, ковры и шторы, обстановка по списку (необязательные поля)
   room.zones = room.zones.map((z: any) => {
     const n = { ...z };
+    // 028: вид из четырёх (иначе «Другое» — место без колонок сохраняется), подпись — строка
+    if (!oneOf(ZONE_KINDS, n.kind)) n.kind = 'other';
+    if (n.name !== undefined && typeof n.name !== 'string') delete n.name;
     if (n.furniture !== undefined && (n.kind !== 'furniture' || !FURNITURE[n.furniture as FurnitureType])) delete n.furniture;
     if (n.height !== undefined && !(Number.isFinite(n.height) && n.height > 0)) delete n.height;
     return n;
@@ -131,6 +148,13 @@ export function normalizeProject(raw: any): Project {
     const n = s.kind === 'sub' ? { ...d, ...s } : { ...s };
     if (!(n.fLow >= 10 && n.fHigh <= 24000 && n.fLow < n.fHigh)) { n.fLow = d.fLow; n.fHigh = d.fHigh; }
     if (!(n.height >= 0 && n.height <= 3)) n.height = d.height;
+    // 028: регулировки сабвуфера — своего типа, иначе как у сабвуфера по умолчанию
+    if (n.kind === 'sub') {
+      if (!oneOf(['none', 'adjustable'] as const, n.delayMode)) n.delayMode = d.delayMode;
+      if (!oneOf(['none', 'polarity', 'continuous', 'full'] as const, n.phaseMode)) n.phaseMode = d.phaseMode;
+      n.maxDelayMs = finite(n.maxDelayMs, d.maxDelayMs!);
+      if (n.peqBands !== undefined && !isNum(n.peqBands)) delete n.peqBands;
+    }
     return n;
   });
   const srcErr = validateSources(sources);
@@ -147,17 +171,24 @@ export function normalizeProject(raw: any): Project {
   if (!['corners', 'walls', 'anywhere'].includes(constraints.subZone)) constraints.subZone = dc.subZone;
   constraints.seats = { count: finite(constraints.seats.count, dc.seats.count), spacing: finite(constraints.seats.spacing, dc.seats.spacing) };
   for (const k of ['spkLimit', 'subLimit'] as const) if (!(typeof constraints.crossover[k] === 'number' && constraints.crossover[k] >= 10 && constraints.crossover[k] <= 24000)) delete constraints.crossover[k];
-  const okPoint = (p: any) => isObj(p) && [p.x, p.y, p.z].every((v) => typeof v === 'number' && Number.isFinite(v));
-  const fixSetup = (s: any, name: string): Setup =>
-    syncSetup(
+  // 028: подбор частоты раздела перебирает частоты от min до max — числа (строки склеивались бы в цикле)
+  if (typeof constraints.crossover.adjustable !== 'boolean') constraints.crossover.adjustable = dc.crossover.adjustable;
+  for (const k of ['min', 'max'] as const) constraints.crossover[k] = finite(constraints.crossover[k], dc.crossover[k]);
+  const fixSetup = (s: any, name: string): Setup => {
+    const d = defaultSetup(room, sources, constraints, name);
+    return syncSetup(
       {
-        ...defaultSetup(room, sources, constraints, name),
+        ...d,
         ...(isObj(s) ? s : {}),
+        // 028: id и имя — строки
+        ...(typeof s?.id === 'string' ? {} : { id: d.id }),
+        ...(typeof s?.name === 'string' ? {} : { name }),
         // координаты-не-числа (NaN в JSON становится null) — к местам по умолчанию
-        ...(okPoint(s?.listener) ? {} : { listener: defaultSetup(room, sources, constraints, name).listener }),
-        positions: Object.fromEntries(Object.entries(isObj(s?.positions) ? s.positions : {}).filter(([, v]) => okPoint(v))) as Setup['positions'],
-        subSettings: isObj(s?.subSettings) ? s.subSettings : {},
-        crossoverHz: s?.crossoverHz ?? null,
+        ...(isPoint(s?.listener) ? {} : { listener: d.listener }),
+        positions: Object.fromEntries(Object.entries(isObj(s?.positions) ? s.positions : {}).filter(([, v]) => isPoint(v))) as Setup['positions'],
+        // 028: задержка, фаза, уровень и свои фильтры сабвуферов — числа; частота раздела — число или нет
+        subSettings: cleanSubSettings(s?.subSettings),
+        crossoverHz: isNum(s?.crossoverHz) ? s.crossoverHz : null,
         measurement: validMeasurement(s?.measurement) ? s.measurement : null,
         history: Array.isArray(s?.history) && s.history.some(validMeasurement) ? s.history.filter(validMeasurement).slice(0, HISTORY_MAX) : undefined,
       },
@@ -165,6 +196,10 @@ export function normalizeProject(raw: any): Project {
       sources,
       constraints,
     );
+  };
+  // 028: результат подбора неверной формы отбрасывается — подбор запускают заново, выбран первый вариант
+  const result = cleanResult(raw.result);
+  const dropped = raw.result != null && !result;
   return {
     id: typeof raw.id === 'string' ? raw.id : makeId(),
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : 'Комната',
@@ -173,15 +208,15 @@ export function normalizeProject(raw: any): Project {
     sources,
     constraints,
     scanInfo: normalizeScanInfo(raw.scanInfo),
-    result: raw.result ?? null,
-    selectedIndex: typeof raw.selectedIndex === 'number' ? raw.selectedIndex : 0,
+    result,
+    selectedIndex: !dropped && Number.isInteger(raw.selectedIndex) && raw.selectedIndex >= 0 ? raw.selectedIndex : 0,
     current: (() => {
       const cur = fixSetup(raw.current, 'Текущая');
       // 022: признак «места выбраны»; у проектов до 022 — по тому, стоят ли места по умолчанию
       return { ...cur, placed: typeof raw.current?.placed === 'boolean' ? raw.current.placed : legacyPlaced(cur, room, sources, constraints) };
     })(),
     // сохранённый вариант — всегда выбранные места (до 022 признака не было)
-    setups: Array.isArray(raw.setups) ? raw.setups.filter(isObj).map((s: any) => ({ ...fixSetup(s, s?.name ?? 'Вариант'), placed: true })) : [],
+    setups: Array.isArray(raw.setups) ? raw.setups.filter(isObj).map((s: any) => ({ ...fixSetup(s, 'Вариант'), placed: true })) : [],
     ...(raw.voice ? { voice: normalizeVoice(raw.voice) } : {}),
     // 026: точность расчёта; стандартная в файл не пишется — прежние проекты и файлы не меняются
     ...(normalizePrecision(raw.precision) !== 'standard' ? { precision: normalizePrecision(raw.precision) } : {}),
