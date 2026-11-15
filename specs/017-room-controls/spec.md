@@ -36,7 +36,7 @@
 ## Реализация и проверка
 
 [OpeningsPanel](../../src/ui/screens/room/OpeningsPanel.tsx),
-[ActionMenu](../../src/ui/components/ActionMenu.tsx),
+[ActionMenu](../../src/ui/design-system/ActionMenu.tsx) (на этапе — `src/ui/components`, перенесён в 018),
 [e2e](../../tests/e2e/room-controls.spec.ts).
 Общие стили используют строки subgrid для подписи/ввода/пояснения и ограничение ширины.
 Исторический итог браузерной проверки после этапа: 94 успешных, 2 пропущенных

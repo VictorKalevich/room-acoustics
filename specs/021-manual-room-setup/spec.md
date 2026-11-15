@@ -121,7 +121,7 @@
 сдвиг из 020 перенесён сюда), признак — [project.ts](../../src/state/project.ts), загрузка —
 [storage.ts](../../src/state/storage.ts); интерфейс — [roomDraft.ts](../../src/ui/roomDraft.ts),
 [RoomEditor](../../src/ui/screens/room/RoomEditor.tsx), [RoomScreen](../../src/ui/screens/RoomScreen.tsx),
-[ScanPanel](../../src/ui/screens/room/ScanPanel.tsx), [RoomFirst](../../src/ui/screens/RoomFirst.tsx),
+[ScanPanel](../../src/ui/screens/room/ScanPanel.tsx), [RoomFirst](../../src/ui/screens/Gates.tsx) (на этапе — `RoomFirst.tsx`, с 022 — в `Gates.tsx`),
 страж ухода — [navigation.ts](../../src/ui/navigation.ts); тесты —
 [fitRoom.test.ts](../../tests/core/fitRoom.test.ts), [roomDraft.test.ts](../../tests/ui/roomDraft.test.ts),
 [room-first.spec.ts](../../tests/e2e/room-first.spec.ts), [room-editor.spec.ts](../../tests/e2e/room-editor.spec.ts).

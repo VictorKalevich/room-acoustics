@@ -16,8 +16,8 @@
 
 Компоненты импортируются из [design-system/index.ts](../src/ui/design-system/index.ts):
 NumberField, SelectField, Segmented, Panel, Note, Details, SectionNav, ActionMenu,
-CalculationStatus, ConfirmSheet, FailurePanel. Старые пути components/Fields и другие оставлены только
-как совместимые переэкспорты, без второй реализации. Новый код использует публичный вход.
+CalculationStatus, ConfirmSheet, FailurePanel. Других путей к этим компонентам нет: совместимые
+переэкспорты на прежних путях удалены в [032](../specs/032-dead-code/spec.md). Новый код использует публичный вход.
 
 Классы CSS тоже являются API дизайн-системы: для обычной кнопки используется
 `<button type="button" class="btn btn--primary">…</button>`.

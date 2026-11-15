@@ -57,5 +57,6 @@
 [ProjectsScreen](../../src/ui/screens/ProjectsScreen.tsx), [AboutScreen](../../src/ui/screens/AboutScreen.tsx),
 [Drawer](../../src/ui/components/Drawer.tsx), [navigation](../../src/ui/navigation.ts), [App](../../src/ui/App.tsx).
 `SyncScreen.tsx` оставлен ссылкой на `ProjectsScreen` (удалить файл на ПК из сессии нельзя; его можно удалить).
+Удалён в [032](../032-dead-code/spec.md).
 Тесты — [projects.spec.ts](../../tests/e2e/projects.spec.ts), [navigation.test.ts](../../tests/ui/navigation.test.ts),
 обновлены сценарии меню, синхронизации и голоса в app.spec.ts, room-first.spec.ts, smoothing.spec.ts.
