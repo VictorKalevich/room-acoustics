@@ -23,17 +23,21 @@ for (const file of cssFiles) {
     }
   }
 }
+// Public modules are the ones re-exported by the design-system entry; each lives in one place only.
+const publicModules = new Set([...read('src/ui/design-system/index.ts').matchAll(/from ['"]\.\/([\w-]+)['"]/g)].map(m => m[1]));
+if (!publicModules.size) errors.push('src/ui/design-system/index.ts: no public modules found');
 for (const file of files.filter(p => /\.[jt]sx?$/.test(p))) {
   const text = read(file);
   if (/style=\{\{[^}]*\b(?:fontSize|fontWeight|fontFamily|lineHeight|letterSpacing|margin\w*|padding\w*|gap)\s*:/s.test(text)) {
     errors.push(file + ': presentation typography/spacing belongs in the design system');
   }
-  if (!file.replaceAll('\\', '/').includes('/design-system/') &&
-      /from ['"][^'"]*components\/(Fields|SectionNav|ActionMenu|CalculationStatus|ConfirmSheet)['"]/.test(text)) {
-    errors.push(file + ': import public primitives from design-system');
+  const path = file.replaceAll('\\', '/');
+  const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.[jt]sx?$/, '');
+  if (!path.startsWith('src/ui/design-system/') && publicModules.has(name)) {
+    errors.push(file + ': ' + name + ' is a design-system module; import it from design-system instead of keeping a second copy');
   }
 }
 if (!read('src/styles.css').includes('design-system/tokens.css')) errors.push('Application must load the shared design-system entry');
 if (!tokens.includes('--space-stack:') || !tokens.includes('--font-body:')) errors.push('Missing semantic foundations');
 if (errors.length) { console.error(errors.join('\n')); process.exitCode = 1; }
-else console.log('Design system: ' + cssFiles.length + ' stylesheets and ' + files.filter(p => /\.[jt]sx?$/.test(p)).length + ' source files checked; tokens, typography, spacing and imports OK.');
+else console.log('Design system: ' + cssFiles.length + ' stylesheets and ' + files.filter(p => /\.[jt]sx?$/.test(p)).length + ' source files checked; tokens, typography, spacing and design-system modules OK.');
