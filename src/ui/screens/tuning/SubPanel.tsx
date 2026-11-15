@@ -6,7 +6,7 @@ import type { Setup, SubSetting } from '../../../core/types';
 import { hasAdjustments, optionsFor, type IntegrationResult } from '../../../core/integration';
 import { biquad } from '../../../core/eq';
 import { allpassBiquad, type SubFilterResult } from '../../../core/subfilters';
-import { compute } from '../../compute';
+import { useComputeAction } from '../../useCompute';
 import { ResponseChart } from '../../components/Charts';
 import { NumberField, Panel, Segmented, Note, Details } from '../../design-system';
 import { S } from '../../strings';
@@ -20,17 +20,18 @@ export function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: 
   const { room, sources, constraints: c, current } = project;
   const subs = sources.filter((s) => s.kind === 'sub' && current.positions[s.id]);
   const [res, setRes] = useState<IntegrationResult | null>(null);
-  const [busy, setBusy] = useState(false);
+  const integrate = useComputeAction();
+  const busy = integrate.busy;
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState(false);
 
   const run = () => {
-    setBusy(true);
     setError(null);
     setApplied(false);
-    compute('integrate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) }).promise
-      .then((r) => { setRes(r); setBusy(false); })
-      .catch((e) => { setError(e.message); setBusy(false); });
+    integrate.run('integrate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) }, {
+      done: setRes,
+      failed: (e) => setError(e.message),
+    });
   };
   const setOne = (id: string, patch: Partial<SubSetting>) => {
     const prev = current.subSettings[id] ?? { delayMs: 0, phaseDeg: 0, gainDb: 0 };
@@ -139,15 +140,17 @@ function SubFiltersBlock({ project, onSetup }: { project: Project; onSetup: (s: 
   const subs = sources.filter((s) => s.kind === 'sub' && current.positions[s.id]);
   const capable = subs.filter((s) => (s.peqBands ?? 0) > 0 || s.allpass);
   const [res, setRes] = useState<SubFilterResult | null>(null);
-  const [busy, setBusy] = useState(false);
+  const subFilters = useComputeAction();
+  const busy = subFilters.busy;
   const [applied, setApplied] = useState(false);
   const [fs, setFs] = useState(48000);
   const run = () => {
-    setBusy(true);
     setApplied(false);
-    compute('subFilters', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) })
-      .promise.then((r) => { setRes(r); setBusy(false); })
-      .catch(() => setBusy(false));
+    // ошибка подбора фильтров не показывается (как раньше): только снимается «считаем»
+    subFilters.run('subFilters', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision) }, {
+      done: setRes,
+      failed: () => undefined,
+    });
   };
   const textFor = (id: string, set?: SubSetting) => {
     const lines = [`# ${S.placement.sourceName(id)}`];
