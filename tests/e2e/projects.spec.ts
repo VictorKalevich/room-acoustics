@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
-import { EMPTY_STATE } from './helpers';
+import { EMPTY_STATE, startManualRoom } from './helpers';
 
 // 023: «Проекты» — возврат назад, сохранение только созданной комнаты; «Новый проект», «Открыть» и «Импорт»
 // предупреждают, если введённое пропадёт. 024: «Проекты» — в меню, вместе с импортом и экспортом.
@@ -36,7 +36,7 @@ test.describe('комнаты ещё нет', () => {
 
   test('начатая настройка: «Продолжить настройку» — к тому же шагу; «Новый проект» предупреждает, «Отмена» сохраняет введённое', async ({ page }) => {
     await page.goto('/#room');
-    await page.locator('.start-card').getByRole('button', { name: 'Настроить комнату вручную' }).click();
+    await startManualRoom(page);
     await page.getByLabel('Глубина', { exact: true }).fill('6');
     await page.getByLabel('Ширина', { exact: true }).fill('4');
     await page.getByLabel('Высота', { exact: true }).fill('2,5');
@@ -109,7 +109,7 @@ test('«Открыть» из списка: изменения после сох
   // сохранённый и не изменённый — новый проект без вопроса; начатая в нём настройка — с вопросом
   await newProject(page).click();
   await expect(dialog).toHaveCount(0);
-  await page.locator('.start-card').getByRole('button', { name: 'Настроить комнату вручную' }).click();
+  await startManualRoom(page);
   await page.getByLabel('Глубина', { exact: true }).fill('6');
   await projects(page);
   await row.getByRole('button', { name: 'Открыть' }).click();

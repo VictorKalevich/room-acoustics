@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { EMPTY_STATE, scanToSteps } from './helpers';
+import { EMPTY_STATE, scanToSteps, startManualRoom } from './helpers';
 
 // 025: «Начать» — выделенный пункт меню, пока комната не создана; ведёт на «С чего начать» с любого экрана меню.
 const openMenu = (page: Page) => page.getByRole('button', { name: 'Открыть меню' }).click();
@@ -27,7 +27,7 @@ test.describe('комнаты ещё нет', () => {
       await expect(page.locator('.start-card')).toBeVisible();
     }
     // начатая ручная настройка: подсказка называет шаг, «Начать» — на старт с продолжением
-    await page.locator('.start-card').getByRole('button', { name: 'Настроить комнату вручную' }).click();
+    await startManualRoom(page);
     await page.getByLabel('Глубина', { exact: true }).fill('5');
     await page.getByLabel('Ширина', { exact: true }).fill('4');
     await page.getByLabel('Высота', { exact: true }).fill('2,5');
