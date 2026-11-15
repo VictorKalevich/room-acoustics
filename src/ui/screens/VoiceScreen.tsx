@@ -1,15 +1,15 @@
 // «Запись голоса»: где встать с микрофоном и куда петь, чтобы комната меньше окрашивала голос.
 // Комната — та же, что на экране «Комната»: карта и оценка пересчитываются при любом её изменении.
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import type { Heatmap } from '../../core/field';
 import { shownTreatments } from '../../core/treatments';
 import { computeReverb } from '../../core/reverb';
 import {
   evaluateVoice, facingAngle, facingName, facingScores, relativeSide, spotAllowed, voiceContext, voiceGrade,
-  VOICE_BAND, VOICE_DEFAULTS, FACINGS, type MicPattern, type VoiceMap, type VoiceSettings, type VoiceSpot, type VoiceGoal,
+  VOICE_BAND, VOICE_DEFAULTS, FACINGS, type MicPattern, type VoiceSettings, type VoiceSpot, type VoiceGoal,
 } from '../../core/voice';
-import { compute, type ComputeJob } from '../compute';
+import { useComputed } from '../useCompute';
 import { Details, Note, NumberField, Panel, Segmented } from '../design-system';
 import { HeatLegend, PlanView, type PlanMark, type WallMark } from '../components/PlanView';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
@@ -46,27 +46,16 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
   const calc = useMemo(() => ({ ...v, spot: null }), [v.mic, v.distance, v.posture, v.mouthZ, v.fLo, v.fHi]); // eslint-disable-line react-hooks/exhaustive-deps
   const bandOk = v.fHi >= 2 * v.fLo;
 
-  // карта — в воркере, с небольшой задержкой, пока меняют поля
-  const [mapResult, setMapResult] = useState<{ room: typeof room; settings: VoiceSettings; precision: Precision; data: VoiceMap } | null>(null);
-  const map = mapResult?.room === room && mapResult.settings === calc && mapResult.precision === precision && mapResult.data.goal === goal && bandOk ? mapResult.data : null;
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const job = useRef<ComputeJob<VoiceMap> | null>(null);
-  useEffect(() => {
-    // прежний расчёт больше не нужен: его результат не покажем
-    job.current?.cancel();
-    job.current = null;
-    setError(null);
-    if (!bandOk) { setBusy(false); return; }
-    setBusy(true);
-    const tm = setTimeout(() => {
-      const j = compute('voiceMap', { room, settings: calc, goal, precision });
-      job.current = j;
-      j.promise.then((m) => { if (job.current === j) { setMapResult({ room, settings: calc, precision, data: m }); setBusy(false); } }).catch((e) => { if (job.current === j) { setError((e as Error).message); setBusy(false); } });
-    }, 250);
-    return () => { clearTimeout(tm); job.current?.cancel(); job.current = null; };
-  }, [room, calc, bandOk, goal, precision]);
-  useEffect(() => () => job.current?.cancel(), []);
+  // карта — в воркере, с небольшой задержкой, пока меняют поля; прежний расчёт больше не нужен — его результат не покажем
+  const mapJob = useComputed('voiceMap', bandOk ? { room, settings: calc, goal, precision } : null, {
+    deps: [room, calc, bandOk, goal, precision],
+    delay: 250,
+    previous: 'keep',
+  });
+  // показывается только карта, посчитанная для этих комнаты, настроек, точности и цели
+  const mapFor = mapJob.input;
+  const map = mapFor?.room === room && mapFor.settings === calc && mapFor.precision === precision && mapJob.value?.goal === goal && bandOk ? mapJob.value : null;
+  const { busy, error } = mapJob;
 
   const ctx = useMemo(() => (bandOk ? voiceContext(room, calc) : null), [room, calc, bandOk]);
   const spot: VoiceSpot | null = v.spot && spotAllowed(room, v.spot.x, v.spot.y, v.spot.facing, v) ? v.spot : null;
