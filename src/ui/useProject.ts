@@ -1,40 +1,24 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../state/project';
-import { defaultConstraints, newProject, syncSetup } from '../state/project';
+import { newProject } from '../state/project';
 import { clearPendingDraft, DraftLoadError, loadDraft, releaseDraft, saveDraft, stashPendingDraft } from '../state/storage';
-import type { Constraints, Room, Setup, SourceSpec } from '../core/types';
+import {
+  changeConstraints, changePrecision, changeRoom, changeSetup, changeSetups, changeSources, changeVoice, renameProject,
+  replaceProject, selectVariant, setResult, type Transition,
+} from '../state/transitions';
+import type { Constraints, PlacementResult, Room, Setup, SourceSpec } from '../core/types';
 import type { VoiceSettings } from '../core/voice';
 import type { Precision } from '../core/precision';
-import { clampToRoom } from '../core/system';
-import { baselinePositions } from '../core/placement';
-import { markPlaced } from '../state/variant';
 import { setBeforeReload } from './updates';
 import { logError } from '../state/errlog';
-
-/**
- * Приводит расстановку к текущим источникам и размерам комнаты. 022: пока места текущей расстановки не выбраны,
- * они — места по умолчанию для этой комнаты (а не места комнаты нового проекта, сдвинутые внутрь стен).
- */
-function fitSetup(s: Setup, p: Project, current = false): Setup {
-  const base = current && !s.placed ? { ...s, ...baselinePositions(p.room, p.sources, p.constraints) } : s;
-  const synced = syncSetup(base, p.room, p.sources, p.constraints);
-  return {
-    ...synced,
-    listener: clampToRoom(p.room, synced.listener, 0.1),
-    positions: Object.fromEntries(Object.entries(synced.positions).map(([k, v]) => [k, clampToRoom(p.room, v)])),
-  };
-}
-
-/** Держит зону слушателя внутри комнаты после изменения размеров. */
-function fitConstraints(c: Constraints, room: Room): Constraints {
-  const d = defaultConstraints(room);
-  const bad = c.listenerMaxX >= room.depth - 0.05 || c.listenerMinX >= c.listenerMaxX || c.listenerMinX <= 0;
-  return bad ? { ...c, listenerMinX: d.listenerMinX, listenerMaxX: d.listenerMaxX } : c;
-}
 
 /** 029: рабочий проект есть, но не открылся при запуске — что показать вместо приложения. */
 export type DraftProblem = { kind: 'unreadable' } | { kind: 'invalid'; reason: string; raw: unknown };
 
+/**
+ * Рабочий проект: загрузка черновика, сохранение на устройство и обработчики изменений для экранов.
+ * Правила изменения проекта — переходы `src/state/transitions.ts` (031).
+ */
 export function useProject() {
   const [project, setProject] = useState<Project>(() => newProject());
   // проект открыт (или черновика нет) — только тогда работают приложение и все пути записи черновика ниже
@@ -42,9 +26,11 @@ export function useProject() {
   // 029: черновик не открылся — вместо приложения сообщение; прежний черновик до выбора пользователя не перезаписывается
   const [problem, setProblem] = useState<DraftProblem | null>(null);
   const [attempt, setAttempt] = useState(0);
+  /** Единственный путь изменения проекта: переход от предыдущего состояния со временем изменения. */
+  const apply = (t: Transition) => setProject((prev) => t(prev, new Date().toISOString()));
   useEffect(() => {
     loadDraft()
-      .then((d) => { if (d) setProject(d); setReady(true); })
+      .then((d) => { if (d) apply(replaceProject(d)); setReady(true); })
       .catch((e: unknown) => {
         if (e instanceof DraftLoadError && e.kind === 'invalid') {
           logError('error', e.error, 'черновик проекта не открылся; копия сохранена как draft-failed');
@@ -58,7 +44,7 @@ export function useProject() {
   /** «Повторить»: прочитать черновик снова (с повторами), пока видно «Открываем проект…». */
   const retry = () => { setProblem(null); setAttempt((n) => n + 1); };
   /** «Начать новый проект» после подтверждения: новый проект, прежний черновик заменит отложенное сохранение. */
-  const startNew = () => { releaseDraft(); setProject(newProject()); setProblem(null); setReady(true); };
+  const startNew = () => { releaseDraft(); apply(replaceProject(newProject())); setProblem(null); setReady(true); };
 
   useEffect(() => {
     if (ready) setBeforeReload(() => saveDraft(project));
@@ -94,32 +80,20 @@ export function useProject() {
     return () => { removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onHide); };
   }, [ready]);
 
-  const touch = (patch: Partial<Project> | ((prev: Project) => Partial<Project>), invalidate = true) =>
-    setProject((prev) => {
-      const p = typeof patch === 'function' ? patch(prev) : patch;
-      const next: Project = {
-        ...prev,
-        ...p,
-        updatedAt: new Date().toISOString(),
-        // явно переданный результат (в том числе null после очистки комнаты) важнее пометки «устарел»
-        result: p.result !== undefined ? p.result : invalidate && prev.result ? { ...prev.result, stale: true } : prev.result,
-      };
-      if (p.room || p.sources || p.constraints || p.current) {
-        next.current = fitSetup(next.current, next, true);
-        if (p.room || p.sources) next.setups = next.setups.map((x) => fitSetup(x, next));
-      }
-      return next;
-    });
-
-  const onRoom = (room: Room, extra: Partial<Project> = {}) =>
-    touch({ ...extra, room, constraints: fitConstraints(extra.constraints ?? project.constraints, room) });
-  const onSources = (sources: SourceSpec[]) => touch({ sources });
-  const onConstraints = (constraints: Constraints) => touch({ constraints });
-  // изменение мест пользователем — места выбраны (022)
-  const onSetup = (current: Setup) => touch((prev) => ({ current: markPlaced(prev.current, current) }), false);
-  const onSetups = (setups: Setup[]) => touch({ setups }, false);
-  const onVoice = (voice: VoiceSettings) => touch({ voice }, false);
-  // 026: другая точность — другие числа; результат подбора помечается устаревшим
-  const onPrecision = (precision: Precision) => touch({ precision: precision === 'standard' ? undefined : precision });
-  return { project, setProject, ready, problem, retry, startNew, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision };
+  // ограничения — из этой отрисовки, как и раньше (031, FR-3103): так их видел экран, который прислал комнату
+  const onRoom = (room: Room, extra: Partial<Project> = {}) => apply(changeRoom(room, extra, project.constraints));
+  const onSources = (sources: SourceSpec[]) => apply(changeSources(sources));
+  const onConstraints = (constraints: Constraints) => apply(changeConstraints(constraints));
+  const onSetup = (current: Setup) => apply(changeSetup(current));
+  const onSetups = (setups: Setup[]) => apply(changeSetups(setups));
+  const onVoice = (voice: VoiceSettings) => apply(changeVoice(voice));
+  const onPrecision = (precision: Precision) => apply(changePrecision(precision));
+  const onResult = (result: PlacementResult & { stale?: boolean }, selectedIndex: number) => apply(setResult(result, selectedIndex));
+  const onRename = (name: string) => apply(renameProject(name));
+  const onSelect = (selectedIndex: number) => apply(selectVariant(selectedIndex));
+  const onReplace = (next: Project) => apply(replaceProject(next));
+  return {
+    project, ready, problem, retry, startNew,
+    onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision, onResult, onRename, onSelect, onReplace,
+  };
 }

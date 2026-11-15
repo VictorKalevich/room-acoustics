@@ -62,7 +62,10 @@ export function App() {
   const [drawer, setDrawer] = useState(false);
   const [wizard, setWizard] = useState(wizardOn());
   const [, setWizardTick] = useState(0);
-  const { project, setProject, ready, problem, retry, startNew, touch, onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision } = useProject();
+  const {
+    project, ready, problem, retry, startNew,
+    onRoom, onSources, onConstraints, onSetup, onSetups, onVoice, onPrecision, onResult, onRename, onSelect, onReplace,
+  } = useProject();
   const [justUpdated, setJustUpdated] = useState(consumeJustUpdated);
 
   const setModes = (v: AnalysisView) => go(v === 'list' ? 'analysis/list' : v === 'overview' ? 'analysis' : 'field');
@@ -156,8 +159,8 @@ export function App() {
             onSources={onSources}
             onConstraints={onConstraints}
             onPrecision={onPrecision}
-            onResult={(result, selectedIndex) => touch({ result, selectedIndex }, false)}
-            onSelect={(selectedIndex) => setProject((p) => ({ ...p, selectedIndex }))}
+            onResult={onResult}
+            onSelect={onSelect}
             mode={placementMode}
             onMode={setMode}
             onSetup={onSetup}
@@ -172,8 +175,8 @@ export function App() {
         {tab === 'projects' && guard(TITLES.projects,
           <ProjectsScreen
             project={project}
-            onReplace={(p) => { setProject(p); go('room/overview'); }}
-            onRename={(name) => touch({ name }, false)}
+            onReplace={(p) => { onReplace(p); go('room/overview'); }}
+            onRename={onRename}
             onGo={go}
           />,
         )}
