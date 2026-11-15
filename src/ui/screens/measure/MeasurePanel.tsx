@@ -1,12 +1,11 @@
 // Замер REW: сравнение с расчётом и уточнение модели.
-import { useMemo, useRef, useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
 import type { Leakage, Room, Setup } from '../../../core/types';
 import { DAMPING_MODEL } from '../../../core/types';
-import { isWave } from '../../../core/geometry';
 import { useEffect } from 'preact/hooks';
-import { compareMeasurement, parseRew, type CalibrationResult, type Comparison } from '../../../core/measure';
-import { compute } from '../../compute';
+import { compareMeasurement, parseRew, type CalibrationResult } from '../../../core/measure';
+import { useComputeAction, useComputed } from '../../useCompute';
 import { ResponseChart } from '../../components/Charts';
 import { Panel, Note } from '../../design-system';
 import { S } from '../../strings';
@@ -20,22 +19,22 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
   const { room, sources, constraints: c, current } = project;
   const m = current.measurement;
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [cal, setCal] = useState<CalibrationResult | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const wave = isWave(room);
-  const cmpSync = useMemo(() => {
-    if (!m || wave) return null;
-    try { return compareMeasurement(room, sources, c, current, m); } catch (e) { return { error: (e as Error).message }; }
-  }, [m, room, sources, c, current, wave]);
-  const [cmpAsync, setCmpAsync] = useState<Comparison | { error: string } | null>(null);
-  useEffect(() => {
-    if (!m || !wave) { setCmpAsync(null); return; }
-    const j = compute('compare', { room, sources, constraints: c, setup: current, measurement: m });
-    j.promise.then(setCmpAsync).catch((e) => setCmpAsync({ error: e.message }));
-    return () => j.cancel();
-  }, [m, room, sources, c, current, wave]);
-  const cmp = wave ? cmpAsync : cmpSync;
+  // сравнение: прямоугольная модель — сразу в основном потоке, волновая — в воркере (inMainThread); ошибка — вместо графика
+  const cmp = useComputed('compare', m ? { room, sources, constraints: c, setup: current, measurement: m } : null, {
+    deps: [m, room, sources, c, current],
+    previous: 'keep',
+    fallback: (e) => ({ error: e.message }),
+    local: {
+      room,
+      compute: () => {
+        try { return compareMeasurement(room, sources, c, current, m!); } catch (e) { return { error: (e as Error).message }; }
+      },
+    },
+  }).value;
+  const calibrate = useComputeAction();
+  const busy = calibrate.busy;
 
   const load = async (f: File) => {
     setError(null);
@@ -51,17 +50,16 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
   useEffect(() => { roomRef.current = room; }, [room]);
   const runCal = () => {
     if (!m) return;
-    setBusy(true);
-    compute('calibrate', { room, sources, constraints: c, setup: current, measurement: m }).promise
-      .then((r) => {
+    calibrate.run('calibrate', { room, sources, constraints: c, setup: current, measurement: m }, {
+      done: (r) => {
         setCal(r);
-        setBusy(false);
         // 022: запоминаем, по какому замеру подстроено и какая герметичность была выбрана до подстройки
         const now = roomRef.current;
         const leakageBefore = now.calibration?.leakageBefore ?? now.leakage;
         onRoom({ ...now, leakage: r.leakage, calibration: { dampingScale: r.dampingScale, model: DAMPING_MODEL, source: m.name, leakageBefore } });
-      })
-      .catch((e) => { setError(e.message); setBusy(false); });
+      },
+      failed: (e) => setError(e.message),
+    });
   };
 
   return (
