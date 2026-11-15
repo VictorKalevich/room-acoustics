@@ -1,11 +1,10 @@
 // Выбор цели подбора мест для баса: ровность, провалы, широкие провалы внизу, провалы на модах.
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useMemo } from 'preact/hooks';
 import type { BassObjective, ModePreset, ObjectiveId, Room } from '../../core/types';
-import type { SystemMode } from '../../core/fdtd';
 import { computeModes, modeWhere } from '../../core/modes';
 import { DEFAULT_OBJECTIVE, SYS_MODES_FMAX, objectiveModes, shiftModesToSystem } from '../../core/objective';
 import { isWave } from '../../core/geometry';
-import { compute } from '../compute';
+import { useComputed } from '../useCompute';
 import { Segmented, SelectField, Note } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -20,16 +19,13 @@ export function ObjectivePicker({ room, value, onChange, band }: { room: Room; v
   const o = value ?? DEFAULT_OBJECTIVE;
   const preset = o.modePreset ?? 'first';
   const wave = isWave(room);
-  // комната с коридором: моды системы из волнового расчёта (тот же кэш, что у подбора)
-  const [sys, setSys] = useState<SystemMode[] | null>(null);
+  // комната с коридором: моды системы из волнового расчёта (тот же кэш, что у подбора); при ошибке — как не посчитанные
   const needSys = wave && o.id === 'modes';
-  useEffect(() => {
-    setSys(null);
-    if (!needSys) return;
-    const job = compute('modes', { room, fMax: SYS_MODES_FMAX });
-    job.promise.then(setSys).catch(() => setSys(null));
-    return () => job.cancel();
-  }, [needSys, room]);
+  const sys = useComputed('modes', needSys ? { room, fMax: SYS_MODES_FMAX } : null, {
+    deps: [needSys, room],
+    previous: 'clear',
+    fallback: () => null,
+  }).value;
   const counted = useMemo(() => (o.id === 'modes' ? objectiveModes(room, o, band[0], band[1], sys ?? undefined) : []), [room, o, band, sys]);
   // кандидаты для выбора вручную: первые 16 мод в полосе
   const choices = useMemo(() => computeModes(room, Math.max(band[1], 40), 10).filter((m) => m.f >= band[0] && m.f <= band[1]).slice(0, 16), [room, band]);
