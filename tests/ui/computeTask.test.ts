@@ -144,12 +144,20 @@ describe('034: устаревший результат не показывает
     s.change('A', { previous: 'keep' });
     s.change('B', { previous: 'keep' });
     s.jobs[0].resolve('A');
-    s.jobs[0].reject(new Error('A'));
     await flush();
     expect(s.state()).toMatchObject({ value: null, busy: true, error: null });
     s.jobs[1].resolve('B');
     await flush();
     expect(s.state()).toMatchObject({ value: 'B', input: 'B', busy: false });
+  });
+
+  it('ошибка снятой задачи не показывается', async () => {
+    const s = setup(true);
+    s.change('A', { previous: 'keep' });
+    s.change('B', { previous: 'keep' });
+    s.jobs[0].reject(new Error('A'));
+    await flush();
+    expect(s.state()).toMatchObject({ busy: true, error: null });
   });
 
   it('при restart: start ответ задачи, которую сменила новая, отбрасывается', async () => {
