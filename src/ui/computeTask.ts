@@ -39,6 +39,11 @@ export interface TaskOptions<V> {
   restart?: 'change' | 'start';
   /** Прежний результат, пока считается новый: остаётся (`keep`) или скрывается (`clear`). */
   previous: 'keep' | 'clear';
+  /**
+   * Когда считать нечего: результат сбрасывается (`clear`, по умолчанию) или остаётся вместе со своими входами
+   * (`keep`), а скрывает его условие экрана.
+   */
+  idle?: 'clear' | 'keep';
   /** Ход расчёта: с 0 при каждом запуске (`reset`) или с прежнего значения (`carry`). Без него ход не ведётся. */
   progress?: 'reset' | 'carry';
   /** Значение результата при ошибке; без него ошибка — сообщение `error`. */
@@ -86,7 +91,8 @@ export class ComputeTask<I, V> {
     const restartNow = (opts.restart ?? 'change') === 'change';
     if (input === null) {
       // при `start` начатая задача не снимается и, досчитав, покажет результат (так было в «Поле 3D»)
-      this.set(restartNow ? { value: null, input: null, busy: false, error: null } : { value: null, input: null });
+      const shown = opts.idle === 'keep' ? {} : { value: null, input: null };
+      this.set(restartNow ? { ...shown, busy: false, error: null } : shown);
       return;
     }
     const cache = opts.cache?.();

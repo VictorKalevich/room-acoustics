@@ -248,6 +248,24 @@ describe('034: считать нечего', () => {
     expect(s.state()).toMatchObject({ value: 'A', busy: false });
   });
 
+  it('idle: keep — задача снимается, «считаем» и ошибка сброшены, результат и его входы остаются; без него сброшены', async () => {
+    for (const idle of ['keep', undefined] as const) {
+      const s = setup();
+      const opts: TaskOptions<string> = { delay: 120, previous: 'keep', idle };
+      s.change('A', opts);
+      s.advance(120);
+      s.jobs[0].resolve('карта A');
+      await flush();
+      s.change('B', opts);
+      s.advance(120);
+      s.change(null, opts);
+      expect(s.jobs[1].cancelled).toBe(true);
+      expect(s.state()).toMatchObject(idle
+        ? { value: 'карта A', input: 'A', busy: false, error: null }
+        : { value: null, input: null, busy: false, error: null });
+    }
+  });
+
   it('кэш не спрашивается, если считать нечего', () => {
     const s = setup();
     let asked = 0;

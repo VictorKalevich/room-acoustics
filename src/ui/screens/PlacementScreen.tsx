@@ -102,6 +102,8 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
     deps: [layers.map, current, sel, effKind, effSub, result, room, sources, c, precision],
     delay: 120,
     previous: 'clear',
+    // выключенная карта хранится: при включении с теми же входами видна с первого кадра
+    idle: 'keep',
     // кэш карт на результат подбора и ограничения: переключение туда-обратно — мгновенно
     cache: () => {
       const owner = [result, room, sources, c, precision];

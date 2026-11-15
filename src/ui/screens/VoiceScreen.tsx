@@ -51,6 +51,7 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
     deps: [room, calc, bandOk, goal, precision],
     delay: 250,
     previous: 'keep',
+    idle: 'keep',
   });
   // показывается только карта, посчитанная для этих комнаты, настроек, точности и цели
   const mapFor = mapJob.input;

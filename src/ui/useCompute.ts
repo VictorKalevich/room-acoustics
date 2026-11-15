@@ -24,6 +24,8 @@ export interface ComputedOptions<V> {
   restart?: 'change' | 'start';
   /** Прежний результат, пока считается новый: остаётся или скрывается. */
   previous: 'keep' | 'clear';
+  /** Когда считать нечего (`payload` null): результат сбрасывается или остаётся, скрытый условием экрана. */
+  idle?: 'clear' | 'keep';
   progress?: 'reset' | 'carry';
   fallback?: (e: Error) => V;
   cache?: () => ResultCache<V> | undefined;
