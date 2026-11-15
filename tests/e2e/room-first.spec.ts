@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { EMPTY_STATE, draftSaved, roomOnlyState } from './helpers';
+import { EMPTY_STATE, draftSaved, menuReady, roomOnlyState } from './helpers';
 
 // 021/022: пока комната не создана — один экран «С чего начать», без нижней панели и разделов с расчётами.
 // Ручная настройка идёт по шагам, размеры пустые до ввода, введённое хранится черновиком до «Сохранить».
@@ -26,6 +26,7 @@ test.describe('комнаты ещё нет', () => {
     await expect(menu.getByRole('button', { name: /Помощник и словарь/ })).toBeVisible();
     await expect(menu.getByRole('button', { name: /Измерения/ })).toHaveCount(0);
     await expect(menu.getByRole('button', { name: /Отчёт/ })).toHaveCount(0);
+    await menuReady(page);
     await page.keyboard.press('Escape');
     for (const route of ['analysis', 'placement', 'tuning/eq', 'measure/compare', 'voice', 'report']) {
       await page.goto(`/#${route}`);
@@ -100,6 +101,8 @@ test.describe('комнаты ещё нет', () => {
     // после перезапуска комната остаётся созданной, конструктор — в режиме правки
     await draftSaved(page, 'созданная комната 5,5 × 4 × 2,5 м', (d) => d.roomReady && d.room.depth === 5.5);
     await page.reload();
+    // проект открыт — приложение следит за адресом: смену адреса, пока идёт «Открываем проект…», оно не замечает
+    await expect(page.locator('.topbar__room')).toContainText('5,50 × 4,00 × 2,50');
     await page.goto('/#room/walls');
     await expect(page.getByRole('navigation', { name: 'Шаги конструктора' })).toBeVisible();
   });

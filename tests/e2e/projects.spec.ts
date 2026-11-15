@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
-import { EMPTY_STATE, startManualRoom } from './helpers';
+import { EMPTY_STATE, menuReady, startManualRoom } from './helpers';
 
 // 023: «Проекты» — возврат назад, сохранение только созданной комнаты; «Новый проект», «Открыть» и «Импорт»
 // предупреждают, если введённое пропадёт. 024: «Проекты» — в меню, вместе с импортом и экспортом.
@@ -106,7 +106,9 @@ test('«Открыть» из списка: изменения после сох
   await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
   await projects(page);
   await expect(name).toHaveValue(saved);
-  // сохранённый и не изменённый — новый проект без вопроса; начатая в нём настройка — с вопросом
+  // сохранённый и не изменённый — новый проект без вопроса; начатая в нём настройка — с вопросом.
+  // Список сохранённых читается после открытия экрана; пока его нет, проект считается несохранённым
+  await expect(row).toBeVisible();
   await newProject(page).click();
   await expect(dialog).toHaveCount(0);
   await startManualRoom(page);
@@ -150,6 +152,7 @@ test('024: «Проекты» в меню вместо «Импорт и экс�
   await page.getByRole('button', { name: 'Открыть меню' }).click();
   await expect(page.locator('.drawer__label', { hasText: /^Импорт и экспорт$/ })).toHaveCount(0);
   await expect(page.locator('.drawer__label', { hasText: /^Проекты$/ })).toBeVisible();
+  await menuReady(page);
   await page.keyboard.press('Escape');
   await projects(page);
   // версия и установка — в «О приложении», здесь только файлы проекта

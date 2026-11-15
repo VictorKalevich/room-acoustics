@@ -61,6 +61,8 @@ test('созданная комната: «Начать» нет; «Новый �
   await expect(startItem(page)).toHaveCount(0);
   await menuItem(page, 'Проекты').click();
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  // проект в списке сохранённых: до этого «Новый проект» считает его несохранённым и спрашивает
+  await expect(page.locator('.project-list')).toContainText('5,00 × 4,00 × 2,50 м');
   await page.getByRole('button', { name: 'Новый проект' }).click();
   await expect(page.locator('.start-card')).toBeVisible();
   await openMenu(page);

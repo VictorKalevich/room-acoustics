@@ -29,6 +29,12 @@ export async function startManualRoom(page: Page) {
   await expect(page.getByLabel('Глубина', { exact: true })).toBeFocused();
 }
 
+/**
+ * Боковое меню открыто и закрывается по Escape: обработчик подключается эффектом после отрисовки вместе с фокусом на
+ * первом пункте (`src/ui/components/Drawer.tsx`); Escape, нажатый раньше, меню не закрывает (033).
+ */
+export const menuReady = (page: Page) => expect(page.locator('.drawer__item').first()).toBeFocused();
+
 /** Что лежит на устройстве (IndexedDB «room-acoustics»): черновик рабочего проекта и id проектов с сохранённым сканом. */
 interface OnDevice {
   /** Черновик (`meta/draft`) — его откроет следующий запуск; null — записи нет. */

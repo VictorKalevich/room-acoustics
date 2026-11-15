@@ -4,6 +4,8 @@ const value = (page: Page, metric: string) => page.getByTestId(metric).locator('
 const ready = async (page: Page) => {
   await expect(page.getByTestId('voice-map-best')).toBeVisible({ timeout: 20000 });
   await expect(page.getByRole('status')).not.toContainText('Считаю карту');
+  // показатели выбранного места считаются отдельно от карты; пока не готовы — «…»
+  await expect(page.getByTestId('voice-flatness').locator('.score__value')).not.toHaveText('…', { timeout: 20000 });
 };
 
 test('map goal preserves the selected position, spectrum and smoothing and survives reload', async ({ page }) => {
