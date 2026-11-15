@@ -1,5 +1,7 @@
 // Расчёты в постоянном воркере (очередь, отмена ещё не начатых задач, кэш волновой модели).
 // 030: вид задачи определяет тип входных данных и результата (таблица ComputeJobs, общая с воркером).
+import { isWave } from '../core/geometry';
+import type { Room } from '../core/types';
 import { logError } from '../state/errlog';
 import type { ComputeMessage, ComputePayload, ComputeReply, ComputeResult, ComputeType } from '../workers/computeJobs';
 
@@ -81,3 +83,9 @@ export function compute<K extends ComputeType>(type: K, payload: ComputePayload<
     },
   };
 }
+
+/**
+ * Где считать (034, единственное место выбора): прямоугольная модель — сразу в основном потоке (3–6 мс на оценку),
+ * волновая — в воркере. Используют `local` хуков useCompute.ts и оценки сохранённых вариантов «Вручную».
+ */
+export const inMainThread = (room: Room): boolean => !isWave(room);
