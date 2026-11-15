@@ -7,7 +7,7 @@ import { validateSources } from '../../state/project';
 import type { BassObjective, Constraints, PlacementResult, SourceSpec, Placement, Setup } from '../../core/types';
 import { NumberField, Panel, Segmented, Note, Details } from '../design-system';
 import { SystemSettings } from './placement/SystemSettings';
-import { compute, type ComputeJob } from '../compute';
+import { useComputeAction, useComputed } from '../useCompute';
 import { ManualScreen } from './ManualScreen';
 import { PlanView, HeatLegend } from '../components/PlanView';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
@@ -39,13 +39,13 @@ interface Props {
 
 export function PlacementScreen({ project, onSources, onConstraints, onPrecision, onResult, onSelect, mode, onMode, onSetup, onSetups, onGo }: Props) {
   const { room, sources, constraints: c, result, precision } = project;
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const job = useRef<ComputeJob<PlacementResult> | null>(null);
+  // подбор снимается и при уходе с экрана (размонтировании)
+  const optimize = useComputeAction({ progress: true, cancelOnUnmount: true });
+  const running = optimize.busy;
+  const progress = optimize.progress;
   const resultRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => () => job.current?.cancel(), []);
   // подбор идёт секунды: к его концу проект мог измениться — решения принимаются по последнему состоянию
   const latest = useRef(project);
   useEffect(() => { latest.current = project; }, [project]);
@@ -58,14 +58,8 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
 
   const run = () => {
     setError(null);
-    setRunning(true);
-    setProgress(0);
-    job.current?.cancel();
-    const j = compute('optimize', { room, sources, constraints: c, precision }, setProgress);
-    job.current = j;
-    j.promise
-      .then((r) => {
-        setRunning(false);
+    optimize.run('optimize', { room, sources, constraints: c, precision }, {
+      done: (r) => {
         const now = latest.current;
         // комнату, систему, цель или точность изменили, пока шёл подбор — результат сразу помечается устаревшим
         const changed = now.room !== room || now.sources !== sources || now.constraints !== c || now.precision !== precision;
@@ -74,8 +68,9 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
         // по нему считаются «Настройка», «Обзор», 3D и замер
         if (!changed && shouldAdoptBest(now.current, r.best[0])) onSetup(setupFromPlacement(now.current, r.best[0]));
         requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-      })
-      .catch((e) => { setRunning(false); setError(e.message || S.errors.generic); });
+      },
+      failed: (e) => setError(e.message || S.errors.generic),
+    });
   };
 
   /** Вариант становится текущей расстановкой (её используют настройка, обзор, 3D и замер). */
@@ -98,36 +93,26 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
   const [mapSub, setMapSub] = useState(subs[0]?.id ?? '');
   const effKind = mapKind === 'sub' && subs.length ? 'sub' : 'listener';
   const effSub = subs.some((s) => s.id === mapSub) ? mapSub : subs[0]?.id ?? '';
-  const [heat, setHeat] = useState<Heatmap | null>(null);
-  const [heatBusy, setHeatBusy] = useState(false);
-  const heatJob = useRef<ComputeJob<Heatmap> | null>(null);
   const heatCache = useRef<{ owner: unknown; map: Map<string, Heatmap> }>({ owner: null, map: new Map() });
-  useEffect(() => {
-    if (!layers.map || !current) { heatJob.current?.cancel(); setHeatBusy(false); return; }
+  // прежний расчёт (другой вариант или входы) больше не нужен: его карта не должна появиться под новым ключом,
+  // поэтому задача снимается сразу, а карта скрыта, пока не посчитана новая; ошибка карты не показывается
+  const heatJob = useComputed(effKind === 'sub' ? 'subMap' : 'listenerMap', layers.map && current ? {
+    room, sources, constraints: c, setup: { ...placementLayout(current), subSettings: current.subSettings ?? {}, crossoverHz: null }, subId: effSub, ppo: gridPpo(precision, c.objective),
+  } : null, {
+    deps: [layers.map, current, sel, effKind, effSub, result, room, sources, c, precision],
+    delay: 120,
+    previous: 'clear',
     // кэш карт на результат подбора и ограничения: переключение туда-обратно — мгновенно
-    const owner = [result, room, sources, c, precision];
-    const cache = heatCache.current;
-    if (cache.owner === null || (cache.owner as unknown[]).some((v, i) => v !== owner[i])) { cache.owner = owner; cache.map.clear(); }
-    const key = `${sel}|${effKind}|${effSub}`;
-    const hit = cache.map.get(key);
-    // прежний расчёт (другой вариант или входы) больше не нужен: его карта не должна появиться под новым ключом
-    heatJob.current?.cancel();
-    heatJob.current = null;
-    if (hit) { setHeat(hit); setHeatBusy(false); return; }
-    setHeat(null);
-    setHeatBusy(true);
-    const t = setTimeout(() => {
-      heatJob.current?.cancel();
-      const setup = { ...placementLayout(current), subSettings: current.subSettings ?? {}, crossoverHz: null };
-      const j = compute(effKind === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup, subId: effSub, ppo: gridPpo(precision, c.objective) });
-      heatJob.current = j;
-      j.promise
-        .then((h) => { if (heatJob.current === j) { cache.map.set(key, h); setHeat(h); setHeatBusy(false); } })
-        .catch(() => { if (heatJob.current === j) setHeatBusy(false); });
-    }, 120);
-    return () => clearTimeout(t);
-  }, [layers.map, current, sel, effKind, effSub, result, room, sources, c, precision]);
-  useEffect(() => () => heatJob.current?.cancel(), []);
+    cache: () => {
+      const owner = [result, room, sources, c, precision];
+      const cache = heatCache.current;
+      if (cache.owner === null || (cache.owner as unknown[]).some((v, i) => v !== owner[i])) { cache.owner = owner; cache.map.clear(); }
+      const key = `${sel}|${effKind}|${effSub}`;
+      return { get: () => cache.map.get(key), set: (h) => { cache.map.set(key, h); } };
+    },
+  });
+  const heat = heatJob.value;
+  const heatBusy = heatJob.busy;
 
   const sharedCard = <SystemSettings project={project} onSources={onSources} onConstraints={onConstraints} onPrecision={onPrecision} />;
   // переключатель режима — как остальные переключатели, в карточке вместе с настройками своего режима
