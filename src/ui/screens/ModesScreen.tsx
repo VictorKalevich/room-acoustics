@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import { isWave } from '../../core/geometry';
 import type { SystemMode } from '../../core/fdtd';
-import { compute } from '../compute';
+import { useComputed } from '../useCompute';
 import type { Mode, ReverbResult, Room } from '../../core/types';
 import { bonelloCheck, modeIssues, proportionsNotes, modeWhere } from '../../core/modes';
 import { ModeChart } from '../components/Charts';
@@ -115,21 +115,13 @@ function likeLabel(m: SystemMode): string {
 }
 
 function SystemModesPanel({ room, fMax }: { room: Room; fMax: number }) {
-  const [modes, setModes] = useState<SystemMode[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    setBusy(true);
-    setError(null);
-    const t = setTimeout(() => {
-      const j = compute('modes', { room, fMax }, setProgress);
-      j.promise.then((m) => { setModes(m); setBusy(false); }).catch((e) => { setError(e.message); setBusy(false); });
-      cancel = j.cancel;
-    }, 400);
-    let cancel = () => clearTimeout(t);
-    return () => cancel();
-  }, [room, fMax]);
+  // прежний список остаётся, пока считается новый; ход между запусками не сбрасывается
+  const { value: modes, busy, progress, error } = useComputed('modes', { room, fMax }, {
+    deps: [room, fMax],
+    delay: 400,
+    previous: 'keep',
+    progress: 'carry',
+  });
   const shown = (modes ?? []).filter((m) => m.f <= fMax);
   return (
     <Panel title={S.sysmodes.title}>
