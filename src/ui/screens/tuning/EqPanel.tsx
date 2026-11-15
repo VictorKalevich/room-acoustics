@@ -3,10 +3,9 @@ import { evalPpo } from '../../../core/precision';
 import { useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
 import { evaluateSetup, type SetupEval } from '../../../core/system';
-import { isWave } from '../../../core/geometry';
 import { designEq, exportEqualizerAPO, exportMiniDSP, exportREW, type EqResult } from '../../../core/eq';
 import { measurementAt } from '../../../core/measure';
-import { compute } from '../../compute';
+import { useComputeAction } from '../../useCompute';
 import { ResponseChart } from '../../components/Charts';
 import { Panel, Segmented, Note, Details } from '../../design-system';
 import { S } from '../../strings';
@@ -30,16 +29,17 @@ export function EqPanel({ project, active = true }: { project: Project; active?:
   const [exportTo, setExportTo] = useState<'apo' | 'rew' | 'minidsp' | 'camilla'>('apo');
   const [camillaXo, setCamillaXo] = useState(false);
 
-  const [eqBusy, setEqBusy] = useState(false);
+  const evaluate = useComputeAction();
+  const eqBusy = evaluate.busy;
   const [error, setError] = useState<string | null>(null);
+  // прямоугольная модель — сразу в основном потоке, без «считаем»; волновая — в воркере (inMainThread)
   const run = () => {
     setError(null);
-    if (isWave(room)) {
-      setEqBusy(true);
-      compute('evaluate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision, 48) }).promise
-        .then((e) => { setEqBusy(false); finish(e); })
-        .catch((e) => { setEqBusy(false); setError(e.message); });
-    } else finish(evaluateSetup(room, sources, c, current, { ppo: evalPpo(project.precision, 48) }));
+    evaluate.run('evaluate', { room, sources, constraints: c, setup: current, ppo: evalPpo(project.precision, 48) }, {
+      done: (e) => finish(e),
+      failed: (e) => setError(e.message),
+      local: { room, compute: () => evaluateSetup(room, sources, c, current, { ppo: evalPpo(project.precision, 48) }) },
+    });
   };
   const finish = (e: SetupEval) => {
     let f = e.response.f;
