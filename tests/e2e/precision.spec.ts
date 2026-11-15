@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { draftSaved } from './helpers';
 
 // 026: точность расчёта — общая настройка проекта; узкое сглаживание доступно только при подробных данных
 test('точность расчёта открывает сглаживание 1/24 и 1/48, предупреждает о времени и общая для расстановки и голоса', async ({ page }) => {
@@ -33,7 +34,7 @@ test('точность расчёта открывает сглаживание 
   await expect(voice.getByRole('slider')).toHaveValue('0');
   await page.getByRole('radio', { name: 'Высокая', exact: true }).click();
   await expect(voice.getByRole('button', { name: 'Исходная кривая 1/24 октавы', exact: true })).toBeVisible({ timeout: 20000 });
-  await page.waitForTimeout(800); // автосохранение
+  await draftSaved(page, 'точность «Высокая»', (d) => d.precision === 'high');
   await page.reload();
   await expect(page.getByRole('radio', { name: 'Высокая', exact: true })).toHaveAttribute('aria-checked', 'true', { timeout: 20000 });
   await page.evaluate(() => { location.hash = 'manual'; });

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { EMPTY_STATE, finishRoomSteps, roomOnlyState, scanToSteps } from './helpers';
+import { EMPTY_STATE, draftSaved, errlog, finishRoomSteps, roomOnlyState, scanToSteps } from './helpers';
 
 // Сквозные сценарии quickstart.md в эмуляции iPhone.
 // Перед запуском: npm run fixtures (создаёт tests/fixtures/out/sample-room.obj).
@@ -288,7 +288,7 @@ test('Сообщить о проблеме: ошибка попадает в ж�
   await expect(page.getByText(/Неизвестный формат/)).toBeVisible();
   // необработанное исключение страницы
   await page.evaluate(() => { setTimeout(() => { throw new Error('проверка журнала'); }); });
-  await page.waitForTimeout(100);
+  await expect.poll(async () => (await errlog(page)).some((e) => e.msg.includes('проверка журнала')), { message: 'исключение в журнале' }).toBe(true);
   await page.getByRole('button', { name: 'Открыть меню' }).click();
   await page.getByRole('button', { name: /О приложении/ }).click();
   await expect(page.getByTestId('errlog-count')).toHaveText('Записано ошибок: 2.');
@@ -326,7 +326,7 @@ test('До и после: второй замер сравнивается с п
   await expect(cmp).toContainText('Сравнение с прошлым замером: do.txt');
   await expect(cmp).toContainText(/Стало ровнее на \d+,\d дБ/);
   await expect(cmp.locator('tbody tr')).toHaveCount(3);
-  await page.waitForTimeout(800); // сохранение в IndexedDB
+  await draftSaved(page, 'второй замер и первый в истории', (d) => d.current.measurement?.name === 'posle.txt' && !!d.current.history?.some((m) => m.name === 'do.txt'));
   await page.reload();
   await expect(page.getByTestId('measure-compare')).toContainText(/Стало ровнее/);
   await page.getByRole('button', { name: 'Забыть прошлые замеры' }).click();

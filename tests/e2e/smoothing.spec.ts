@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { draftSaved } from './helpers';
 
 test('smoothing preferences are independent for voice, manual and auto and survive reload', async ({ page }) => {
   await page.goto('/#voice');
@@ -76,7 +77,7 @@ test('legacy sitting project keeps mouth height without the posture switch', asy
   await page.getByLabel('Высота микрофона', { exact: true }).fill('145');
   await page.getByLabel('От рта до микрофона', { exact: true }).focus();
   await expect(page.locator('.score__value:visible').first()).not.toHaveText('…');
-  await page.waitForTimeout(500); // autosave debounce
+  await draftSaved(page, 'высота микрофона 145 см', (d) => d.voice?.mouthZ === 1.45);
   await page.reload();
   await expect(page.getByLabel('Высота микрофона', { exact: true })).toHaveValue('145');
 });

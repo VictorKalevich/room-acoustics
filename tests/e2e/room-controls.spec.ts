@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import { roomDraft } from './helpers';
 
 async function add(page: Page, name: string) {
   await page.getByRole('button', { name: 'Добавить проём', exact: true }).click();
@@ -65,7 +66,11 @@ test('wall picker creates presets, keeps edited sizes and separates cards from a
   await expect(converted.getByLabel('Высота', { exact: true })).toHaveValue('2');
   await converted.getByRole('button', { name: 'Удалить', exact: true }).click();
   await expect(page.locator('.wall-items .zone-card')).toHaveCount(2);
-  await page.waitForTimeout(500); // project autosave debounce
+  // правки конструктора до «Сохранить» хранит его черновик на устройстве (021), а не проект
+  await expect.poll(async () => {
+    const room = (await roomDraft(page))?.room;
+    return room && { windows: room.features.map((f) => `${f.kind} ${(f.a1 - f.a0).toFixed(2)}`), openings: room.openings.length };
+  }, { message: 'черновик конструктора: окно 1,7 м и проём' }).toEqual({ windows: ['window 1.70'], openings: 1 });
   await page.reload();
   await expect(window.getByLabel('Ширина', { exact: true })).toHaveValue('1,7');
 });

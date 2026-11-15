@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { EMPTY_STATE, roomOnlyState } from './helpers';
+import { EMPTY_STATE, draftSaved, roomOnlyState } from './helpers';
 
 // 021/022: пока комната не создана — один экран «С чего начать», без нижней панели и разделов с расчётами.
 // Ручная настройка идёт по шагам, размеры пустые до ввода, введённое хранится черновиком до «Сохранить».
@@ -98,7 +98,7 @@ test.describe('комнаты ещё нет', () => {
     await expect(page.locator('#scan-panel .panel__title')).toHaveText('3D-модель');
     await expect(page.locator('#scan-panel')).not.toContainText(/LiDAR|скан/i);
     // после перезапуска комната остаётся созданной, конструктор — в режиме правки
-    await page.waitForTimeout(800);
+    await draftSaved(page, 'созданная комната 5,5 × 4 × 2,5 м', (d) => d.roomReady && d.room.depth === 5.5);
     await page.reload();
     await page.goto('/#room/walls');
     await expect(page.getByRole('navigation', { name: 'Шаги конструктора' })).toBeVisible();

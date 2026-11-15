@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { draftSaved } from './helpers';
 
 test('analysis entry, remembered subsection, back and forward', async ({ page }) => {
   await page.goto('/#room');
@@ -44,7 +45,7 @@ test('measurement is shared with EQ and survives navigation and project reload',
   await expect(page.locator('#eq-apo')).toBeVisible();
   await page.getByRole('button', { name: 'Измерения и REW' }).click();
   await expect(page.getByText('shared.txt', { exact: true })).toBeVisible();
-  await page.waitForTimeout(400);
+  await draftSaved(page, 'замер shared.txt', (d) => d.current.measurement?.name === 'shared.txt');
   await page.reload();
   await expect(page.getByText('shared.txt', { exact: true })).toBeVisible();
 });

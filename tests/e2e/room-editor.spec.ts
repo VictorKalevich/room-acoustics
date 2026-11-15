@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { draftSaved } from './helpers';
 
 // 019: конструктор комнаты — шаги, развёртка стены, ковры и шторы, мебель по списку.
 
@@ -173,7 +174,7 @@ test('021: уменьшение комнаты — список удаляемо
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(page.locator('.topbar__room')).toContainText('3,00 × 4,00');
-  await page.waitForTimeout(800);
+  await draftSaved(page, 'комната 3 × 4 м без дивана', (d) => d.room.depth === 3 && d.room.width === 4 && d.room.zones.length === 0);
   await page.reload();
   await expect(page.locator('.topbar__room')).toContainText('3,00 × 4,00');
   await steps(page).getByRole('button', { name: /Мебель/ }).click();

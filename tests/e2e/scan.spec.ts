@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { EMPTY_STATE, finishRoomSteps, scanToSteps } from './helpers';
+import { EMPTY_STATE, draftSaved, finishRoomSteps, scanToSteps } from './helpers';
 
 // 020: исходный скан — только в «Поправить границы комнаты»; скан хранится на устройстве.
 // 022: скан ведёт в те же шаги, что и ручной ввод; «Сохранить» создаёт комнату; неуверенный скан — сначала поправка.
@@ -62,7 +62,7 @@ test('поправка границ: исходный скан с рамкой �
   await expect(page.locator('.layout-editor')).toHaveCount(0);
   await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00 × 2,50');
   // скан сохранён на устройстве: после перезагрузки поправка доступна
-  await page.waitForTimeout(800);
+  await draftSaved(page, 'комната из скана и сетка скана', (d, scans) => d.roomReady && !!d.scanInfo && scans.includes(d.id));
   await page.reload();
   await page.getByRole('button', { name: 'Поправить границы комнаты' }).click();
   await expect(page.locator('.layout-editor')).toBeVisible({ timeout: 15_000 });
