@@ -1,13 +1,12 @@
 // Экран «3D»: где выбранные частоты гудят и проваливаются — в объёме и в горизонтальном слое.
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { FunctionComponent } from 'preact';
 import type { Project } from '../../state/project';
 import type { Mode, Setup, Vec3 } from '../../core/types';
-import type { SystemMode } from '../../core/fdtd';
 import { bandFreqs, combineEnergy, sliceField, type FieldKind, type FieldResult } from '../../core/field3d';
 import { isWave } from '../../core/geometry';
 import { computeReverb } from '../../core/reverb';
-import { compute, type ComputeJob } from '../compute';
+import { useComputed } from '../useCompute';
 import { PlanKey, PlanView, keysFor, type PlanItem, type PlanProps } from '../components/PlanView';
 import { HeightRange } from '../components/HeightRange';
 import { NumberField, Note, Panel, Segmented } from '../design-system';
@@ -77,14 +76,8 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   const [threshold, setThreshold] = useState(saved.threshold);
   // высота среза: по умолчанию — высота ушей
   const [sliceZ, setSliceZ] = useState<number>(saved.sliceZ ?? Math.min(room.height, c.earHeight));
-  const [sysModes, setSysModes] = useState<SystemMode[] | null>(null);
-  const [field, setField] = useState<FieldResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
   const [probe, setProbe] = useState<{ x: number; y: number } | null>(null);
   const [View3D, setView3D] = useState<FunctionComponent<any> | null>(null);
-  const job = useRef<ComputeJob<FieldResult> | null>(null);
 
   useEffect(() => { Object.assign(saved, { kind, pick, view, band, threshold, sliceZ }); }, [kind, pick, view, band, threshold, sliceZ]);
   useEffect(() => { import('../components/Field3D').then((m) => setView3D(() => m.default)).catch(() => undefined); }, []);
@@ -94,15 +87,13 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     setSliceZ((z) => Math.min(z, h));
   }, [room.height]);
 
-  // моды для быстрого выбора: прямоугольная модель — расчётные, волновая — моды системы
-  useEffect(() => {
-    // прежние моды другой комнаты не показываем, пока считаются новые
-    setSysModes(null);
-    if (!wave) return;
-    const j = compute('modes', { room, fMax: Math.min(200, fTop) });
-    j.promise.then(setSysModes).catch(() => setSysModes([]));
-    return () => j.cancel();
-  }, [room, wave, fTop]);
+  // моды для быстрого выбора: прямоугольная модель — расчётные, волновая — моды системы;
+  // прежние моды другой комнаты не показываем, пока считаются новые; ошибка — пустой список
+  const sysModes = useComputed('modes', wave ? { room, fMax: Math.min(200, fTop) } : null, {
+    deps: [room, wave, fTop],
+    previous: 'clear',
+    fallback: () => [],
+  }).value;
   const quick: Pick[] = useMemo(() => {
     if (wave) return (sysModes ?? []).filter((m) => m.f <= fTop).slice(0, 24).map((m) => ({ f: Math.round(m.f * 10) / 10 }));
     return modes.filter((m) => m.f > 0 && m.f <= fTop).slice(0, 24).map((m) => ({ f: Math.round(m.f * 10) / 10, n: m.n }));
@@ -146,32 +137,26 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
     return { freqs: [pick.f] };
   }, [kind, wave, view, band, pick, modes]);
 
-  useEffect(() => {
-    if (!request) { setField(null); return; }
-    const key = JSON.stringify([room, sources, current.positions, current.subSettings, current.crossoverHz, kind, request]);
-    const hit = fieldCache.get(key);
-    // уже считали — сразу; иначе прежняя картинка остаётся на экране, пока считается новая
-    if (hit) { job.current?.cancel(); setField(hit); setBusy(false); setError(null); return; }
-    const t = setTimeout(() => {
-      job.current?.cancel();
-      setBusy(true);
-      setError(null);
-      setProgress(0);
-      const j = compute('field', { room, sources, setup: current, kind, ...request }, setProgress);
-      job.current = j;
-      j.promise
-        .then((r) => {
+  // уже считали — сразу; иначе прежняя картинка остаётся на экране, пока считается новая (прежняя задача досчитывается
+  // до запуска новой). Положение слушателя на поле не влияет — не пересчитываем, когда его двигают.
+  const fieldJob = useComputed('field', request ? { room, sources, setup: current, kind, ...request } : null, {
+    deps: [room, sources, current.positions, current.subSettings, current.crossoverHz, kind, request],
+    delay: 300,
+    restart: 'start',
+    previous: 'keep',
+    progress: 'reset',
+    cache: () => {
+      const key = JSON.stringify([room, sources, current.positions, current.subSettings, current.crossoverHz, kind, request]);
+      return {
+        get: () => fieldCache.get(key),
+        set: (r) => {
           if (fieldCache.size >= CACHE_MAX) fieldCache.delete(fieldCache.keys().next().value!);
           fieldCache.set(key, r);
-          if (job.current === j) { setField(r); setBusy(false); }
-        })
-        .catch((e) => { if (job.current === j) { setError(e.message); setBusy(false); } });
-    }, 300);
-    return () => clearTimeout(t);
-    // положение слушателя на поле не влияет — не пересчитываем, когда его двигают
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room, sources, current.positions, current.subSettings, current.crossoverHz, kind, request]);
-  useEffect(() => () => job.current?.cancel(), []);
+        },
+      };
+    },
+  });
+  const { value: field, busy, progress, error } = fieldJob;
 
   // показываем то, что посчитано (пока считается новая частота — прежнюю, с подписью, какая она)
   const energy = useMemo(() => (field ? combineEnergy(field, field.freqs.map((_, i) => i)) : null), [field]);
