@@ -1,17 +1,18 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { shownTreatments } from '../../core/treatments';
 import { MapModeHelp, type MapMode } from '../components/MapModeHelp';
 import { ScoreBlock } from '../components/ScoreBlock';
 import type { Project } from '../../state/project';
 import { makeId } from '../../state/project';
 import type { Setup, Vec3 } from '../../core/types';
-import { robustnessMap, type Heatmap } from '../../core/field';
+import { robustnessMap } from '../../core/field';
 import { ROBUST_LISTENER_SHIFT, ROBUST_SOURCE_SHIFT } from '../../core/metric';
 import { evaluateSetup } from '../../core/system';
 import { isWave } from '../../core/geometry';
 import { useSetupEval } from '../useEval';
-import { compute, type ComputeJob } from '../compute';
+import { inMainThread } from '../compute';
+import { useComputed } from '../useCompute';
 import { PlanView, HeatLegend, type PlanItem, type PlanMark } from '../components/PlanView';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { NumberField, Panel, Segmented, Note, Details } from '../design-system';
@@ -44,42 +45,29 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
   const [subId, setSubId] = useViewState(project.id, 'manual.sub', subs[0]?.id ?? '');
   const [symmetric, setSymmetric] = useViewState(project.id, 'manual.symmetric', true);
   const [selected, setSelected] = useViewState<string | null>(project.id, 'manual.selected', null);
-  const [heatRaw, setHeat] = useState<Heatmap | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [probe, setProbe] = useState<{ x: number; y: number } | null>(null);
   const [compareId, setCompareId] = useViewState<string | null>(project.id, 'manual.compare', null);
   const [layer, setLayer] = useViewState<'flat' | 'robust'>(project.id, 'manual.layer', 'flat');
   const [name, setName] = useViewState(project.id, 'manual.name', '');
-  const job = useRef<ComputeJob<Heatmap> | null>(null);
 
   const effMode: Mode = mode === 'sub' && subs.length ? 'sub' : 'listener';
   const effSub = subs.some((s) => s.id === subId) ? subId : subs[0]?.id ?? '';
-  // карта другого режима (место слушателя ↔ место сабвуфера, другой сабвуфер) не годится для нового: пока считается
-  // новая, прежние «лучшие места» и окраска не показываются — иначе «Поставить сюда» ставило сабвуфер в место кресла
-  const heat = heatRaw && heatRaw.kind === effMode && (effMode !== 'sub' || heatRaw.subId === effSub) ? heatRaw : null;
-  const robustHeat = useMemo(() => (heat ? robustnessMap(heat, heat.kind === 'listener' ? ROBUST_LISTENER_SHIFT : ROBUST_SOURCE_SHIFT) : null), [heat]);
 
   const { ev: evalCurMaybe, busy: evalBusy, error: evalError } = useSetupEval(room, sources, c, current, ppo);
   const wave = isWave(room);
 
-  // Пересчёт карты с задержкой (во время перетаскивания не дёргаем воркер)
-  useEffect(() => {
-    const t = setTimeout(() => {
-      job.current?.cancel();
-      setBusy(true);
-      setError(null);
-      const j = compute(effMode === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup: current, subId: effSub, ppo: mapPpo });
-      job.current = j;
-      j.promise
-        .then((h) => { if (job.current === j) { setHeat(h); setBusy(false); } })
-        .catch((e) => { if (job.current === j) { setError(e.message); setBusy(false); } });
-    }, 350);
-    return () => clearTimeout(t);
-    // только то, что меняет карту (переименование варианта пересчёта не требует)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room, sources, c, current.positions, current.listener, current.subSettings, current.crossoverHz, effMode, effSub, mapPpo]);
-  useEffect(() => () => job.current?.cancel(), []);
+  // Пересчёт карты с задержкой (во время перетаскивания не дёргаем воркер): прежняя задача досчитывается до запуска
+  // новой, её карта принимается. Входы — только то, что меняет карту (переименование варианта пересчёта не требует).
+  const { value: heatRaw, busy, error } = useComputed(effMode === 'sub' ? 'subMap' : 'listenerMap', { room, sources, constraints: c, setup: current, subId: effSub, ppo: mapPpo }, {
+    deps: [room, sources, c, current.positions, current.listener, current.subSettings, current.crossoverHz, effMode, effSub, mapPpo],
+    delay: 350,
+    restart: 'start',
+    previous: 'keep',
+  });
+  // карта другого режима (место слушателя ↔ место сабвуфера, другой сабвуфер) не годится для нового: пока считается
+  // новая, прежние «лучшие места» и окраска не показываются — иначе «Поставить сюда» ставило сабвуфер в место кресла
+  const heat = heatRaw && heatRaw.kind === effMode && (effMode !== 'sub' || heatRaw.subId === effSub) ? heatRaw : null;
+  const robustHeat = useMemo(() => (heat ? robustnessMap(heat, heat.kind === 'listener' ? ROBUST_LISTENER_SHIFT : ROBUST_SOURCE_SHIFT) : null), [heat]);
   useEffect(() => setProbe(null), [effMode, effSub]);
 
   const move = (id: string, pos: { x: number; y: number }) => {
@@ -108,8 +96,9 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
   const compareSetup = project.setups.find((s) => s.id === compareId) ?? null;
   // оценки сохранённых вариантов — на той же сетке, что и текущая расстановка (раньше — на сетке поиска: у той же
   // расстановки в списке было другое число), и не пересчитываются при каждой перерисовке
+  // у волновой модели не считаются (в основном потоке — только прямоугольная, inMainThread)
   const variantScores = useMemo(
-    () => (isWave(room) ? null : Object.fromEntries(project.setups.map((s) => [s.id, evaluateSetup(room, sources, c, s, { ppo }).objScore]))),
+    () => (inMainThread(room) ? Object.fromEntries(project.setups.map((s) => [s.id, evaluateSetup(room, sources, c, s, { ppo }).objScore])) : null),
     [room, sources, c, project.setups, ppo],
   );
   const { ev: compareEval } = useSetupEval(room, sources, c, compareSetup, ppo);
