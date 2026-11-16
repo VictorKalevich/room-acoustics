@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
-import { deleteProject, listProjects, parseProjectFile, saveProject, storageAvailable } from '../../state/storage';
+import { listProjects, parseProjectFile, saveProject, storageAvailable } from '../../state/storage';
 import { exportProject, readLastExport } from '../projectExport';
 import { ConfirmSheet, Panel, Note } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
-import { dropRoomDraft, loadRoomDraft } from '../roomDraft';
+import { loadRoomDraft } from '../roomDraft';
 import type { Destination } from '../navigation';
-import { switchProject, type Replace } from '../roomSetup';
+import { removeSaved, switchProject, type Replace } from '../roomSetup';
 
 interface Props {
   project: Project;
@@ -26,6 +26,7 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'n
  * вернуться — нижней панелью или пунктом меню «Начать» (025; «← Назад» из 023 убрана).
  * 023: «Сохранить» и «Экспорт» — только у созданной комнаты;
  * «Новый проект», «Открыть» и «Импорт» спрашивают, если введённое в текущем проекте пропадёт.
+ * 037: замена и удаление проекта — операции roomSetup (черновик комнаты и скан на устройстве).
  */
 export function ProjectsScreen({ project, onReplace, onRename, onGo }: Props) {
   const [list, setList] = useState<Project[]>([]);
@@ -155,10 +156,7 @@ export function ProjectsScreen({ project, onReplace, onRename, onGo }: Props) {
                     type="button"
                     class="btn btn--small btn--ghost"
                     onClick={async () => {
-                      // копия открытого проекта: его скан и черновик комнаты ещё нужны
-                      const open = p.id === project.id;
-                      await deleteProject(p.id, open).catch(() => undefined);
-                      if (!open) dropRoomDraft(p.id);
+                      await removeSaved(project, p.id);
                       refresh();
                     }}
                     aria-label={`${S.projects.remove} ${p.name}`}
