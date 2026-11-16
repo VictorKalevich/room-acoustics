@@ -4,6 +4,7 @@ import { logFreqs, db20 } from './frequency';
 import { receiverKernel, applyKernel, modeShapes, type Kernel } from './response';
 import { flatnessScore, ROBUST_LISTENER_SHIFT, ROBUST_SOURCE_SHIFT } from './metric';
 import { makeScorer, objectivePpo } from './objective';
+import { deepPlan } from './deepBass';
 import { evalPpo, gridPpo, type Precision } from './precision';
 import {
   MIN_LISTEN_DIST, clampToRoom, evaluateSetup, filterSet, makeCtx, objectiveSys, receiverSet, seatAllowed, sourceAllowed,
@@ -145,6 +146,7 @@ function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listen
     penalties: e.penalties,
     angleDeg: e.angleDeg,
     response: e.response,
+    ...(e.low ? { low: e.low } : {}),
   };
 }
 
@@ -195,13 +197,15 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   if (wave && ctx.fLo >= searchFMax / 1.08 / 1.2) {
     throw new PlacementError('Источники играют только выше 140 Гц — в комнате со смежными помещениями или скосом автоподбор по басу для них не работает. Расставьте вручную.');
   }
-  const freqs = logFreqs(ctx.fLo, wave ? Math.min(ctx.fHi, searchFMax / 1.08) : ctx.fHi, tuning.ppo ?? gridPpo(input.precision, c.objective));
+  // «Глубже низ» (044): сетка от частоты цели, спад сабвуферов по паспорту
+  const plan = deepPlan(sources, c.objective);
+  const freqs = logFreqs(plan ? plan.fT : ctx.fLo, wave ? Math.min(ctx.fHi, searchFMax / 1.08) : ctx.fHi, tuning.ppo ?? gridPpo(input.precision, c.objective));
   // итоговые варианты оцениваются и упорядочиваются на сетке графика: на сетке поиска порядок близких вариантов бывает неверным
   const finalPpo = tuning.finalPpo ?? evalPpo(input.precision);
   const nF = freqs.length;
-  const { filt, target } = filterSet(sources, freqs, undefined, undefined, c.houseCurve);
+  const { filt, target } = filterSet(sources, freqs, undefined, undefined, c.houseCurve, plan);
   // оценка по цели подбора (ровный бас, меньше провалов внизу, моды…)
-  const scoreFn = makeScorer(freqs, c.objective, room, objectiveSys(room, c));
+  const scoreFn = makeScorer(freqs, c.objective, room, objectiveSys(room, c), plan);
 
   const spkSpecs = sources.filter((s) => s.kind === 'speaker');
   const subSpecs = sources.filter((s) => s.kind === 'sub');

@@ -12,6 +12,8 @@ interface NumberFieldProps {
   hint?: string;
   id?: string;
   compact?: boolean;
+  /** Необязательное значение (044): пустой ввод — «не указано», onChange(NaN) без ошибки; NaN показывается пустым полем. */
+  optional?: boolean;
 }
 
 /** Числовое поле: принимает запятую и точку, проверяет диапазон, не мешает вводу. */
@@ -29,6 +31,11 @@ export function NumberField(p: NumberFieldProps) {
 
   const commit = (s: string) => {
     const v = Number(s.replace(',', '.').replace(/\s/g, ''));
+    if (p.optional && s.trim() === '') {
+      setError(null);
+      if (!Number.isNaN(p.value)) p.onChange(NaN);
+      return;
+    }
     if (s.trim() === '' || !Number.isFinite(v)) {
       setError('Введите число');
       return;

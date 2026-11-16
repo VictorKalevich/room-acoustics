@@ -292,6 +292,7 @@ function ScoreLine({ p, baseline, isBaseline, objective }: { p: Placement; basel
       flatScore={p.score}
       delta={isBaseline ? null : val(baseline) - val(p)}
       flatDetail={detail}
+      low={p.low}
     />
   );
 }

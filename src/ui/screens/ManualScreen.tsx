@@ -187,6 +187,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
           objective={c.objective}
           objScore={evalCur ? evalCur.objScore : null}
           flatScore={evalCur ? evalCur.score : null}
+          low={evalCur?.low}
           context={S.manual.current}
           flatDetail={evalCur?.angleDeg != null ? `${S.placement.angle}: ${fmt(evalCur.angleDeg, 0)}°.` : undefined}
         >

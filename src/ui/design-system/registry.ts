@@ -3,7 +3,7 @@
 export const componentFamilies = [
   ['Каркас', '.screen · .content · .topbar · .tabbar (вкладки по числу пунктов) · .app--start (без нижней панели) · .drawer · .drawer__item--start (пункт «Начать»)'],
   ['Панели', 'Panel · .panel · .panel--hero · .panel--collapsible'],
-  ['Поля', 'NumberField (пустое — NaN) · SelectField (hint) · .field · .field--compact · .field--error'],
+  ['Поля', 'NumberField (пустое — NaN; optional — пустой ввод очищает) · SelectField (hint) · .field · .field--compact · .field--error'],
   ['Переключатели', 'Segmented · .segmented · .tabs · .segmented--wrap'],
   ['Навигация разделов', 'SectionNav · .section-nav'],
   ['Кнопки', '.btn · --primary · --tonal · --ghost · --danger · --small · --wide'],

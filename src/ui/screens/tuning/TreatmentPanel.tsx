@@ -109,6 +109,7 @@ function TreatmentPlan({ project, modes, onRoom, reflections }: { project: Proje
         objective={c.objective}
         objScore={evNow ? evNow.objScore : null}
         flatScore={evNow ? evNow.score : null}
+        low={evNow?.low}
         context={!list.length ? S.treat.scoreNone : room.treatmentsOn ? S.treat.scoreWith : S.treat.scoreWithout}
       >
         <span class="muted small">{S.tuning.setupHint}</span>

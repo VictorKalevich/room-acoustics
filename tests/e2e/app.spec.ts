@@ -483,6 +483,52 @@ test('043: подъём низа — цель подбора, настройки
   await draftSaved(page, 'ровная цель — без поля', (d) => d.constraints.houseCurve === undefined);
 });
 
+test('044: глубже низ — паспорт сабвуфера, строка о низе, устаревший результат, хранится в проекте', async ({ page }) => {
+  await page.goto('/#placement');
+  await page.getByLabel('Что искать').selectOption('deep');
+  await expect(page.getByText('Места, где комната помогает сабвуферу играть ниже')).toBeVisible();
+  await expect(page.locator('.setup-card__summary')).toContainText('глубже низ');
+  const f3 = page.locator('#sub1-f3');
+  const f10 = page.locator('#sub1-f10');
+  const curve = page.locator('.sub-caps p.muted').filter({ hasText: 'Спад:' });
+  await expect(f3).toHaveValue('');
+  await expect(curve).toContainText('паспорт не указан');
+  await f3.fill('30');
+  await f10.fill('27');
+  await expect(curve).toContainText('(по двум точкам)');
+  await expect(page.locator('#deep-hz')).toHaveValue('27');
+  // необязательная точка: пустой ввод — «не указано», без ошибки
+  await f3.fill('');
+  await expect(page.getByText('Введите число')).toHaveCount(0);
+  await expect(curve).toContainText('крутизна — по корпусу');
+  await page.getByRole('radiogroup', { name: 'Корпус (сабвуфер 1)' }).getByRole('radio', { name: 'Закрытый' }).click();
+  await expect(curve).toContainText('12 дБ на октаву');
+  await f3.fill('30');
+  await expect(curve).toContainText('(по двум точкам)');
+  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  const low = page.locator('.score__second').locator('visible=true').filter({ hasText: 'Самый низ:' }).first();
+  await expect(low).toContainText('на 27 Гц', { timeout: 30_000 });
+  await expect(page.locator('.score__label').locator('visible=true').first()).toHaveText('Глубже низ');
+  await page.locator('#deep-hz').fill('25');
+  await expect(page.getByText('Параметры изменились — результат устарел.')).toBeVisible();
+  await page.getByRole('button', { name: 'Пересчитать' }).click();
+  await expect(low).toContainText('на 25 Гц', { timeout: 30_000 });
+  await draftSaved(page, 'паспорт и частота цели', (d) => {
+    const p = d.sources.find((s) => s.id === 'sub1')?.passport;
+    return d.constraints.objective?.deepHz === 25 && p?.f3 === 30 && p.f10 === 27 && p.box === 'sealed';
+  });
+  await page.reload();
+  await page.goto('/#placement');
+  await expect(page.getByLabel('Что искать')).toHaveValue('deep');
+  await expect(f10).toHaveValue('27');
+  await expect(page.locator('#deep-hz')).toHaveValue('25');
+  // пустая частота цели — снова по паспорту
+  await page.locator('#deep-hz').fill('');
+  await draftSaved(page, 'частота цели по паспорту', (d) => d.constraints.objective?.id === 'deep' && d.constraints.objective.deepHz === undefined);
+  await page.locator('#deep-hz').blur();
+  await expect(page.locator('#deep-hz')).toHaveValue('27');
+});
+
 test('011: обработка на планах — только когда учтена; оценка под галочкой; «Удалить все» с подтверждением', async ({ page }) => {
   await page.goto('/#tuning/treatment');
   // блока «Текущая расстановка» больше нет, оценка — в плане обработки и без элементов

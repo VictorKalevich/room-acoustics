@@ -50,6 +50,29 @@ describe('043: подъём низа в файле проекта', () => {
   });
 });
 
+describe('044: паспорт сабвуфера и цель «Глубже низ» в файле проекта', () => {
+  it('паспорт и поля цели сохраняются; без них — как раньше; неверные значения отбрасываются', () => {
+    const p = newProject();
+    const sub = p.sources.find((s) => s.kind === 'sub')!;
+    sub.passport = { f3: 30, f10: 27, box: 'sealed' };
+    p.constraints.objective = { id: 'deep', deepHz: 25, deepDrop: 10 };
+    const back = parseProjectFile(serializeProject(p));
+    expect(back.sources.find((s) => s.id === sub.id)!.passport).toEqual({ f3: 30, f10: 27, box: 'sealed' });
+    expect(back.constraints.objective).toEqual({ id: 'deep', deepHz: 25, deepDrop: 10 });
+    expect(JSON.parse(serializeProject(newProject())).project.sources.some((s: object) => 'passport' in s)).toBe(false);
+
+    const raw = JSON.parse(serializeProject(p));
+    raw.project.sources = raw.project.sources.map((s: { kind: string }) => ({ ...s, passport: s.kind === 'sub' ? { f3: '30', f10: 27, box: 'horn' } : { f3: 30 } }));
+    raw.project.constraints.objective = { id: 'deep', deepHz: 70, deepDrop: 5 };
+    const bad = parseProjectFile(JSON.stringify(raw));
+    expect(bad.sources.find((s) => s.kind === 'sub')!.passport).toEqual({ f10: 27 });
+    expect(bad.sources.filter((s) => s.kind === 'speaker').every((s) => s.passport === undefined)).toBe(true);
+    expect(bad.constraints.objective).toEqual({ id: 'deep' });
+    raw.project.sources = raw.project.sources.map((s: object) => ({ ...s, passport: { f3: 2 } }));
+    expect(parseProjectFile(JSON.stringify(raw)).sources.every((s) => !('passport' in s))).toBe(true);
+  });
+});
+
 describe('миграция версии 1', () => {
   it('файл версии 1 получает текущую расстановку, места, зоны и возможности сабвуфера', () => {
     const v1 = {

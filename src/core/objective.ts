@@ -4,9 +4,10 @@
 // Почему не только «ровность»: пики эквалайзер срезает, а провалы (антирезонансы) им не поднять —
 // там, сколько ни добавляй усиления, звук гасится интерференцией. Поэтому для баса важнее, где провалов
 // меньше, и особенно — внизу, где их нельзя прикрыть другими источниками и где пропадает «низ».
-import type { BassObjective, Mode, ModePreset, Room } from './types';
+import type { BassObjective, DeepDrop, LowReach, Mode, ModePreset, Room } from './types';
 import { flatnessScore } from './metric';
 import { computeModes } from './modes';
+import { DEEP_DROPS, DEEP_HZ_MAX, DEEP_HZ_MIN, type DeepPlan } from './deepBass';
 
 /** Мелкая рябь не считается провалом, дБ. */
 const DIP_TOL = 1;
@@ -18,7 +19,7 @@ const DIP_MAX = 25;
  */
 const BACKGROUND = 0.2;
 
-export const OBJECTIVE_IDS = ['flat', 'dips', 'lowDips', 'wideLow', 'modes'] as const;
+export const OBJECTIVE_IDS = ['flat', 'dips', 'lowDips', 'wideLow', 'modes', 'deep'] as const;
 export const MODE_PRESETS: readonly ModePreset[] = ['first', 'axial', 'lowest', 'custom'];
 
 export const DEFAULT_OBJECTIVE: BassObjective = { id: 'flat' };
@@ -167,21 +168,15 @@ const SEMITONE_HALF = Math.pow(2, 1 / 24);
  * Опорный уровень для провалов — медиана отклонения от цели: пики (их срежет эквалайзер)
  * и сами провалы его не сдвигают. Уровни сначала усредняются по энергии в полосе полутона.
  */
-export function makeScorer(freqs: ArrayLike<number>, o: BassObjective | undefined, room?: Room, sys?: readonly SysModeLike[]): Scorer {
+export function makeScorer(freqs: ArrayLike<number>, o: BassObjective | undefined, room?: Room, sys?: readonly SysModeLike[], plan?: DeepPlan | null): Scorer {
   if (isFlat(o)) return flatnessScore;
+  if (o!.id === 'deep' && plan) return deepScorer(freqs, plan);
   const n = freqs.length;
   const fLo = freqs[0], fHi = freqs[n - 1];
   const dev = new Float64Array(n);
   const tmp = new Float64Array(n);
   const pw = new Float64Array(n);
-  // окна полутона: индексы a..b вокруг каждой точки
-  const wa = new Int32Array(n), wb = new Int32Array(n);
-  for (let i = 0; i < n; i++) {
-    let a = i, b = i;
-    while (a > 0 && freqs[a - 1] >= freqs[i] / SEMITONE_HALF * 0.9999) a--;
-    while (b < n - 1 && freqs[b + 1] <= freqs[i] * SEMITONE_HALF * 1.0001) b++;
-    wa[i] = a; wb[i] = b;
-  }
+  const { wa, wb } = semitoneWindows(freqs);
   const prepare = (db: ArrayLike<number>, target: ArrayLike<number>) => {
     for (let i = 0; i < n; i++) pw[i] = Math.pow(10, db[i] / 10);
     for (let i = 0; i < n; i++) {
@@ -203,6 +198,7 @@ export function makeScorer(freqs: ArrayLike<number>, o: BassObjective | undefine
   const dipsAll = (db: ArrayLike<number>, target: ArrayLike<number>) => weighted(ones, prepare(db, target), dev);
 
   let id = o!.id;
+  if (id === 'deep') id = 'lowDips'; // без сабвуферов — просто меньше провалов внизу
   let targets: ModeTarget[] = [];
   if (id === 'modes') {
     targets = room ? objectiveModes(room, o!, fLo, fHi, sys) : [];
@@ -265,6 +261,81 @@ export function makeScorer(freqs: ArrayLike<number>, o: BassObjective | undefine
   };
 }
 
+/** Окна полутона (±1/24 октавы) вокруг каждой точки сетки: индексы a..b. */
+function semitoneWindows(freqs: ArrayLike<number>): { wa: Int32Array; wb: Int32Array } {
+  const n = freqs.length;
+  const wa = new Int32Array(n), wb = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    let a = i, b = i;
+    while (a > 0 && freqs[a - 1] >= freqs[i] / SEMITONE_HALF * 0.9999) a--;
+    while (b < n - 1 && freqs[b + 1] <= freqs[i] * SEMITONE_HALF * 1.0001) b++;
+    wa[i] = a; wb[i] = b;
+  }
+  return { wa, wb };
+}
+
+/**
+ * Уровень относительно обычного уровня баса для цели «Глубже низ» (044): отклонение от цели, усреднённое по энергии в
+ * полосе полутона, минус медиана отклонения на частотах от split и выше (пики и провалы её не сдвигают).
+ */
+function deepRelative(freqs: ArrayLike<number>, split: number): (db: ArrayLike<number>, target: ArrayLike<number>) => Float64Array {
+  const n = freqs.length;
+  const { wa, wb } = semitoneWindows(freqs);
+  const hi: number[] = [];
+  for (let i = 0; i < n; i++) if (freqs[i] >= split) hi.push(i);
+  const refIdx = hi.length ? hi : Array.from({ length: n }, (_, i) => i);
+  const pw = new Float64Array(n);
+  const rel = new Float64Array(n);
+  const tmp = new Float64Array(refIdx.length);
+  return (db, target) => {
+    for (let i = 0; i < n; i++) pw[i] = Math.pow(10, db[i] / 10);
+    for (let i = 0; i < n; i++) {
+      let s = 0;
+      for (let j = wa[i]; j <= wb[i]; j++) s += pw[j];
+      rel[i] = 10 * Math.log10(Math.max(s / (wb[i] - wa[i] + 1), 1e-30)) - target[i];
+    }
+    refIdx.forEach((i, k) => (tmp[k] = rel[i]));
+    const ref = median(tmp, tmp.length);
+    for (let i = 0; i < n; i++) rel[i] -= ref;
+    return rel;
+  };
+}
+
+/**
+ * Оценка «Глубже низ»: ниже split — недобор сверх допустимого спада, от split — провалы глубже 1 дБ, как у целей по
+ * провалам; глубина до 25 дБ, вес обратно пропорционален частоте (на частоте цели — 1), среднеквадратичное.
+ */
+function deepScorer(freqs: ArrayLike<number>, plan: Pick<DeepPlan, 'split' | 'drop'>): Scorer {
+  const n = freqs.length;
+  const rel = deepRelative(freqs, plan.split);
+  const w = Float64Array.from({ length: n }, (_, i) => freqs[0] / freqs[i]);
+  const tol = Float64Array.from({ length: n }, (_, i) => (freqs[i] < plan.split ? plan.drop : DIP_TOL));
+  let sw = 0;
+  for (let i = 0; i < n; i++) sw += w[i];
+  return (db, target) => {
+    const r = rel(db, target);
+    let s = 0;
+    for (let i = 0; i < n; i++) {
+      const d = Math.min(DIP_MAX, Math.max(0, -r[i] - tol[i]));
+      s += w[i] * d * d;
+    }
+    return Math.sqrt(s / sw);
+  };
+}
+
+/**
+ * Низ по цели «Глубже низ» для показа: уровень на частоте цели (первая точка сетки) и самая низкая частота ниже split,
+ * до которой уровень, начиная от split, не ниже допустимого спада (null — уже первая точка ниже split ниже него).
+ */
+export function lowReach(freqs: ArrayLike<number>, db: ArrayLike<number>, target: ArrayLike<number>, plan: Pick<DeepPlan, 'split' | 'drop' | 'fT'>): LowReach {
+  const r = deepRelative(freqs, plan.split)(db, target);
+  let reach: number | null = null;
+  let i = 0;
+  while (i < freqs.length && freqs[i] < plan.split) i++;
+  for (i--; i >= 0 && r[i] >= -plan.drop; i--) reach = freqs[i];
+  return { fT: plan.fT, drop: plan.drop, atT: r[0], reach };
+}
+
 /** Нормализация цели из файла проекта: неизвестное — как «ровный бас». */
 export function normalizeObjective(raw: unknown): BassObjective | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -277,5 +348,7 @@ export function normalizeObjective(raw: unknown): BassObjective | undefined {
       .filter((n): n is [number, number, number] => Array.isArray(n) && n.length === 3 && n.every((v) => Number.isInteger(v) && v >= 0 && v < 50))
       .slice(0, 40);
   }
+  if (typeof r.deepHz === 'number' && r.deepHz >= DEEP_HZ_MIN && r.deepHz <= DEEP_HZ_MAX) out.deepHz = r.deepHz;
+  if (DEEP_DROPS.includes(r.deepDrop as DeepDrop)) out.deepDrop = r.deepDrop;
   return out;
 }

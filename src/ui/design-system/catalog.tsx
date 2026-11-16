@@ -28,6 +28,7 @@ const sampleRoom: Room = {
 function Catalog() {
   const [number, setNumber] = useState(160);
   const [distance, setDistance] = useState(20);
+  const [optional, setOptional] = useState(27);
   const [mode, setMode] = useState('first');
   const [section, setSection] = useState('one');
   const [theme, setTheme] = useState('light');
@@ -68,6 +69,7 @@ function Catalog() {
       <SelectField label="Выбор" value={mode} options={options} onChange={setMode} />
       <SelectField label="Выбор с подсказкой" value={mode} options={options} onChange={setMode} hint="Значение по умолчанию — если у вас другое, выберите." />
       <NumberField label="Пустое поле (ещё не введено)" value={NaN} min={1} max={50} unit="м" onChange={() => undefined} />
+      <NumberField optional label="Необязательное: очистите — «не указано»" value={optional} min={10} max={200} unit="Гц" digits={0} onChange={setOptional} hint={Number.isNaN(optional) ? 'Не указано' : undefined} />
       <label class="check"><input type="checkbox" checked={checked} onChange={e => setChecked(e.currentTarget.checked)} />Общее оформление флажка</label>
       <div class="field"><label for="catalog-text">Многострочный ввод</label><div class="field__box"><textarea id="catalog-text" rows={2} placeholder="Текст" /></div></div>
     </Panel>

@@ -1,4 +1,4 @@
-// Выбор цели подбора мест для баса: ровность, провалы, широкие провалы внизу, провалы на модах.
+// Выбор цели подбора мест для баса: ровность, провалы, широкие провалы внизу, провалы на модах, глубже низ.
 import { useMemo } from 'preact/hooks';
 import type { BassObjective, ModePreset, ObjectiveId, Room } from '../../core/types';
 import { computeModes, modeWhere } from '../../core/modes';
@@ -9,7 +9,7 @@ import { Segmented, SelectField, Note } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
 
-const IDS: ObjectiveId[] = ['flat', 'dips', 'lowDips', 'wideLow', 'modes'];
+const IDS: ObjectiveId[] = ['flat', 'dips', 'lowDips', 'wideLow', 'modes', 'deep'];
 const PRESETS: ModePreset[] = ['first', 'axial', 'lowest', 'custom'];
 
 const nKey = (n: readonly number[]) => n.join(' ');

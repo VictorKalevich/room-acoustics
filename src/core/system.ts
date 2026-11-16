@@ -1,15 +1,16 @@
 // Общие элементы оценки системы: контекст расчёта, фильтры, места прослушивания, зоны,
 // регулировки сабвуфера и оценка произвольного варианта расстановки.
 import type {
-  Complex, Constraints, Penalty, ReverbResult, Room, Setup, SourceSpec, SubSetting, Vec3, Zone,
+  Complex, Constraints, LowReach, Penalty, ReverbResult, Room, Setup, SourceSpec, SubSetting, Vec3, Zone,
 } from './types';
 import { computeReverb } from './reverb';
 import { speedOfSound } from './physics';
 import { db20, logFreqs } from './frequency';
-import { sourceFilter } from './filters';
+import { sourceFilter, sourceLowPass } from './filters';
+import { butterworthHp, deepPlan, type DeepPlan } from './deepBass';
 import { applyKernel, modeShapes, prepareModes, receiverKernel, type PreparedModes } from './response';
 import { flatnessScore } from './metric';
-import { isFlat, makeScorer } from './objective';
+import { isFlat, lowReach, makeScorer } from './objective';
 import { ceilingAt, isWave } from './geometry';
 import { waveFMax, waveSpectra, waveSystemModes } from './acoustics';
 import { houseDb } from './houseCurve';
@@ -100,6 +101,7 @@ export type Spectrum = { re: Float64Array; im: Float64Array };
 /**
  * Фильтры источников на частотах (с учётом кроссовера и регулировок сабвуферов) и целевая кривая
  * (сумма номинальных фильтров без регулировок, дБ, плюс подъём низа `rise` — 043).
+ * С планом цели «Глубже низ» (044) спад сабвуферов снизу — по паспорту, а в целевой кривой его нет.
  */
 export function filterSet(
   sources: SourceSpec[],
@@ -107,6 +109,7 @@ export function filterSet(
   crossoverHz?: number | null,
   settings?: Record<string, SubSetting>,
   rise?: number,
+  plan?: DeepPlan | null,
 ): { filt: Record<string, Spectrum>; target: number[] } {
   const sys = withCrossover(sources, crossoverHz);
   const n = freqs.length;
@@ -116,10 +119,19 @@ export function filterSet(
   for (const s of sys) {
     const re = new Float64Array(n);
     const im = new Float64Array(n);
+    const curve = plan && s.kind === 'sub' ? plan.curves[s.id] : undefined;
     for (let i = 0; i < n; i++) {
-      const h = sourceFilter(s, sys, freqs[i]);
-      tRe[i] += h.re;
-      tIm[i] += h.im;
+      let h: Complex;
+      if (curve) {
+        const lp = sourceLowPass(s, sys, freqs[i]);
+        h = cmul(butterworthHp(curve.order, curve.fc, freqs[i]), lp);
+        tRe[i] += lp.re;
+        tIm[i] += lp.im;
+      } else {
+        h = sourceFilter(s, sys, freqs[i]);
+        tRe[i] += h.re;
+        tIm[i] += h.im;
+      }
       const a = s.kind === 'sub' ? subAdjust(settings?.[s.id], freqs[i]) : { re: 1, im: 0 };
       re[i] = h.re * a.re - h.im * a.im;
       im[i] = h.re * a.im + h.im * a.re;
@@ -282,6 +294,8 @@ export interface SetupEval {
   fLo: number;
   fHi: number;
   model: 'modal' | 'wave';
+  /** Низ по цели «Глубже низ» (только у этой цели). */
+  low?: LowReach;
 }
 
 /**
@@ -309,14 +323,29 @@ export function evaluateSetup(
   const ids = sources.map((s) => s.id).filter((id) => setup.positions[id]);
   const dbs = pts.map((_, r) => sumDb(raw, filt, r, n, ids));
   const perReceiver = dbs.map((d) => flatnessScore(d, target));
-  const scorer = isFlat(c.objective) ? null : makeScorer(freqs, c.objective, room, objectiveSys(room, c));
-  const perObj = scorer ? dbs.map((d) => scorer(d, target)) : perReceiver;
+  const multi = (c.seats?.count ?? 1) > 1;
+  const average = (ds: Float64Array[], m: number) => (multi
+    ? Array.from({ length: m }, (_, j) => ds.reduce((a, d) => a + d[j], 0) / ds.length)
+    : Array.from(ds[0]));
+  // «Глубже низ» (044) — своя сетка от частоты цели и спад сабвуферов по паспорту; неровность и график — как у всех целей
+  const plan = deepPlan(sources, c.objective);
+  let perObj = perReceiver;
+  let low: LowReach | undefined;
+  if (plan) {
+    const fd = logFreqs(plan.fT, ctx.fHi, opts.ppo ?? 24);
+    const d = filterSet(sources, fd, setup.crossoverHz, setup.subSettings, c.houseCurve, plan);
+    const rawD = rawResponses(ctx, pts, fd, setup.positions);
+    const dbsD = pts.map((_, r) => sumDb(rawD, d.filt, r, fd.length, ids));
+    const scorer = makeScorer(fd, c.objective, room, undefined, plan);
+    perObj = dbsD.map((v) => scorer(v, d.target));
+    low = lowReach(fd, average(dbsD, fd.length), d.target, plan);
+  } else if (!isFlat(c.objective)) {
+    const scorer = makeScorer(freqs, c.objective, room, objectiveSys(room, c));
+    perObj = dbs.map((d) => scorer(d, target));
+  }
   const spk = sources.filter((s) => s.kind === 'speaker' && setup.positions[s.id]).map((s) => setup.positions[s.id]);
   const { penalties, angle } = speakerPenalties(ctx, setup.listener, spk);
-  const multi = (c.seats?.count ?? 1) > 1;
-  const shown = multi
-    ? Array.from({ length: n }, (_, j) => dbs.reduce((a, d) => a + d[j], 0) / dbs.length)
-    : Array.from(dbs[0]);
+  const shown = average(dbs, n);
   let off = 0;
   for (let j = 0; j < n; j++) off += shown[j] - target[j];
   off /= n;
@@ -334,6 +363,7 @@ export function evaluateSetup(
     fLo: ctx.fLo,
     fHi: ctx.fHi,
     model: isWave(room) ? 'wave' : 'modal',
+    ...(low ? { low } : {}),
   };
 }
 

@@ -3,7 +3,7 @@
 // оценкой. Если цель — не ровность, отдельной строкой ниже — неровность всей АЧХ: это другая величина
 // (считает и пики, и провалы на всех частотах), поэтому она почти всегда больше оценки по провалам.
 import type { ComponentChildren } from 'preact';
-import type { BassObjective } from '../../core/types';
+import type { BassObjective, LowReach } from '../../core/types';
 import { isFlat } from '../../core/objective';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -31,10 +31,14 @@ interface Props {
   delta?: number | null;
   /** подробности под неровностью (в центре / при сдвиге головы, угол раскрытия) */
   flatDetail?: string;
+  /** цель «Глубже низ» (044): уровень на частоте цели и до какой частоты бас не ниже допустимого спада */
+  low?: LowReach | null;
   children?: ComponentChildren;
 }
 
-export function ScoreBlock({ objective, objScore, flatScore, context, delta, flatDetail, children }: Props) {
+const signed = (v: number) => { const r = Math.round(v * 10) / 10; return `${r > 0 ? '+' : r < 0 ? '−' : ''}${fmt(Math.abs(r), 1)}`; };
+
+export function ScoreBlock({ objective, objScore, flatScore, context, delta, flatDetail, low, children }: Props) {
   const flat = isFlat(objective);
   const id = objective?.id ?? 'flat';
   const main = flat ? flatScore : objScore;
@@ -58,6 +62,15 @@ export function ScoreBlock({ objective, objScore, flatScore, context, delta, fla
         )}
         {flat && flatDetail && <span class="muted small">{flatDetail}</span>}
       </div>
+      {id === 'deep' && low && (
+        <div class="score__second">
+          <span>{S.deep.lowRow} <strong>{S.deep.at(signed(low.atT), fmt(low.fT, 0))}</strong></span>
+          <span class="muted small">
+            {S.deep.allowed(low.drop)}
+            {low.reach != null ? ` ${S.deep.reach(low.drop, fmt(low.reach, 1))}` : ''}
+          </span>
+        </div>
+      )}
       {!flat && (
         <div class="score__second">
           <span>{t.flatRow} <strong>{flatScore != null ? `${fmt(flatScore, 1)} дБ` : '…'}</strong></span>

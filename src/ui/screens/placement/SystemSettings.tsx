@@ -6,6 +6,7 @@ import { evalBand } from '../../../core/system';
 import { NumberField, Segmented, Note, Details, SelectField } from '../../design-system';
 import { SetupCard } from '../../components/SetupCard';
 import { ObjectivePicker } from '../../components/ObjectivePicker';
+import { DeepBassOptions } from '../../components/DeepBassOptions';
 import { PrecisionPicker } from '../../components/PrecisionPicker';
 import { normalizePrecision, type Precision } from '../../../core/precision';
 import { HOUSE_RISES, normalizeHouseRise } from '../../../core/houseCurve';
@@ -194,6 +195,9 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
       <h3 class="subhead">{S.objective.title}</h3>
       <p class="muted small">{S.objective.intro}</p>
       <ObjectivePicker room={room} value={c.objective} onChange={(o: BassObjective) => setC({ objective: o })} band={band} />
+      {c.objective?.id === 'deep' && (
+        <DeepBassOptions sources={sources} value={c.objective} onChange={(o) => setC({ objective: o })} onSources={onSources} />
+      )}
       <Segmented
         label={S.house.label}
         value={c.houseCurve ?? 0}

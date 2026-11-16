@@ -37,15 +37,19 @@ export function isCrossover(system: SourceSpec[]): boolean {
  * Кроссовер сабвуфер/колонки — LR4; естественный спад — Баттерворт 2-го порядка.
  */
 export function sourceFilter(spec: SourceSpec, system: SourceSpec[], f: number): Complex {
-  const xo = isCrossover(system);
-  let hp: Complex;
-  let lp: Complex;
-  if (spec.kind === 'speaker') {
-    hp = xo ? lr4('hp', spec.fLow, f) : bw2('hp', spec.fLow, f);
-    lp = bw2('lp', spec.fHigh, f);
-  } else {
-    hp = bw2('hp', spec.fLow, f);
-    lp = xo ? lr4('lp', spec.fHigh, f) : bw2('lp', spec.fHigh, f);
-  }
+  const { hp, lp } = filterParts(spec, system, f);
   return cmul(hp, lp);
+}
+
+/** Верхняя граница источника без спада снизу (044: у сабвуфера спад для цели «Глубже низ» задаётся паспортом). */
+export function sourceLowPass(spec: SourceSpec, system: SourceSpec[], f: number): Complex {
+  return filterParts(spec, system, f).lp;
+}
+
+function filterParts(spec: SourceSpec, system: SourceSpec[], f: number): { hp: Complex; lp: Complex } {
+  const xo = isCrossover(system);
+  if (spec.kind === 'speaker') {
+    return { hp: xo ? lr4('hp', spec.fLow, f) : bw2('hp', spec.fLow, f), lp: bw2('lp', spec.fHigh, f) };
+  }
+  return { hp: bw2('hp', spec.fLow, f), lp: xo ? lr4('lp', spec.fHigh, f) : bw2('lp', spec.fHigh, f) };
 }

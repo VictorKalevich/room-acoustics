@@ -230,6 +230,18 @@ export interface SourceSpec {
   /** Сколько полос параметрического эквалайзера есть у канала сабвуфера (0 — нет) и есть ли all-pass. */
   peqBands?: number;
   allpass?: boolean;
+  /** Только для сабвуферов: паспорт спада для цели «Глубже низ» (044). Другие расчёты его не читают. */
+  passport?: SubPassport;
+}
+
+export type Enclosure = 'ported' | 'sealed';
+
+/** Паспорт спада сабвуфера: частоты спада на −3 и −10 дБ (любая может быть не указана) и тип корпуса. */
+export interface SubPassport {
+  f3?: number;
+  f10?: number;
+  /** Нет — фазоинвертор. */
+  box?: Enclosure;
 }
 
 /** Настройки сабвуфера: задержка, фаза, уровень. */
@@ -267,9 +279,10 @@ export type SubZone = 'corners' | 'walls' | 'anywhere';
  *  dips — меньше провалов (пики срежет эквалайзер, провалы — нет);
  *  lowDips — меньше провалов внизу (чем ниже частота, тем важнее);
  *  wideLow — без широких провалов у нижней границы (сглаживание 1/3 октавы, две нижние октавы);
- *  modes — без провалов на выбранных модах.
+ *  modes — без провалов на выбранных модах;
+ *  deep — глубже низ: недобор ниже паспортной границы сабвуфера до частоты цели и провалы выше (044).
  */
-export type ObjectiveId = 'flat' | 'dips' | 'lowDips' | 'wideLow' | 'modes';
+export type ObjectiveId = 'flat' | 'dips' | 'lowDips' | 'wideLow' | 'modes' | 'deep';
 /** Какие моды важнее: первые осевые, осевые до 150 Гц, шесть самых низких, выбранные вручную. */
 export type ModePreset = 'first' | 'axial' | 'lowest' | 'custom';
 
@@ -278,6 +291,22 @@ export interface BassObjective {
   modePreset?: ModePreset;
   /** Номера мод для выбора вручную. */
   modes?: [number, number, number][];
+  /** «Глубже низ»: до какой частоты продлевать бас, Гц (нет — по паспорту сабвуферов) и допустимый спад, дБ (нет — 6). */
+  deepHz?: number;
+  deepDrop?: DeepDrop;
+}
+
+export type DeepDrop = 3 | 6 | 10;
+
+/**
+ * Низ по цели «Глубже низ»: частота цели и допустимый спад, уровень на частоте цели относительно обычного уровня баса
+ * и самая низкая частота ниже частоты среза сабвуфера, до которой уровень не ниже допустимого спада (null — уже ниже).
+ */
+export interface LowReach {
+  fT: number;
+  drop: number;
+  atT: number;
+  reach: number | null;
 }
 
 export interface Constraints {
@@ -353,6 +382,8 @@ export interface Placement {
   /** Устойчивость: на сколько дБ в среднем ухудшается оценка при сдвиге источников и слушателя на 10 см. */
   robust?: number;
   notes?: string[];
+  /** Низ по цели «Глубже низ» (только у этой цели). */
+  low?: LowReach;
 }
 
 export interface PlacementResult {

@@ -10,6 +10,7 @@ import { FURNITURE } from '../core/furniture';
 import { isWave } from '../core/geometry';
 import { HISTORY_MAX } from './variant';
 import { normalizeObjective } from '../core/objective';
+import { normalizePassport } from '../core/deepBass';
 import { normalizeHouseRise } from '../core/houseCurve';
 import { normalizePrecision } from '../core/precision';
 import type { DetectResult, Units } from '../scan/detect';
@@ -162,6 +163,10 @@ export function normalizeProject(raw: any): Project {
       n.maxDelayMs = finite(n.maxDelayMs, d.maxDelayMs!);
       if (n.peqBands !== undefined && !isNum(n.peqBands)) delete n.peqBands;
     }
+    // 044: паспорт спада — только у сабвуфера, неверные поля убираются
+    const passport = n.kind === 'sub' ? normalizePassport(n.passport) : undefined;
+    if (passport) n.passport = passport;
+    else delete n.passport;
     return n;
   });
   const srcErr = validateSources(sources);
