@@ -56,9 +56,21 @@ describe('computeModes', () => {
   });
 
   it('критерий Бонелло: число мод по третьоктавам', () => {
-    const res = bonelloCheck(computeModes(room(5, 4, 2.5), 300));
-    expect(res.bands.length).toBeGreaterThan(5);
-    expect(typeof res.ok).toBe('boolean');
+    const m = (f: number, degenerate = false) => ({ n: [1, 0, 0] as [number, number, number], f, kind: 'axial' as const, degenerate, clustered: false });
+    // по одной моде в 25 и 31,5 Гц, три в 40, ни одной в 50: число мод убывает на 50 Гц
+    const drop = bonelloCheck([m(25), m(31), m(39), m(40), m(41)], 100);
+    expect(drop.bands.map((b) => [b.center, b.count])).toEqual([[20, 0], [25, 1], [31.5, 1], [40, 3], [50, 0], [63, 0], [80, 0], [100, 0]]);
+    expect(drop).toMatchObject({ ok: false, violations: [50] });
+    // число мод не убывает — критерий выполнен
+    expect(bonelloCheck([m(31), m(39), m(41), m(50), m(51)], 50)).toMatchObject({ ok: true, violations: [] });
+    // совпадающие моды допустимы лишь в полосе, где мод пять и больше
+    expect(bonelloCheck([m(39, true), m(40, true), m(50), m(50), m(51)], 50).violations).toEqual([40]);
+    expect(bonelloCheck([...[38, 39, 40, 41, 42].map((f) => m(f, true)), ...[47, 48, 49, 50, 51].map((f) => m(f))], 50).ok).toBe(true);
+    // 5 × 4 × 2,5 м: 34,3, 42,9 и 54,9 Гц — по одной; на 68,6 Гц совпадают (2,0,0) и (0,0,1)
+    const real = bonelloCheck(computeModes(room(5, 4, 2.5), 300));
+    expect(real.bands.slice(2, 6).map((b) => [b.center, b.count, b.coincident])).toEqual([[31.5, 1, false], [40, 1, false], [50, 1, false], [63, 2, true]]);
+    expect(real.violations).toContain(63);
+    expect(real.ok).toBe(false);
   });
 });
 

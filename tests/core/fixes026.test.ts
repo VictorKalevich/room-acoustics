@@ -51,16 +51,22 @@ describe('пределы техники для частоты раздела (02
   it('без пределов раздел ищется во всём диапазоне регулировки; с пределами — только внутри них', async () => {
     const { optimizeSubs } = await import('../../src/core/integration');
     const { p, c } = setup();
-    const free = optimizeSubs(p.room, p.sources, c, p.current);
-    // null — подбор не нашёл раздела лучше текущего (текущие настройки оставлены)
-    const inside = (v: number | null, lo: number, hi: number) => v === null || (v >= lo && v <= hi);
-    expect(inside(free.crossoverHz, 60, 120)).toBe(true);
+    // с разделом 60 Гц подбор находит частоту лучше; без раздела (null) он оставляет текущие настройки — проверять нечего
+    const cur = { ...p.current, crossoverHz: 60 };
+    const free = optimizeSubs(p.room, p.sources, c, cur);
+    expect(free.after).toBeLessThan(free.before);
+    expect(free.crossoverHz).not.toBeNull();
+    expect(free.crossoverHz!).toBeGreaterThanOrEqual(60);
+    // без пределов найденная частота ниже 100 Гц — пределы 100–120 Гц её исключают
+    expect(free.crossoverHz!).toBeLessThan(100);
     expect(free.notes.some((n) => n.includes('пределах техники'))).toBe(false);
-    const lim = optimizeSubs(p.room, p.sources, { ...c, crossover: { ...c.crossover, spkLimit: 90, subLimit: 100 } }, p.current);
-    expect(inside(lim.crossoverHz, 90, 100)).toBe(true);
-    expect(lim.notes.some((n) => n.includes('90–100 Гц'))).toBe(true);
+    const lim = optimizeSubs(p.room, p.sources, { ...c, crossover: { ...c.crossover, spkLimit: 100, subLimit: 120 } }, cur);
+    expect(lim.crossoverHz).not.toBeNull();
+    expect(lim.crossoverHz!).toBeGreaterThanOrEqual(100);
+    expect(lim.crossoverHz!).toBeLessThanOrEqual(120);
+    expect(lim.notes.some((n) => n.includes('100–120 Гц'))).toBe(true);
     // пределы шире диапазона регулировки ничего не меняют
-    const wide = optimizeSubs(p.room, p.sources, { ...c, crossover: { ...c.crossover, spkLimit: 40, subLimit: 200 } }, p.current);
+    const wide = optimizeSubs(p.room, p.sources, { ...c, crossover: { ...c.crossover, spkLimit: 40, subLimit: 200 } }, cur);
     expect(wide.crossoverHz).toBe(free.crossoverHz);
     expect(wide.after).toBe(free.after);
   });

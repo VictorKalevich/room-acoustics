@@ -45,11 +45,31 @@ describe('обзор комнаты', () => {
 
   it('оценка 0–100 и проблемы с действиями', () => {
     const ev = evaluateSetup(p.room, p.sources, p.constraints, p.current);
-    const o = buildOverview(p.room, p.sources, p.current, ev, modes, rev);
-    expect(o.score).toBeGreaterThanOrEqual(0);
-    expect(o.score).toBeLessThanOrEqual(100);
-    expect(o.subs.reduce((a, s) => a + s.weight, 0)).toBeCloseTo(1, 5);
-    for (const pr of o.problems) expect(pr.actions.length).toBeGreaterThan(0);
+    const at = (e: typeof ev | null) => buildOverview(p.room, p.sources, p.current, e, modes, rev);
+    const bass = (o: ReturnType<typeof at>) => o.subs.find((s) => s.id === 'bass')!.value;
+    const o = at(ev);
+    expect(o.score).toBe(Math.round(o.subs.reduce((a, s) => a + s.value * s.weight, 0)));
+    // ровность баса: 2 дБ и лучше — 100, 10 дБ и хуже — 0, между ними линейно; без оценки — 50
+    expect([1, 2, 6, 10, 12].map((score) => bass(at({ ...ev, score })))).toEqual([100, 100, 50, 0, 0]);
+    expect(bass(at(null))).toBe(50);
+    // вес ровности баса в общей оценке — 0,4
+    expect(at({ ...ev, score: 2 }).score - at({ ...ev, score: 10 }).score).toBe(40);
+
+    // пик в отклике — гул, который можно срезать эквалайзером; провал эквалайзером не поднять
+    const f = ev.response.f;
+    const db = ev.response.target.map((t, i) => t + (i === 10 ? 10 : i === 30 ? -15 : 0));
+    const pr = at({ ...ev, response: { ...ev.response, db } }).problems;
+    const peak = pr.find((x) => x.id === `peak-${f[10].toFixed(1)}`)!;
+    const dip = pr.find((x) => x.id === `dip-${f[30].toFixed(1)}`)!;
+    expect(peak).toMatchObject({ severity: 'high', f: f[10] });
+    expect(peak.actions).toContain('tuning');
+    expect(dip).toMatchObject({ severity: 'high', f: f[30] });
+    expect(dip.actions).not.toContain('tuning');
+    expect(dip.actions.length).toBeGreaterThan(0);
+    // сначала серьёзные
+    const rank = { high: 0, medium: 1, low: 2 };
+    const ranks = pr.map((x) => rank[x.severity]);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
   });
 
   it('несимметричная расстановка даёт проблему', () => {

@@ -85,10 +85,13 @@ test('US4: толстый ковёр уменьшает RT60', async ({ page }) 
 test('002 US1: ручной режим — карта мест слушателя и «Сесть сюда»', async ({ page }) => {
   await page.goto('/#manual');
   await expect(page.locator('.best-list li')).toHaveCount(3, { timeout: 15_000 });
-  const before = await page.locator('.topbar__room').textContent();
-  await page.locator('.best-list li').first().getByRole('button', { name: 'Сесть сюда' }).click();
-  await expect(page.locator('svg.plan .plan__listener')).toBeVisible();
-  expect(before).toContain('5,00');
+  const first = page.locator('.best-list li').first();
+  const [x, y] = /([\d,]+) м от передней, ([\d,]+) м от левой/.exec((await first.textContent())!)!.slice(1).map((v) => Number(v.replace(',', '.')));
+  const at = (d: { current: { listener: { x: number; y: number } } }) => Math.abs(d.current.listener.x - x) < 0.006 && Math.abs(d.current.listener.y - y) < 0.006;
+  await draftSaved(page, 'место слушателя до выбора', (d) => !at(d));
+  await first.getByRole('button', { name: 'Сесть сюда' }).click();
+  // слушатель пересел в выбранную точку карты, и это записано в проект
+  await draftSaved(page, `слушатель в точке ${x}; ${y}`, at);
 });
 
 test('002 US2: карта мест сабвуфера', async ({ page }) => {

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { newProject, defaultSources } from '../../src/state/project';
 import { dbaLayout, optimizePlacement } from '../../src/core/placement';
 import { robustnessMap } from '../../src/core/field';
+import { clampToRoom, evaluateSetup } from '../../src/core/system';
+import type { Placement, Vec3 } from '../../src/core/types';
 
 describe('DBA и устойчивость', () => {
   const p = newProject();
@@ -23,11 +25,31 @@ describe('DBA и устойчивость', () => {
   });
 
   it('вариант DBA появляется и у вариантов есть устойчивость', () => {
-    const r = optimizePlacement({ room: p.room, sources, constraints: { ...p.constraints, dba: true } });
+    const c = { ...p.constraints, dba: true };
+    const r = optimizePlacement({ room: p.room, sources, constraints: c });
     const dba = r.best.find((b) => b.scheme === 'dba');
     expect(dba).toBeTruthy();
-    expect(dba!.subSettings).toBeTruthy();
-    for (const b of [...r.best, r.baseline]) expect(b.robust).toBeGreaterThanOrEqual(0);
+    // сабвуферы варианта стоят и настроены по раскладке DBA
+    const layout = dbaLayout(p.room, sources, c);
+    expect(dba!.subSettings).toEqual(layout.settings);
+    for (const [id, pos] of Object.entries(layout.positions)) expect(dba!.sources.find((s) => s.id === id)!.pos).toEqual(pos);
+
+    // устойчивость — среднее ухудшение оценки (дБ) при сдвиге слушателя на ±25 см и источников на ±10 см по осям,
+    // каждое ухудшение не меньше нуля; половина веса — слушатель, половина — источники
+    const worse = (b: Placement) => {
+      const positions = Object.fromEntries(b.sources.map((s) => [s.id, s.pos]));
+      const ev = (listener: Vec3, pos: Record<string, Vec3>) =>
+        evaluateSetup(p.room, sources, c, { listener, positions: pos, subSettings: b.subSettings ?? {}, crossoverHz: null }, { ppo: 12 }).objScore;
+      const base = ev(b.listener, positions);
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      const shift = (q: Vec3, d: number[], m: number, margin: number) => clampToRoom(p.room, { ...q, x: q.x + d[0] * m, y: q.y + d[1] * m }, margin);
+      const lis = dirs.map((d) => Math.max(0, ev(shift(b.listener, d, 0.25, 0.1), positions) - base));
+      const src = Object.keys(positions).flatMap((id) => dirs.map((d) => Math.max(0, ev(b.listener, { ...positions, [id]: shift(positions[id], d, 0.1, 0.05) }) - base)));
+      const mean = (xs: number[]) => xs.reduce((a, x) => a + x, 0) / xs.length;
+      return 0.5 * mean(lis) + 0.5 * mean(src);
+    };
+    for (const b of [dba!, r.baseline]) expect(b.robust).toBeCloseTo(worse(b), 2);
+    expect([...r.best, r.baseline].some((b) => b.robust! > 0)).toBe(true);
   }, 60_000);
 
   it('карта устойчивости: ровное поле — ноль, ступенька — пик на границе', () => {
