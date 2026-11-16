@@ -7,10 +7,15 @@
 export interface TaskJob<V> {
   promise: Promise<V>;
   cancel: () => void;
+  /** 035: раздел стал скрытым или видимым; для начатой или завершённой задачи ничего не меняет. */
+  setHidden?: (hidden: boolean) => void;
 }
 
-/** Запуск задачи по входным данным; `onProgress` передаётся, только если ход нужен экрану. */
-export type RunJob<I, V> = (input: I, onProgress?: (v: number) => void) => TaskJob<V>;
+/**
+ * Запуск задачи по входным данным; `onProgress` передаётся, только если ход нужен экрану; `hidden` — раздел экрана
+ * скрыт в момент запуска (035).
+ */
+export type RunJob<I, V> = (input: I, onProgress?: (v: number) => void, hidden?: boolean) => TaskJob<V>;
 
 /** Таймер задержки запуска. */
 export interface Timers {
@@ -76,6 +81,7 @@ export class ComputeTask<I, V> {
   private job: TaskJob<V> | null = null;
   private timer: unknown = null;
   private opts: TaskOptions<V> = { previous: 'keep' };
+  private hidden = false;
 
   constructor(
     private readonly run: RunJob<I, V>,
@@ -109,6 +115,16 @@ export class ComputeTask<I, V> {
     } else this.start(input, cache);
   }
 
+  /**
+   * 035: раздел экрана стал скрытым или видимым. Задача, которая уйдёт после этого (в том числе по окончании задержки),
+   * несёт новый признак; уже отправленная меняет приоритет.
+   */
+  setHidden(hidden: boolean): void {
+    if (hidden === this.hidden) return;
+    this.hidden = hidden;
+    this.job?.setHidden?.(hidden);
+  }
+
   /** Очистка эффекта: перед следующим изменением входов и при размонтировании. */
   leave(): void {
     if (this.timer !== null) { this.timers.clear(this.timer); this.timer = null; }
@@ -132,7 +148,7 @@ export class ComputeTask<I, V> {
     this.set(progress === 'reset' ? { busy: true, error: null, progress: 0 } : { busy: true, error: null });
     let j: TaskJob<V> | null = null;
     const onProgress = progress ? (v: number) => { if (this.job === j) this.set({ progress: v }); } : undefined;
-    j = this.run(input, onProgress);
+    j = this.run(input, onProgress, this.hidden);
     const job = j;
     this.job = job;
     job.promise
@@ -176,6 +192,7 @@ export interface ActionHandlers<V> {
 export class ComputeAction {
   private state: ActionState = { busy: false, progress: 0 };
   private job: TaskJob<unknown> | null = null;
+  private hidden = false;
 
   constructor(
     private readonly emit: (s: ActionState) => void,
@@ -190,11 +207,18 @@ export class ComputeAction {
     this.job?.cancel();
     let j: TaskJob<V> | null = null;
     const onProgress = this.opts.progress ? (v: number) => { if (this.job === j) this.set({ progress: v }); } : undefined;
-    j = start(input, onProgress);
+    j = start(input, onProgress, this.hidden);
     this.job = j;
     j.promise
       .then((v) => { this.set({ busy: false }); h.done(v); })
       .catch((e: Error) => { this.set({ busy: false }); h.failed(e); });
+  }
+
+  /** 035: раздел экрана стал скрытым или видимым — как у ComputeTask. */
+  setHidden(hidden: boolean): void {
+    if (hidden === this.hidden) return;
+    this.hidden = hidden;
+    this.job?.setHidden?.(hidden);
   }
 
   dispose(): void {

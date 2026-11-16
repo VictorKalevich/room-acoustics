@@ -10,6 +10,8 @@ export type { ComputePayload, ComputeResult, ComputeType } from '../workers/comp
 export interface ComputeJob<T> {
   promise: Promise<T>;
   cancel: () => void;
+  /** 035: раздел задачи стал скрытым или видимым — задача, ещё ждущая в очереди, меняет приоритет. */
+  setHidden: (hidden: boolean) => void;
 }
 
 interface Pending {
@@ -59,7 +61,8 @@ function jsonCopy<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
-export function compute<K extends ComputeType>(type: K, payload: ComputePayload<K>, onProgress?: (v: number) => void): ComputeJob<ComputeResult<K>> {
+/** `hidden` — задачу ставит скрытый раздел (035): она ждёт задачи видимых; у видимых сообщение прежнее, без поля. */
+export function compute<K extends ComputeType>(type: K, payload: ComputePayload<K>, onProgress?: (v: number) => void, hidden = false): ComputeJob<ComputeResult<K>> {
   const w = getWorker();
   const id = ++seq;
   let settled = false;
@@ -72,7 +75,8 @@ export function compute<K extends ComputeType>(type: K, payload: ComputePayload<
       progress: onProgress,
     });
   });
-  send(w, { id, type, payload: jsonCopy(payload) });
+  send(w, hidden ? { id, type, payload: jsonCopy(payload), hidden } : { id, type, payload: jsonCopy(payload) });
+  let isHidden = hidden;
   return {
     promise,
     cancel: () => {
@@ -80,6 +84,11 @@ export function compute<K extends ComputeType>(type: K, payload: ComputePayload<
       settled = true;
       pending.delete(id);
       send(w, { cancel: id });
+    },
+    setHidden: (h) => {
+      if (settled || h === isHidden) return;
+      isHidden = h;
+      send(w, { priority: id, hidden: h });
     },
   };
 }

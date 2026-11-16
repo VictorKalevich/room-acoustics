@@ -25,6 +25,9 @@ function fakeTimers() {
 interface FakeJob<I, V> {
   input: I;
   onProgress?: (v: number) => void;
+  /** Видимость раздела при отправке и её смены после (035). */
+  hidden?: boolean;
+  priority: boolean[];
   cancelled: boolean;
   settled: boolean;
   resolve: (v: V) => void;
@@ -37,17 +40,17 @@ interface FakeJob<I, V> {
  */
 function fakeJobs<I, V>(leaky = false) {
   const jobs: FakeJob<I, V>[] = [];
-  const run: RunJob<I, V> = (input, onProgress) => {
+  const run: RunJob<I, V> = (input, onProgress, hidden) => {
     let ok!: (v: V) => void;
     let fail!: (e: Error) => void;
     const promise = new Promise<V>((a, b) => { ok = a; fail = b; });
     const j: FakeJob<I, V> = {
-      input, onProgress, cancelled: false, settled: false,
+      input, onProgress, hidden, priority: [], cancelled: false, settled: false,
       resolve: (v) => { if (j.cancelled && !leaky) return; j.settled = true; ok(v); },
       reject: (e) => { if (j.cancelled && !leaky) return; j.settled = true; fail(e); },
     };
     jobs.push(j);
-    return { promise, cancel: () => { if (!j.settled) j.cancelled = true; } };
+    return { promise, cancel: () => { if (!j.settled) j.cancelled = true; }, setHidden: (h) => { j.priority.push(h); } };
   };
   return { run, jobs };
 }
@@ -403,6 +406,67 @@ describe('034: запуск по кнопке', () => {
     k.run('A');
     k.a.dispose();
     expect(k.jobs[0].cancelled).toBe(false);
+  });
+});
+
+describe('035: видимость раздела', () => {
+  it('задача уходит с видимостью раздела; смена видимости доходит до неё, пока не пришёл ответ', async () => {
+    const s = setup();
+    s.change('A', { previous: 'keep' });
+    expect(s.jobs[0].hidden).toBe(false);
+    s.task.setHidden(true);
+    expect(s.jobs[0].priority).toEqual([true]);
+    s.change('B', { previous: 'keep' });
+    expect(s.jobs[1].hidden).toBe(true);
+    s.task.setHidden(false);
+    // снятая и завершённая задачи смену не получают
+    expect(s.jobs[0].priority).toEqual([true]);
+    expect(s.jobs[1].priority).toEqual([false]);
+    s.jobs[1].resolve('B');
+    await flush();
+    s.task.setHidden(true);
+    expect(s.jobs[1].priority).toEqual([false]);
+  });
+
+  it('после задержки — видимость на момент окончания задержки; пока задача не ушла, сообщений нет', () => {
+    const s = setup();
+    s.change('A', { delay: 350, previous: 'keep' });
+    s.task.setHidden(true);
+    s.advance(350);
+    expect(s.jobs.map((j) => [j.input, j.hidden, j.priority])).toEqual([['A', true, []]]);
+  });
+
+  it('тот же признак повторно не меняет приоритет', () => {
+    const s = setup();
+    s.change('A', { previous: 'keep' });
+    s.task.setHidden(false);
+    s.task.setHidden(true);
+    s.task.setHidden(true);
+    expect(s.jobs[0].priority).toEqual([true]);
+  });
+
+  it('прежняя задача, которая досчитывается при `start`, тоже получает смену видимости', () => {
+    const s = setup();
+    s.change('A', { delay: 350, restart: 'start', previous: 'keep' });
+    s.advance(350);
+    s.change('B', { delay: 350, restart: 'start', previous: 'keep' });
+    s.task.setHidden(true);
+    expect(s.jobs[0].priority).toEqual([true]);
+    s.advance(350);
+    expect(s.jobs[1].hidden).toBe(true);
+  });
+
+  it('запуск по кнопке: задача уходит с видимостью раздела и получает её смену', () => {
+    const f = fakeJobs<string, string>();
+    const a = new ComputeAction(() => undefined);
+    const run = (input: string) => a.run(f.run, input, { done: () => undefined, failed: () => undefined });
+    run('A');
+    a.setHidden(true);
+    a.setHidden(true);
+    run('B');
+    expect(f.jobs.map((j) => [j.input, j.hidden, j.priority])).toEqual([['A', false, [true]], ['B', true, []]]);
+    a.setHidden(false);
+    expect(f.jobs[1].priority).toEqual([false]);
   });
 });
 

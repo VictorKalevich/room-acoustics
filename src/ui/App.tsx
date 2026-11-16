@@ -14,6 +14,7 @@ import { FieldScreen } from './screens/FieldScreen';
 import { Drawer } from './components/Drawer';
 import { SectionNav } from './design-system';
 import { RetainedSection } from './components/RetainedSection';
+import { SectionVisibility } from './components/SectionVisibility';
 import { ScreenBoundary } from './components/ErrorBoundary';
 import { DraftFailure } from './components/DraftFailure';
 import { useNavigation, type Tab, type AnalysisView } from './navigation';
@@ -135,7 +136,9 @@ export function App() {
           </div>
         )}
         <div hidden={tab !== 'room' || route.room !== 'overview'}>
-          {guard(TITLES.room, <RoomScreen project={project} reverb={reverb} onRoom={onRoom} onGo={(t) => go(t)} />)}
+          <SectionVisibility visible={tab === 'room' && route.room === 'overview'}>
+            {guard(TITLES.room, <RoomScreen project={project} reverb={reverb} onRoom={onRoom} onGo={(t) => go(t)} />)}
+          </SectionVisibility>
         </div>
         {tab === 'room' && route.room !== 'overview' && guard(S.editor.title,
           <RoomEditor project={project} step={route.room} onStep={(s) => go(`room/${s}`)} onRoom={onRoom} onBack={() => go('room/overview')} />,
@@ -153,7 +156,7 @@ export function App() {
             ) : <PlacementFirst onGo={toPlacement} />)}
           </>,
         )}
-        {roomReady && <div hidden={tab !== 'placement'}>
+        {roomReady && <div hidden={tab !== 'placement'}><SectionVisibility visible={tab === 'placement'}>
           {guard(TITLES.placement, <PlacementScreen
             project={project}
             onSources={onSources}
@@ -167,7 +170,7 @@ export function App() {
             onSetups={onSetups}
             onGo={(t) => go(t)}
           />)}
-        </div>}
+        </SectionVisibility></div>}
         {roomReady && placed && <RetainedSection active={tab === 'tuning'}>
           {guard(TITLES.tuning, <TuningScreen project={project} modes={modes} onSetup={onSetup} onRoom={(room) => onRoom(room)} view={route.tuning} active={tab === 'tuning'} onGo={go} />)}
         </RetainedSection>}
