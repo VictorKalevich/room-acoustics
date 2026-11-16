@@ -96,6 +96,7 @@ test('picker supports keyboard and dismissal; new items fit a small room', async
   await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(page.locator('.wall-items .zone-card')).toHaveCount(0);
   for (const name of ['Окно', 'Дверь', 'Проём без двери']) await add(page, name);
+  await expect(page.locator('.wall-items .zone-card')).toHaveCount(3);
   for (const card of await page.locator('.wall-items .zone-card').all()) {
     const read = async (label: string) => Number((await card.getByLabel(label, { exact: true }).inputValue()).replace(',', '.'));
     expect(await read('Отступ') + await read('Ширина')).toBeLessThanOrEqual(1.001);

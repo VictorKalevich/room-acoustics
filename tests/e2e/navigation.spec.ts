@@ -22,8 +22,15 @@ test('tuning preserves EQ result and export choice across sections, invalidates 
   await page.getByRole('button', { name: 'Рассчитать фильтры' }).click();
   await expect(page.locator('#eq-apo')).toHaveValue(/Filter/);
   const value = await page.locator('#eq-apo').inputValue();
+  const camilla = page.getByRole('radio', { name: 'Camilla' });
+  await camilla.click();
+  await expect(page.locator('#eq-camilla')).toHaveValue(/type: Peaking/);
+  const yml = await page.locator('#eq-camilla').inputValue();
   await page.getByRole('navigation', { name: 'Раздел настройки' }).getByRole('button', { name: /Обработка/ }).click();
   await page.getByRole('navigation', { name: 'Раздел настройки' }).getByRole('button', { name: /Эквалайзер/ }).click();
+  await expect(camilla).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#eq-camilla')).toHaveValue(yml);
+  await page.getByRole('radio', { name: 'APO' }).click();
   await expect(page.locator('#eq-apo')).toHaveValue(value);
   await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Комната' }).click();
   await page.getByRole('button', { name: 'Конструктор комнаты' }).click();

@@ -6,15 +6,17 @@ import { EMPTY_STATE, draftSaved, errlog, finishRoomSteps, roomOnlyState, scanTo
 
 test('US1: моды по ручным размерам', async ({ page }) => {
   await page.goto('/#room/size');
-  await page.getByLabel('Глубина', { exact: true }).fill('5');
-  await page.getByLabel('Ширина', { exact: true }).fill('4');
-  await page.getByLabel('Высота', { exact: true }).fill('2,5');
+  // размеры отличаются от сохранённых 5 × 4 × 2,5 м: моды — по введённым
+  await page.getByLabel('Глубина', { exact: true }).fill('6');
+  await page.getByLabel('Ширина', { exact: true }).fill('4,5');
+  await page.getByLabel('Высота', { exact: true }).fill('3');
   await page.getByRole('button', { name: 'Анализ', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   const rows = page.locator('.modes-table tbody tr');
-  await expect(rows.nth(0)).toContainText('34,3');
-  await expect(rows.nth(1)).toContainText('42,9');
-  await expect(rows.nth(2)).toContainText('54,9');
+  await expect(rows.nth(0)).toContainText('28,6');
+  await expect(rows.nth(1)).toContainText('38,1');
+  await expect(rows.nth(2)).toContainText('47,7');
   await expect(page.getByText('Глубина ≈ 2 × высота')).toBeVisible();
 });
 
@@ -104,8 +106,18 @@ test('002 US3/US5: настройка сабвуфера и эквалайзер
   await page.goto('/#tuning/sub');
   await page.getByRole('button', { name: 'Подобрать настройки' }).click();
   await expect(page.locator('.tuning-result')).toBeVisible({ timeout: 15_000 });
+  // подобранные задержка, фаза и уровень (из тех, что регулируются) — как в таблице результата
+  const cells = (await page.locator('.tuning-result tbody tr').first().locator('td').allTextContents())
+    .map((t) => (t.trim() === '—' ? null : Number(t.replace(',', '.').replace(/[^\d.+-]/g, ''))));
+  expect(cells.some((v) => v != null)).toBe(true);
+  const tuned = (d: { current: { subSettings: Record<string, { delayMs: number; phaseDeg: number; gainDb: number }> } }) => {
+    const v = d.current.subSettings.sub1;
+    return !!v && [v.delayMs, v.phaseDeg, v.gainDb].every((x, i) => cells[i] == null || Math.abs(x - cells[i]!) <= (i === 1 ? 0.5 : 0.05));
+  };
+  await draftSaved(page, 'настройки сабвуфера до применения — прежние', (d) => !tuned(d));
   await page.getByRole('button', { name: 'Применить' }).click();
   await expect(page.getByRole('button', { name: 'Применено' })).toBeVisible();
+  await draftSaved(page, 'подобранные настройки сабвуфера', tuned);
   await page.getByRole('navigation', { name: 'Раздел настройки' }).getByRole('button', { name: /Эквалайзер/ }).click();
   await page.getByRole('button', { name: 'Рассчитать фильтры' }).click();
   await expect(page.locator('#eq-apo')).toHaveValue(/Filter 1: ON PK/);
@@ -151,23 +163,34 @@ test('004: экран 3D — поле, способы показа, порог �
   await expect(page.locator('.field3d')).toBeVisible();
   const picks = page.locator('.freq-picks [role="radio"]');
   await expect(picks.and(page.locator('[aria-checked="true"]'))).toHaveCount(1, { timeout: 15_000 });
-  await expect(page.locator('.field3d__busy')).toHaveCount(0, { timeout: 30_000 });
+  // поле самой низкой моды посчитано и показано (а не просто ещё не начат расчёт)
+  const f1 = (await picks.first().textContent())!.match(/\d+,\d/)![0];
+  await expect(page.locator('.field-shown')).toHaveText(`Показано: ${f1} Гц`, { timeout: 30_000 });
   // одна частота: кнопка выбирает её (выбрана ровно одна), подпись — что показано
   const second = picks.nth(1);
   const f2 = (await second.textContent())!.match(/\d+,\d/)![0];
   await second.click();
   await expect(picks.and(page.locator('[aria-checked="true"]'))).toHaveCount(1);
   await expect(page.locator('.field-shown')).toContainText(`Показано: ${f2} Гц`, { timeout: 30_000 });
-  // вернуться к первой — уже посчитана, без пересчёта
+  // вернуться к первой — уже посчитана: показывается сразу, раньше задержки запуска расчёта (300 мс)
   await picks.first().click();
+  await expect(page.locator('.field-shown')).toHaveText(`Показано: ${f1} Гц`, { timeout: 250 });
   await expect(page.locator('.field3d__busy')).toHaveCount(0);
   // ползунок: любая частота, между модами
   await page.locator('#field-slider').fill('500');
   await expect(page.locator('.field-shown')).not.toContainText(f2, { timeout: 30_000 });
   await page.getByRole('radio', { name: 'Полоса' }).click();
+  await expect(page.locator('.field-shown')).toHaveText('Показано: полоса 40–60 Гц', { timeout: 30_000 });
+  // порог: при ±3 без цвета остаётся меньше клеток среза, чем при ±6 по умолчанию; шкала — до ±15 дБ вместо ±18
+  const cells = page.locator('.plan__field rect');
+  await expect(cells.first()).toBeVisible();
+  const at6 = await cells.count();
+  await expect(page.locator('.field-legend')).toContainText('+18 дБ');
   await page.getByRole('radio', { name: '±3' }).click();
-  await expect(page.locator('.field3d__busy')).toHaveCount(0, { timeout: 30_000 });
-  await expect(page.locator('.plan__field rect').first()).toBeVisible();
+  await expect(page.getByRole('radio', { name: '±3' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('.field-legend')).toContainText('−15');
+  await expect(page.locator('.field-legend')).toContainText('+15 дБ');
+  await expect.poll(() => cells.count()).toBeGreaterThan(at6);
   await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   await expect(page.locator('.modes-table')).toBeVisible();
   await page.getByRole('button', { name: 'Открыть меню' }).click();
@@ -192,7 +215,21 @@ test('005: меню слева открывает новые разделы', as
 
 test('005: обзор — оценка, проблемы, затухание мод', async ({ page }) => {
   await page.goto('/#overview');
-  await expect(page.locator('.score-ring__num')).toBeVisible();
+  const ring = page.getByRole('img', { name: /^Оценка \d+ из 100$/ });
+  await expect(ring).toBeVisible();
+  const score = Number(/Оценка (\d+)/.exec((await ring.getAttribute('aria-label'))!)![1]);
+  expect(score).toBeLessThanOrEqual(100);
+  await expect(page.locator('.score-ring__num')).toHaveText(String(score));
+  // подоценки — числа 0–100; проблемы — с важностью и названием
+  const subs = (await page.locator('.subscores__val').allTextContents()).map(Number);
+  expect(subs).toHaveLength(5);
+  expect(subs.every((v) => v >= 0 && v <= 100)).toBe(true);
+  const problems = page.locator('.problems li');
+  await expect(problems.first()).toBeVisible();
+  for (const p of await problems.all()) {
+    await expect(p.locator('.sev')).toHaveText(/\S/);
+    await expect(p.locator('.problem__head strong')).toHaveText(/\S/);
+  }
   await expect(page.locator('.decay-chart__pt').first()).toBeAttached();
 });
 
@@ -229,8 +266,19 @@ test('аудит: свои фильтры сабвуфера — возможн�
   await page.getByText('Дополнительно: свои PEQ и all-pass для каждого сабвуфера').click();
   await page.getByRole('button', { name: 'Подобрать фильтры сабвуферов' }).click();
   await expect(page.locator('.subf .stat-row')).toBeVisible({ timeout: 30_000 });
+  // подобранные PEQ первого сабвуфера (не больше четырёх) — в проекте после «Применить», а до него — нет
+  const peq = (await page.locator('.subf .sub-settings').first().locator('li').allTextContents())
+    .filter((t) => t.startsWith('PEQ')).map((t) => Number(/PEQ ([\d,]+) Гц/.exec(t)![1].replace(',', '.')));
+  expect(peq.length).toBeGreaterThanOrEqual(1);
+  expect(peq.length).toBeLessThanOrEqual(4);
+  const applied = (d: { current: { subSettings: Record<string, { peq?: { f: number }[] }> } }) => {
+    const got = d.current.subSettings.sub1?.peq ?? [];
+    return got.length === peq.length && got.every((b, i) => Math.abs(b.f - peq[i]) <= 0.05);
+  };
+  await draftSaved(page, 'фильтры сабвуфера до применения — нет', (d) => !applied(d));
   await page.locator('.subf').getByRole('button', { name: 'Применить' }).click();
   await expect(page.locator('.subf').getByRole('button', { name: 'Применено' })).toBeVisible();
+  await draftSaved(page, 'PEQ сабвуфера применены', applied);
 });
 
 test('аудит: синхронизация — открыть файл другого проекта (старый адрес #sync ведёт в «Проекты»)', async ({ page }) => {
