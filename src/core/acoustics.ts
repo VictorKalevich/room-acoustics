@@ -26,13 +26,6 @@ export function getGrid(room: Room, fMax: number): WaveGrid {
 
 const simKey = (g: WaveGrid, node: number) => `${g.key}|${node}`;
 
-/** Есть ли в кэше расчёт из точки p с нужными слоями. */
-export function hasSim(room: Room, fMax: number, p: Vec3, heights: number[]): boolean {
-  const g = getGrid(room, fMax);
-  const s = sims.get(simKey(g, nearestNode(g, p)));
-  return !!s && heights.every((z) => s.layers.includes(layerOf(g, z)));
-}
-
 export function getSim(room: Room, fMax: number, p: Vec3, heights: number[], onProgress?: (v: number) => void): SimResult {
   const g = getGrid(room, fMax);
   const node = nearestNode(g, p);

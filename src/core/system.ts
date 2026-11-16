@@ -11,7 +11,7 @@ import { applyKernel, modeShapes, prepareModes, receiverKernel, type PreparedMod
 import { flatnessScore } from './metric';
 import { isFlat, makeScorer } from './objective';
 import { ceilingAt, isWave } from './geometry';
-import { hasSim, waveFMax, waveSpectra, waveSystemModes } from './acoustics';
+import { waveFMax, waveSpectra, waveSystemModes } from './acoustics';
 
 export const MIN_LISTEN_DIST = 1.0; // м, минимум между колонками и слушателем
 export const SEAT_OFFSET = 0.3; // м, сдвиг головы влево/вправо при одном месте
@@ -215,20 +215,15 @@ export const sumPenalties = (p: Penalty[]) => p.reduce((a, b) => a + b.value, 0)
 
 /**
  * Отклик комнаты (без фильтра) от источников points к приёмникам rcv: out[id][r].
- * В волновой модели выбирается расчёт из источников или из приёмников (по взаимности) — что уже есть в кэше
- * или требует меньше расчётов.
+ * В волновой модели отклик считается из приёмников или из источников (по взаимности) — где меньше расчётов.
+ * Путь зависит только от входных данных, не от кэша: пути дают разные числа (036).
  */
 export function rawResponses(ctx: EvalCtx, rcv: Vec3[], freqs: number[], points: Record<string, Vec3>, onProgress?: (v: number) => void): Record<string, Spectrum[]> {
   const out: Record<string, Spectrum[]> = {};
   if (isWave(ctx.room)) {
     const fMax = waveFMax(ctx.fHi);
     const ids = Object.keys(points);
-    const srcHeights = ids.map((id) => points[id].z);
-    const rcvHeights = rcv.map((r) => r.z);
-    const srcCached = ids.every((id) => hasSim(ctx.room, fMax, points[id], rcvHeights));
-    const rcvCached = rcv.every((r) => hasSim(ctx.room, fMax, r, srcHeights));
-    const fromReceivers = rcvCached || (!srcCached && rcv.length <= ids.length);
-    if (fromReceivers) {
+    if (rcv.length <= ids.length) {
       const pts = ids.map((id) => points[id]);
       ids.forEach((id) => (out[id] = []));
       rcv.forEach((r, ri) => {
