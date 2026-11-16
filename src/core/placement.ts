@@ -199,14 +199,15 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
   // итоговые варианты оцениваются и упорядочиваются на сетке графика: на сетке поиска порядок близких вариантов бывает неверным
   const finalPpo = tuning.finalPpo ?? evalPpo(input.precision);
   const nF = freqs.length;
-  const { filt, target } = filterSet(sources, freqs);
+  const { filt, target } = filterSet(sources, freqs, undefined, undefined, c.houseCurve);
   // оценка по цели подбора (ровный бас, меньше провалов внизу, моды…)
   const scoreFn = makeScorer(freqs, c.objective, room, objectiveSys(room, c));
 
   const spkSpecs = sources.filter((s) => s.kind === 'speaker');
   const subSpecs = sources.filter((s) => s.kind === 'sub');
   const spkIds = spkSpecs.map((s) => s.id);
-  // Целевая кривая только колонок и полоса, где они влияют на НЧ-оценку
+  // Целевая кривая только колонок и полоса, где они влияют на НЧ-оценку. Без подъёма низа (043): его дают сабвуферы,
+  // а с подъёмом в полосе одних колонок предотбор отбрасывал лучшие места (5 × 4 м, +6 дБ: 5,08 дБ против 4,63 дБ)
   const spkTarget = (() => {
     const re = new Float64Array(nF);
     const im = new Float64Array(nF);
@@ -474,6 +475,7 @@ export function optimizePlacement(input: PlacementInput, onProgress?: (p: number
     evaluated,
     elapsedMs: Date.now() - t0,
     notes,
+    houseCurve: c.houseCurve,
   };
 }
 

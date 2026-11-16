@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'preact/hooks';
 import type { Measurement, Setup } from '../../core/types';
 import { compareTakes, type TakeStats } from '../../core/measure';
+import { houseDb } from '../../core/houseCurve';
 import { ResponseChart } from './Charts';
 import { Note, SelectField } from '../design-system';
 import { S } from '../strings';
@@ -10,15 +11,15 @@ import { fmt } from '../format';
 const NONE: Measurement[] = [];
 const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt(Math.abs(v), 1)}`;
 
-export function MeasureCompare({ setup, onSetup }: { setup: Setup; onSetup: (s: Setup) => void }) {
+export function MeasureCompare({ setup, onSetup, rise }: { setup: Setup; onSetup: (s: Setup) => void; rise?: number }) {
   const m = setup.measurement;
   const hist = setup.history ?? NONE;
   const [pick, setPick] = useState(0);
   const idx = Math.min(pick, Math.max(0, hist.length - 1));
   const res = useMemo(() => {
     if (!m || !hist[idx]) return null;
-    try { return compareTakes(hist[idx], m); } catch (e) { return (e as Error).message; }
-  }, [m, hist, idx]);
+    try { return compareTakes(hist[idx], m, rise ? { target: (f) => houseDb(rise, f) } : {}); } catch (e) { return (e as Error).message; }
+  }, [m, hist, idx, rise]);
   if (!m || !hist.length) return null;
 
   const date = (iso: string) => {
@@ -66,6 +67,7 @@ export function MeasureCompare({ setup, onSetup }: { setup: Setup; onSetup: (s: 
             ]}
           />
           <p class="muted small">{S.compare.legend(fmt(res.fLo, 0), fmt(res.fHi, 0))}</p>
+          {rise ? <p class="muted small">{S.house.compare(rise)}</p> : null}
           <table class="rt-table compare-table">
             <thead><tr><th /><th scope="col">{S.compare.before}</th><th scope="col">{S.compare.after}</th></tr></thead>
             <tbody>

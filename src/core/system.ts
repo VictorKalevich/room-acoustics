@@ -12,6 +12,7 @@ import { flatnessScore } from './metric';
 import { isFlat, makeScorer } from './objective';
 import { ceilingAt, isWave } from './geometry';
 import { waveFMax, waveSpectra, waveSystemModes } from './acoustics';
+import { houseDb } from './houseCurve';
 
 export const MIN_LISTEN_DIST = 1.0; // м, минимум между колонками и слушателем
 export const SEAT_OFFSET = 0.3; // м, сдвиг головы влево/вправо при одном месте
@@ -98,13 +99,14 @@ export type Spectrum = { re: Float64Array; im: Float64Array };
 
 /**
  * Фильтры источников на частотах (с учётом кроссовера и регулировок сабвуферов) и целевая кривая
- * (сумма номинальных фильтров без регулировок, дБ).
+ * (сумма номинальных фильтров без регулировок, дБ, плюс подъём низа `rise` — 043).
  */
 export function filterSet(
   sources: SourceSpec[],
   freqs: number[],
   crossoverHz?: number | null,
   settings?: Record<string, SubSetting>,
+  rise?: number,
 ): { filt: Record<string, Spectrum>; target: number[] } {
   const sys = withCrossover(sources, crossoverHz);
   const n = freqs.length;
@@ -124,7 +126,7 @@ export function filterSet(
     }
     filt[s.id] = { re, im };
   }
-  return { filt, target: Array.from(tRe, (r, i) => db20(Math.hypot(r, tIm[i]))) };
+  return { filt, target: Array.from(tRe, (r, i) => db20(Math.hypot(r, tIm[i])) + houseDb(rise, freqs[i])) };
 }
 
 // ---------- Места прослушивания ----------
@@ -301,7 +303,7 @@ export function evaluateSetup(
   const ctx = opts.ctx ?? makeCtx(room, sources);
   const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? 24);
   const n = freqs.length;
-  const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings);
+  const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings, c.houseCurve);
   const { pts, weights } = receiverSet(room, c, setup.listener);
   const raw = rawResponses(ctx, pts, freqs, setup.positions, opts.onProgress);
   const ids = sources.map((s) => s.id).filter((id) => setup.positions[id]);

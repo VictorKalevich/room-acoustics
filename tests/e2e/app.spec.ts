@@ -456,6 +456,33 @@ test('009: цель подбора — меньше провалов внизу 
   await expect(page.getByRole('combobox', { name: 'Что искать' })).toHaveValue('modes');
 });
 
+test('043: подъём низа — цель подбора, настройки и эквалайзера, хранится в проекте', async ({ page }) => {
+  await page.goto('/#placement');
+  const rise = page.getByRole('radiogroup', { name: 'Подъём низа' });
+  await expect(rise.getByRole('radio', { name: 'Ровно' })).toBeChecked();
+  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  const legend = page.locator('.legend__item--target').first();
+  await expect(legend).toHaveText('без комнаты', { timeout: 30_000 });
+  await rise.getByRole('radio', { name: '+6 дБ' }).click();
+  await expect(page.locator('.setup-card__summary')).toContainText('цель: ровный бас, подъём низа +6 дБ');
+  // прежний результат посчитан по ровной цели: устарел, подпись пунктира — прежняя
+  await expect(page.getByText('Параметры изменились — результат устарел.')).toBeVisible();
+  await expect(legend).toHaveText('без комнаты');
+  await page.getByRole('button', { name: 'Пересчитать' }).click();
+  await expect(legend).toHaveText('цель: подъём низа +6 дБ', { timeout: 30_000 });
+  await expect(page.getByText('Параметры изменились — результат устарел.')).toHaveCount(0);
+  await draftSaved(page, 'подъём низа +6 дБ', (d) => d.constraints.houseCurve === 6);
+  for (const view of ['sub', 'eq']) {
+    await page.goto(`/#tuning/${view}`);
+    await expect(page.getByText('Цель — подъём низа +6 дБ (меняется в «Расстановка → Система и цель подбора»).').locator('visible=true')).toBeVisible();
+  }
+  await page.reload();
+  await page.goto('/#placement');
+  await expect(page.getByRole('radiogroup', { name: 'Подъём низа' }).getByRole('radio', { name: '+6 дБ' })).toBeChecked();
+  await page.getByRole('radiogroup', { name: 'Подъём низа' }).getByRole('radio', { name: 'Ровно' }).click();
+  await draftSaved(page, 'ровная цель — без поля', (d) => d.constraints.houseCurve === undefined);
+});
+
 test('011: обработка на планах — только когда учтена; оценка под галочкой; «Удалить все» с подтверждением', async ({ page }) => {
   await page.goto('/#tuning/treatment');
   // блока «Текущая расстановка» больше нет, оценка — в плане обработки и без элементов

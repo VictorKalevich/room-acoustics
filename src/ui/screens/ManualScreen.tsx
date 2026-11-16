@@ -243,7 +243,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
               <span class="legend__item legend__item--room">{S.manual.legendCurrent}</span>
               {probeEval && <span class="legend__item legend__item--probe">{S.manual.legendProbe}</span>}
               {compareEval && <span class="legend__item legend__item--compare">{S.manual.legendCompare}</span>}
-              <span class="legend__item legend__item--target">{S.placement.legendTarget}</span>
+              <span class="legend__item legend__item--target">{c.houseCurve ? S.house.legend(c.houseCurve) : S.placement.legendTarget}</span>
             </div>
             {evalCur.penalties.length > 0 && <ul class="plain-list small">{evalCur.penalties.map((p, ki) => <li key={ki}>{p.name}</li>)}</ul>}
           </>

@@ -8,6 +8,7 @@ import { SetupCard } from '../../components/SetupCard';
 import { ObjectivePicker } from '../../components/ObjectivePicker';
 import { PrecisionPicker } from '../../components/PrecisionPicker';
 import { normalizePrecision, type Precision } from '../../../core/precision';
+import { HOUSE_RISES, normalizeHouseRise } from '../../../core/houseCurve';
 import { S } from '../../strings';
 import { fmtInt } from '../../format';
 
@@ -193,6 +194,13 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
       <h3 class="subhead">{S.objective.title}</h3>
       <p class="muted small">{S.objective.intro}</p>
       <ObjectivePicker room={room} value={c.objective} onChange={(o: BassObjective) => setC({ objective: o })} band={band} />
+      <Segmented
+        label={S.house.label}
+        value={c.houseCurve ?? 0}
+        options={[0, ...HOUSE_RISES].map((r) => ({ value: r, label: r ? S.house.rise(r) : S.house.flat }))}
+        onChange={(r) => setC({ houseCurve: normalizeHouseRise(r) })}
+      />
+      <p class="muted small">{S.house.hint}</p>
       <h3 class="subhead">{S.precision.title}</h3>
       <PrecisionPicker value={project.precision} onChange={onPrecision} where="bass" />
     </>
@@ -201,7 +209,7 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
   const summary = S.setup.summary(
     spk.length, spk[0] ? `${fmtInt(spk[0].fLow)}–${fmtInt(spk[0].fHigh)}` : '',
     subs.length, subs[0] ? `${fmtInt(subs[0].fLow)}–${fmtInt(subs[0].fHigh)}` : '',
-    c.seats.count, S.objective.names[c.objective?.id ?? 'flat'].toLowerCase(),
+    c.seats.count, S.objective.names[c.objective?.id ?? 'flat'].toLowerCase() + (c.houseCurve ? `, ${S.house.summary(c.houseCurve)}` : ''),
   ) + (precision === 'standard' ? '' : ` · ${S.precision.summary(S.precision.names[precision].toLowerCase())}`);
   const sharedCard = <SetupCard title={S.setup.title} summary={summary}>{sharedBody}</SetupCard>;
   return sharedCard;

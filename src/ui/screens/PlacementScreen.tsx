@@ -13,6 +13,7 @@ import { PlanView, HeatLegend } from '../components/PlanView';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
 import type { Heatmap } from '../../core/field';
 import { isFlat } from '../../core/objective';
+import { normalizeHouseRise } from '../../core/houseCurve';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { S } from '../strings';
 import { Term } from '../components/Term';
@@ -257,7 +258,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
             />
             <div class="legend">
               <span class="legend__item legend__item--room">{S.placement.legendRoom}</span>
-              <span class="legend__item legend__item--target">{S.placement.legendTarget}</span>
+              <span class="legend__item legend__item--target">{normalizeHouseRise(result.houseCurve) ? S.house.legend(result.houseCurve!) : S.placement.legendTarget}</span>
               {sel !== variants.length - 1 && <span class="legend__item legend__item--baseline">{S.placement.legendBaseline}</span>}
             </div>
             {current.penalties.length > 0 && (

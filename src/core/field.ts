@@ -105,7 +105,7 @@ export function listenerHeatmap(room: Room, sources: SourceSpec[], c: Constraint
   const step = opts.step ?? 0.1;
   const ctx = makeCtx(room, sources);
   const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? objectivePpo(c.objective, 12));
-  const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings);
+  const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings, c.houseCurve);
   const score = makeScorer(freqs, c.objective, room, objectiveSys(room, c));
   const active = sources.filter((s) => setup.positions[s.id]);
   const psis = active.map((s) => ({ psi: modeShapes(ctx.pm, setup.positions[s.id]), f: filt[s.id] }));
@@ -194,7 +194,7 @@ export function subHeatmap(room: Room, sources: SourceSpec[], c: Constraints, se
   const ctx = makeCtx(room, sources);
   const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? objectivePpo(c.objective, 12));
   const n = freqs.length;
-  const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings);
+  const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, setup.subSettings, c.houseCurve);
   const score = makeScorer(freqs, c.objective, room, objectiveSys(room, c));
   const sub = sources.find((s) => s.id === subId);
   if (!sub) throw new Error(`Нет сабвуфера ${subId}`);

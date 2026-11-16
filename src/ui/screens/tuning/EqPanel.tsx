@@ -4,6 +4,7 @@ import { useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
 import { evaluateSetup, type SetupEval } from '../../../core/system';
 import { designEq, exportEqualizerAPO, exportMiniDSP, exportREW, type EqResult } from '../../../core/eq';
+import { houseDb } from '../../../core/houseCurve';
 import { measurementAt } from '../../../core/measure';
 import { useComputeAction } from '../../useCompute';
 import { ResponseChart } from '../../components/Charts';
@@ -62,6 +63,7 @@ export function EqPanel({ project, active = true }: { project: Project; active?:
   return (
     <Panel title={S.tuning.eqTitle}>
       <p class="small">{S.tuning.eqIntro}</p>
+      {c.houseCurve && <p class="muted small">{S.house.inTuning(c.houseCurve)}</p>}
       {m && (
         <Segmented label={S.tuning.eqSource} value={source} options={[{ value: 'model', label: S.tuning.eqModel }, { value: 'measured', label: S.tuning.eqMeasured }]} onChange={(v) => { setSource(v); setRes(null); }} />
       )}
@@ -120,7 +122,8 @@ export function EqPanel({ project, active = true }: { project: Project; active?:
           </div>
           <p class="muted small">{S.fir.note(fs / 1000, fmt(linearPhaseLength(res.eq.filters, fs) / 2 / fs, 2))}</p>
           <Details summary={S.aural.title}>
-            <Auralize active={active} response={{ f: res.f, db: res.before, target: res.target }} filters={res.eq.filters} />
+            {/* прослушивание — от номинального отклика системы: подъём низа, который оставил эквалайзер, слышен */}
+            <Auralize active={active} response={{ f: res.f, db: res.before, target: res.target.map((t, i) => t - houseDb(c.houseCurve, res.f[i])) }} filters={res.eq.filters} />
           </Details>
         </>
       )}

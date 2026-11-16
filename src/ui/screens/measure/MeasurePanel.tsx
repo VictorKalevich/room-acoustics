@@ -113,7 +113,7 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
           )}
         </>
       )}
-      <MeasureCompare setup={current} onSetup={onSetup} />
+      <MeasureCompare setup={current} onSetup={onSetup} rise={c.houseCurve} />
     </Panel>
   );
 }

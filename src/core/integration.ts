@@ -57,10 +57,10 @@ const LAG_WARN_MS = 10;
  * Пояснения к найденным настройкам. Подбор ищет самую ровную АЧХ у слушателя, и проверка полным перебором
  * подтверждает, что он находит лучшее по этой оценке (расхождение ≤ 0,02 дБ). Но оценка не видит времени:
  * большая задержка иногда выравнивает АЧХ интерференцией ценой отставания баса от колонок; а нижний предел
- * уровня означает, что комната сильно поднимает низ — плоская цель срезает его целиком, хотя в комнате
- * обычно предпочитают небольшой подъём низа (+3…6 дБ; Olive, Welti — исследования Harman).
+ * уровня означает, что комната поднимает низ сильнее цели — ровная цель срезает подъём целиком, хотя в комнате
+ * обычно предпочитают небольшой подъём низа (+3…6 дБ; Olive, Welti — исследования Harman). rise — подъём низа цели (043).
  */
-export function settingNotes(room: Room, subs: SourceSpec[], spks: SourceSpec[], setup: SetupLike, settings: Record<string, SubSetting>): string[] {
+export function settingNotes(room: Room, subs: SourceSpec[], spks: SourceSpec[], setup: SetupLike, settings: Record<string, SubSetting>, rise?: number): string[] {
   const out: string[] = [];
   const c = speedOfSound(room.temperatureC);
   const L = setup.listener;
@@ -78,7 +78,9 @@ export function settingNotes(room: Room, subs: SourceSpec[], spks: SourceSpec[],
       }
     }
     if (s.levelAdjustable && set.gainDb <= -5.75) {
-      out.push(`${Name}: уровень на нижнем пределе (−6 дБ) — комната сильно поднимает низ, и ровная цель срезает этот подъём целиком. Если бас кажется тонким, прибавьте 2–4 дБ: в комнате обычно нравится небольшой подъём низа.`);
+      out.push(rise
+        ? `${Name}: уровень на нижнем пределе (−6 дБ) — комната поднимает низ сильнее выбранного подъёма (+${rise} дБ).${rise < 9 ? ' Если бас кажется тонким, выберите подъём побольше в «Цели подбора».' : ''}`
+        : `${Name}: уровень на нижнем пределе (−6 дБ) — комната сильно поднимает низ, и ровная цель срезает этот подъём целиком. Если бас кажется тонким, выберите подъём низа в «Цели подбора» (в комнате обычно нравится +3…6 дБ) и подберите заново или прибавьте 2–4 дБ вручную.`);
     }
   }
   return out;
@@ -139,7 +141,7 @@ export function optimizeSubs(room: Room, sources: SourceSpec[], c: Constraints, 
   let best = { score: Infinity, xo: null as number | null, settings: subs.map(() => ({ ...zero })) };
 
   for (const xo of xos) {
-    const { filt, target } = filterSet(sources, freqs, xo);
+    const { filt, target } = filterSet(sources, freqs, xo, undefined, c.houseCurve);
     // сумма колонок и «базовые» отклики сабвуферов (с фильтром, без регулировок) в каждой точке
     const spkSum: Spectrum[] = [];
     const subBase: Spectrum[][] = subs.map(() => []);
@@ -244,7 +246,7 @@ export function optimizeSubs(room: Room, sources: SourceSpec[], c: Constraints, 
   if (beforeEval.score - afterEval.score < 0.05 && hasAdjustments(sources, c)) {
     notes.push('Текущие настройки уже близки к оптимальным для этой расстановки.');
   }
-  notes.push(...settingNotes(room, subs, spks, setup, finalSettings));
+  notes.push(...settingNotes(room, subs, spks, setup, finalSettings, c.houseCurve));
   return {
     settings: finalSettings,
     crossoverHz: finalXo,

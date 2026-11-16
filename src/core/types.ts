@@ -294,7 +294,11 @@ export interface Constraints {
   dba?: boolean;
   /** Цель подбора мест (авто и ручной режимы, карты). Нет — ровный бас. */
   objective?: BassObjective;
+  /** Подъём низа целевой кривой, дБ (043): подбор, карты, настройка сабвуфера, эквалайзер. Нет — ровная цель. */
+  houseCurve?: HouseRise;
 }
+
+export type HouseRise = 3 | 6 | 9;
 
 export interface Measurement {
   name: string;
@@ -360,6 +364,8 @@ export interface PlacementResult {
   evaluated: number;
   elapsedMs: number;
   notes: string[];
+  /** Подъём низа цели, по которой посчитан результат (043); нет — ровная (и у результатов до 043). */
+  houseCurve?: HouseRise;
 }
 
 export class PlacementError extends Error {

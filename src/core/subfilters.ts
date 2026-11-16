@@ -48,7 +48,7 @@ export function optimizeSubFilters(room: Room, sources: SourceSpec[], c: Constra
   const { pts, weights } = receiverSet(room, c, setup.listener);
   const nR = pts.length;
   const raw = rawResponses(ctx, pts, freqs, setup.positions);
-  const { filt, target } = filterSet(sources, freqs, setup.crossoverHz);
+  const { filt, target } = filterSet(sources, freqs, setup.crossoverHz, undefined, c.houseCurve);
   // всё, кроме подбираемых сабвуферов, — постоянная часть суммы в каждой точке
   const fixed: Spectrum[] = [];
   const base: Spectrum[][] = subs.map(() => []);

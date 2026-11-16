@@ -32,6 +32,24 @@ describe('файл проекта', () => {
   });
 });
 
+describe('043: подъём низа в файле проекта', () => {
+  it('3, 6 и 9 дБ сохраняются; без поля и неизвестное значение — ровная цель', () => {
+    for (const rise of [3, 6, 9] as const) {
+      const p = newProject();
+      p.constraints.houseCurve = rise;
+      expect(parseProjectFile(serializeProject(p)).constraints.houseCurve).toBe(rise);
+    }
+    const flat = newProject();
+    expect(JSON.parse(serializeProject(flat)).project.constraints).not.toHaveProperty('houseCurve');
+    expect(parseProjectFile(serializeProject(flat)).constraints.houseCurve).toBeUndefined();
+    for (const bad of [0, 5, '6', -3]) {
+      const raw = JSON.parse(serializeProject(newProject()));
+      raw.project.constraints.houseCurve = bad;
+      expect(parseProjectFile(JSON.stringify(raw)).constraints.houseCurve).toBeUndefined();
+    }
+  });
+});
+
 describe('миграция версии 1', () => {
   it('файл версии 1 получает текущую расстановку, места, зоны и возможности сабвуфера', () => {
     const v1 = {

@@ -229,7 +229,7 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
           </div>
         </>
       )}
-      <MeasureCompare setup={project.current} onSetup={onSetup} />
+      <MeasureCompare setup={project.current} onSetup={onSetup} rise={project.constraints.houseCurve} />
     </Panel>
   );
 }

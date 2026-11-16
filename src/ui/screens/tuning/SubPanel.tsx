@@ -44,6 +44,7 @@ export function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: 
   return (
     <Panel title={S.tuning.subTitle}>
       <p class="small">{S.tuning.subIntro}</p>
+      {c.houseCurve && <p class="muted small">{S.house.inTuning(c.houseCurve)}</p>}
       {!hasAdjustments(sources, c) && <Note tone="warn">{S.sub.caps}: нет ни задержки, ни фазы, ни уровня. Укажите регулировки в «Расстановка → Система».</Note>}
       <button type="button" class="btn btn--primary" onClick={run} disabled={busy}>{busy ? S.tuning.running : S.tuning.run}</button>
       {error && <Note tone="warn">{error}</Note>}

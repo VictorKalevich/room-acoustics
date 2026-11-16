@@ -10,6 +10,7 @@ import { FURNITURE } from '../core/furniture';
 import { isWave } from '../core/geometry';
 import { HISTORY_MAX } from './variant';
 import { normalizeObjective } from '../core/objective';
+import { normalizeHouseRise } from '../core/houseCurve';
 import { normalizePrecision } from '../core/precision';
 import type { DetectResult, Units } from '../scan/detect';
 import type { LayoutResult, ScanLabels } from '../scan/layout';
@@ -172,6 +173,7 @@ export function normalizeProject(raw: any): Project {
     seats: { ...dc.seats, ...raw.constraints?.seats },
     crossover: { ...dc.crossover, ...raw.constraints?.crossover },
     objective: normalizeObjective(raw.constraints?.objective),
+    houseCurve: normalizeHouseRise(raw.constraints?.houseCurve),
   };
   for (const k of ['speakerMinFront', 'speakerMinSide', 'listenerMinX', 'listenerMaxX', 'earHeight', 'subWallGap'] as const) constraints[k] = finite(constraints[k], dc[k]);
   if (!['corners', 'walls', 'anywhere'].includes(constraints.subZone)) constraints.subZone = dc.subZone;

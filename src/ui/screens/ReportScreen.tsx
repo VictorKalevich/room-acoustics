@@ -100,6 +100,7 @@ export function ReportScreen({ project, modes, reverb, onPlacement }: Props) {
           </tbody>
         </table>
         {ev && <p class="small">{S.report.flatness(fmt(ev.score, 1), fmt(ev.fLo, 0), fmt(ev.fHi, 0))}</p>}
+        {c.houseCurve && <p class="small">{S.house.report(c.houseCurve)}</p>}
       </Panel>}
 
       {placed && subs.length > 0 && (
