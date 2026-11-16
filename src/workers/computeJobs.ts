@@ -87,13 +87,20 @@ export interface ComputeRequest<K extends ComputeType = ComputeType> {
   id: number;
   type: K;
   payload: ComputePayload<K>;
+  /** 035: задачу поставил скрытый раздел — она ждёт задачи видимых. Без поля — видимый раздел, как до 035. */
+  hidden?: boolean;
 }
 /** Отмена задачи, которая ещё ждёт в очереди. */
 export interface ComputeCancel {
   cancel: number;
 }
+/** 035: раздел задачи `priority`, которая ещё ждёт в очереди, стал скрытым или видимым. */
+export interface ComputePriority {
+  priority: number;
+  hidden: boolean;
+}
 /** Сообщения интерфейса воркеру. */
-export type ComputeMessage = ComputeRequest | ComputeCancel;
+export type ComputeMessage = ComputeRequest | ComputeCancel | ComputePriority;
 
 /** Сообщения воркера интерфейсу: ход расчёта (0…1), результат или ошибка. */
 export type ComputeReply =

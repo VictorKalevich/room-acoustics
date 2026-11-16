@@ -99,4 +99,44 @@ describe('воркер расчётов', () => {
     const order = posted.filter((p) => [a, b, c].includes(p.msg.id) && p.msg.kind === 'done').map((p) => p.msg.id);
     expect(order).toEqual([a, c]);
   });
+
+  // 035: сообщения ниже уходят подряд, до первого выполнения очереди (оно — по таймеру), как задачи, ждущие начатую
+  const doneOrder = (ids: number[]) => posted.filter((p) => ids.includes(p.msg.id) && p.msg.kind === 'done').map((p) => p.msg.id);
+
+  it('035: задача скрытого раздела ждёт задачи видимых, пришедшие позже; поле hidden: false — видимый раздел', async () => {
+    const a = ++seq, b = ++seq, c = ++seq;
+    send({ id: a, type: 'compare', payload: wire(jobCases.compare.payload), hidden: true });
+    send({ id: b, type: 'compare', payload: wire(jobCases.compare.payload) });
+    send({ id: c, type: 'modes', payload: wire(jobCases.modes.payload), hidden: false });
+    await final(a);
+    await final(b);
+    await final(c);
+    expect(doneOrder([a, b, c])).toEqual([b, c, a]);
+  });
+
+  it('035: смена приоритета — поднятая задача встаёт по порядку поступления, опущенная ждёт видимые', async () => {
+    const a = ++seq, b = ++seq, c = ++seq;
+    send({ id: a, type: 'compare', payload: wire(jobCases.compare.payload), hidden: true });
+    send({ id: b, type: 'compare', payload: wire(jobCases.compare.payload) });
+    send({ id: c, type: 'modes', payload: wire(jobCases.modes.payload) });
+    send({ priority: a, hidden: false });
+    send({ priority: b, hidden: true });
+    await final(a);
+    await final(b);
+    await final(c);
+    expect(doneOrder([a, b, c])).toEqual([a, c, b]);
+  });
+
+  it('035: смена приоритета выполненной или неизвестной задачи ничего не отправляет и не мешает очереди', async () => {
+    const a = ++seq, b = ++seq;
+    send({ id: a, type: 'modes', payload: wire(jobCases.modes.payload) });
+    await final(a);
+    const before = posted.length;
+    send({ priority: a, hidden: true });
+    send({ priority: 987_654, hidden: false });
+    send({ id: b, type: 'modes', payload: wire(jobCases.modes.payload), hidden: true });
+    const r = await final(b);
+    expect(r.msg.kind).toBe('done');
+    expect(posted.slice(before).every((p) => p.msg.id === b)).toBe(true);
+  });
 });

@@ -1,8 +1,9 @@
 // Постоянный воркер тяжёлых расчётов с очередью: кэш волновой модели живёт между задачами.
 // 030: здесь только обвязка — очередь, прогресс, передача буферов, ошибки; задачи выполняет таблица computeHandlers,
-// сообщения описаны в computeJobs.ts.
+// сообщения описаны в computeJobs.ts. 035: какую задачу взять следующей, решает computeQueue.ts.
 import { runHandler } from './computeHandlers';
 import type { ComputeMessage, ComputeReply, ComputeRequest, ComputeResult, ComputeType } from './computeJobs';
+import { ComputeQueue } from './computeQueue';
 
 /** `self` воркера с типами договора: что он принимает и что отправляет. */
 interface ComputeScope {
@@ -20,7 +21,7 @@ const transfers: { [K in ComputeType]?: (r: ComputeResult<K>) => Transferable[] 
   voiceMap: (r) => (r.scores && r.facing && r.allowed ? [r.scores.buffer as ArrayBuffer, r.facing.buffer as ArrayBuffer, r.allowed.buffer as ArrayBuffer] : []),
 };
 
-const queue: ComputeRequest[] = [];
+const queue = new ComputeQueue<ComputeRequest>();
 let running = false;
 
 function run<K extends ComputeType>(job: ComputeRequest<K>) {
@@ -40,7 +41,7 @@ function run<K extends ComputeType>(job: ComputeRequest<K>) {
 
 function pump() {
   if (running) return;
-  const job = queue.shift();
+  const job = queue.take();
   if (!job) return;
   running = true;
   run(job);
@@ -52,8 +53,11 @@ function pump() {
 scope.onmessage = (e) => {
   const m = e.data;
   if ('cancel' in m) {
-    const i = queue.findIndex((j) => j.id === m.cancel);
-    if (i >= 0) queue.splice(i, 1);
+    queue.cancel(m.cancel);
+    return;
+  }
+  if ('priority' in m) {
+    queue.setHidden(m.priority, m.hidden);
     return;
   }
   queue.push(m);
