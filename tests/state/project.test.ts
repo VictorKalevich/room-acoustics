@@ -111,7 +111,7 @@ describe('окна и двери на плане', () => {
   });
 });
 
-import { DAMPING_MODEL } from '../../src/core/types';
+import { DAMPING_MODEL, type Room } from '../../src/core/types';
 describe('подстройка модели при обновлении', () => {
   it('множитель затухания, подобранный для прежней модели, сбрасывается; для текущей — сохраняется', () => {
     const p = newProject();
@@ -124,13 +124,38 @@ describe('подстройка модели при обновлении', () => 
   it('041: подстройка модели 3 сбрасывается только у комнаты с открытой стороной смежного помещения', () => {
     const p = newProject();
     const ext = { id: 'e', name: 'Коридор', wall: 'right' as const, a0: 0, a1: 4, depth: 1.2, height: 2.4, arch: { a0: 1, a1: 2.2, height: 2.1 }, openStart: false, openEnd: false, openFar: false };
+    // «наглухо» — чтобы перенос 042 (утечка в волновой модели) подстройку не сбрасывал
     const open = (extensions: (typeof ext)[], model: number) =>
-      parseProjectFile(serializeProject({ ...p, room: { ...p.room, extensions, calibration: { dampingScale: 1.3, model, source: 'rew.txt' } } })).room.calibration;
+      parseProjectFile(serializeProject({ ...p, room: { ...p.room, leakage: 'sealed', extensions, calibration: { dampingScale: 1.3, model, source: 'rew.txt' } } })).room.calibration;
     expect(open([], 3)).toEqual({ dampingScale: 1.3, model: DAMPING_MODEL, source: 'rew.txt' });
     expect(open([ext], 3)).toEqual({ dampingScale: 1.3, model: DAMPING_MODEL, source: 'rew.txt' });
     for (const side of ['openStart', 'openEnd', 'openFar'] as const) expect(open([ext, { ...ext, id: 'f', [side]: true }], 3), side).toBeNull();
     // подобранная уже для модели 4 — сохраняется и с открытой стороной; модель 2 — сбрасывается всегда
     expect(open([{ ...ext, openEnd: true }], DAMPING_MODEL)?.dampingScale).toBe(1.3);
     expect(open([], 2)).toBeNull();
+  });
+
+  it('042: подстройка модели 4 сбрасывается только у волновой модели с утечкой', () => {
+    const p = newProject();
+    const ext = { id: 'e', name: 'Коридор', wall: 'right' as const, a0: 0, a1: 4, depth: 1.2, height: 2.4, arch: { a0: 1, a1: 2.2, height: 2.1 }, openStart: false, openEnd: false, openFar: false };
+    const cal = (over: Partial<Room>, model = 4) =>
+      parseProjectFile(serializeProject({ ...p, room: { ...p.room, ...over, calibration: { dampingScale: 1.3, model, source: 'rew.txt', leakageBefore: 'typical' } } })).room.calibration;
+    const kept = { dampingScale: 1.3, model: DAMPING_MODEL, source: 'rew.txt', leakageBefore: 'typical' };
+    // прямоугольная модель — при любой герметичности
+    for (const leakage of ['sealed', 'typical', 'door', 'open'] as const) expect(cal({ leakage }), leakage).toEqual(kept);
+    expect(cal({ leakage: 'open', model: 'modal', extensions: [ext] })).toEqual(kept);
+    // волновая: смежное помещение, скос или выбрана явно — только «наглухо»
+    expect(cal({ leakage: 'sealed', extensions: [ext] })).toEqual(kept);
+    expect(cal({ leakage: 'sealed', model: 'wave' })).toEqual(kept);
+    for (const leakage of ['typical', 'door', 'open'] as const) {
+      expect(cal({ leakage, extensions: [ext] }), leakage).toBeNull();
+      expect(cal({ leakage, model: 'wave' }), leakage).toBeNull();
+      expect(cal({ leakage, slope: { wall: 'front', low: 1.5, run: 1.5 } }), leakage).toBeNull();
+    }
+    // модель 3 проходит перенос 041, затем 042
+    expect(cal({ leakage: 'typical' }, 3)).toEqual(kept);
+    expect(cal({ leakage: 'typical', extensions: [ext] }, 3)).toBeNull();
+    expect(cal({ leakage: 'sealed', extensions: [{ ...ext, openEnd: true }] }, 3)).toBeNull();
+    expect(cal({ leakage: 'typical', model: 'wave' }, DAMPING_MODEL)?.dampingScale).toBe(1.3);
   });
 });

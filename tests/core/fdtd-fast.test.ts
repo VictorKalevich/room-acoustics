@@ -4,7 +4,8 @@ import { buildGrid, layerOf, simulate, simulateField, type WaveGrid } from '../.
 import { newProject } from '../../src/state/project';
 import type { Room, Vec3 } from '../../src/core/types';
 
-const base = newProject().room;
+// исходная схема — без утечки (042): её поправка проверяется отдельно, явной схемой
+const base: Room = { ...newProject().room, leakage: 'sealed' };
 const rooms: Record<string, Room> = {
   box: { ...base, depth: 4.2, width: 3.4, height: 2.5 },
   corridor: {
@@ -15,10 +16,14 @@ const rooms: Record<string, Room> = {
 };
 const SRC: Vec3 = { x: 0.4, y: 0.5, z: 0.3 };
 
-/** Исходная схема: обход всех узлов по таблице соседей и коэффициентам ca/cb/cd. */
+/**
+ * Исходная схема: обход всех узлов по таблице соседей и коэффициентам ca/cb/cd. С утечкой (042) — поправка
+ * среднего прибавляется ко всем узлам на каждом шаге, без общего смещения.
+ */
 function reference(g: WaveGrid, steps: number, srcPos: Vec3, onStep: (p: Float32Array, step: number, sv: number) => void) {
   const N = g.N;
   let p0 = new Float32Array(N + 1), p1 = new Float32Array(N + 1), p2 = new Float32Array(N + 1);
+  let m0 = 0, m1 = 0;
   // источник и сигнал — как в simulate (ближайший узел, производная гауссова импульса)
   const s = nearest(g, srcPos);
   const sigma = 1 / (2 * Math.PI * (g.fMax / 2)), t0 = 5 * sigma;
@@ -31,6 +36,16 @@ function reference(g: WaveGrid, steps: number, srcPos: Vec3, onStep: (p: Float32
     const u = step * g.dt - t0;
     const sv = (-u / (sigma * sigma)) * Math.exp(-(u * u) / (2 * sigma * sigma)) * sigma;
     p2[s] += sv;
+    if (g.fast.leak) {
+      const { a } = g.fast.leak;
+      let q = 0;
+      for (let n = 0; n < N; n++) q += p2[n];
+      q /= N;
+      const m = (q + a * m0) / (1 + a);
+      for (let n = 0; n < N; n++) p2[n] += m - q;
+      m0 = m1;
+      m1 = m;
+    }
     const tmp = p0; p0 = p1; p1 = p2; p2 = tmp;
     onStep(p1, step, sv);
   }
@@ -64,6 +79,26 @@ describe('быстрый шаг FDTD', () => {
       for (let i = 0; i < ref.length; i++) { maxAbs = Math.max(maxAbs, Math.abs(ref[i])); maxDiff = Math.max(maxDiff, Math.abs(ref[i] - sim.series[i])); }
       expect(maxAbs).toBeGreaterThan(0);
       expect(maxDiff).toBe(0);
+    });
+  }
+
+  for (const [name, room] of Object.entries(rooms)) {
+    it(`042, ${name}: с утечкой совпадает со схемой, где поправка прибавляется ко всем узлам (≤ 1e-5 от максимума)`, () => {
+      const g = buildGrid({ ...room, leakage: 'open' }, 100, undefined, { boundary: 'fi' });
+      expect(g.fast.leak).toBeDefined();
+      const duration = 0.5;
+      const sim = simulate(g, SRC, { layers: [layerOf(g, 1.1)], duration });
+      const steps = Math.ceil(duration / g.dt);
+      const decim = Math.round(sim.dtd / g.dt);
+      const ref = new Float32Array(sim.series.length);
+      let t = 0;
+      reference(g, steps, SRC, (p, step) => {
+        if (step % decim === 0 && t < sim.T) { for (let r = 0; r < sim.rec.length; r++) ref[r * sim.T + t] = p[sim.rec[r]]; t++; }
+      });
+      let maxAbs = 0, maxDiff = 0;
+      for (let i = 0; i < ref.length; i++) { maxAbs = Math.max(maxAbs, Math.abs(ref[i])); maxDiff = Math.max(maxDiff, Math.abs(ref[i] - sim.series[i])); }
+      expect(maxAbs).toBeGreaterThan(0);
+      expect(maxDiff / maxAbs).toBeLessThan(1e-5);
     });
   }
 

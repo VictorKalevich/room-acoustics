@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { alphaStat, betaFromAlpha, buildGrid, nearestNode, simulate, nodeSpectrum, systemModes } from '../../src/core/fdtd';
+import { alphaStat, betaFromAlpha, buildGrid, layerOf, nearestNode, pointSpectrum, simulate, nodeSpectrum, systemModes } from '../../src/core/fdtd';
 import { computeModes } from '../../src/core/modes';
 import { openEndAdmittance } from '../../src/core/paris';
+import { LEAK_HZ, prepareModes, transfer } from '../../src/core/response';
 import { defaultRoom } from '../../src/state/project';
-import type { Extension, Room } from '../../src/core/types';
+import type { Extension, Leakage, Room } from '../../src/core/types';
 
 const hard = (): Room => ({
   ...defaultRoom(),
@@ -164,6 +165,110 @@ describe('041: открытая сторона смежного помещени
       });
       expect(E.every(Number.isFinite)).toBe(true);
       for (let s = 1; s < 4; s++) expect(E[s], `${calibration?.dampingScale ?? 1}: секунда ${s + 1}`).toBeLessThan(E[s - 1]);
+    }
+  });
+});
+
+describe('042: герметичность в волновой модели', () => {
+  const LEAKS: Leakage[] = ['typical', 'door', 'open'];
+  const allLayers = (room: Room, fMax: number, duration: number) => {
+    const g = buildGrid(room, fMax);
+    return simulate(g, { x: 0.3, y: 0.3, z: 0.3 }, { layers: Array.from({ length: g.nz }, (_, k) => k), duration });
+  };
+
+  it('однородная составляющая затухает быстрее, чем «наглухо», на 2π·f утечки (±5 %)', () => {
+    const fs = [6, 10, 14];
+    // спектр среднего давления: P̄ = U/(jω + x), x — потери на границах, с утечкой — x + 2δ
+    const mean = (leakage: Leakage) => {
+      const sim = allLayers({ ...defaultRoom(), depth: 3.2, width: 2.6, height: 2.3, leakage }, 150, 1);
+      const R = sim.rec.length;
+      const m = Array.from({ length: sim.T }, (_, t) => {
+        let v = 0;
+        for (let r = 0; r < R; r++) v += sim.series[r * sim.T + t];
+        return v / R;
+      });
+      return fs.map((f) => m.reduce(([re, im], v, t) => [re + v * Math.cos(2 * Math.PI * f * t * sim.dtd), im - v * Math.sin(2 * Math.PI * f * t * sim.dtd)], [0, 0]));
+    };
+    const s = mean('sealed');
+    for (const l of LEAKS) {
+      const o = mean(l);
+      fs.forEach((f, i) => {
+        // R = P̄наглухо/P̄утечка = (jω + x + 2δ)/(jω + x) → 2δ = −ω·|R − 1|²/Im(R − 1)
+        const [ar, ai] = s[i], [br, bi] = o[i];
+        const d = br * br + bi * bi;
+        const rr = (ar * br + ai * bi) / d - 1, ri = (ai * br - ar * bi) / d;
+        const twoDelta = (-2 * Math.PI * f * (rr * rr + ri * ri)) / ri;
+        expect(Math.abs(twoDelta / (2 * Math.PI * LEAK_HZ[l]) - 1), `${l}, ${f} Гц`).toBeLessThan(0.05);
+      });
+    }
+  });
+
+  it('в закрытой комнате меняется только однородная составляющая: остальное поле и моды системы прежние', () => {
+    const room: Room = { ...defaultRoom(), depth: 4.2, width: 3.4, height: 2.5 };
+    const freqs: number[] = [];
+    for (let f = 20; f <= 140; f *= Math.pow(2, 1 / 6)) freqs.push(f);
+    const run = (leakage: Leakage) => {
+      const sim = allLayers({ ...room, leakage }, 150, 1.2);
+      const sp = Array.from(sim.rec, (n) => nodeSpectrum(sim, n, freqs));
+      const avg = (k: 're' | 'im') => freqs.map((_, f) => sp.reduce((a, x) => a + x[k][f], 0) / sp.length);
+      return { sp, re: avg('re'), im: avg('im') };
+    };
+    const s = run('sealed'), o = run('open');
+    freqs.forEach((f, i) => {
+      let r2 = 0, h2 = 0;
+      for (let n = 0; n < s.sp.length; n++) {
+        const dr = o.sp[n].re[i] - s.sp[n].re[i] - (o.re[i] - s.re[i]);
+        const di = o.sp[n].im[i] - s.sp[n].im[i] - (o.im[i] - s.im[i]);
+        r2 += dr * dr + di * di;
+        h2 += s.sp[n].re[i] ** 2 + s.sp[n].im[i] ** 2;
+      }
+      expect(Math.sqrt(r2 / h2), `${f.toFixed(0)} Гц`).toBeLessThan(0.01);
+    });
+    const ms = systemModes({ ...room, leakage: 'sealed' }, 120, { duration: 2 }).modes;
+    const mo = systemModes({ ...room, leakage: 'open' }, 120, { duration: 2 }).modes;
+    expect(mo.length).toBe(ms.length);
+    ms.forEach((m, i) => expect(Math.abs(mo[i].f - m.f), `${m.f.toFixed(1)} Гц`).toBeLessThan(0.1));
+  });
+
+  it('ниже 30 Гц герметичность меняет отклик так же, как в прямоугольной модели (±1 дБ)', () => {
+    const room: Room = { ...defaultRoom(), depth: 5, width: 4, height: 2.5, model: 'wave' };
+    const src = { x: 0.3, y: 0.3, z: 0.3 }, rcv = { x: 3.1, y: 2, z: 1.2 };
+    const freqs = [12, 15, 18, 20, 25, 30];
+    const db = (re: number, im: number) => 10 * Math.log10(re * re + im * im);
+    const wave = (leakage: Leakage) => {
+      const g = buildGrid({ ...room, leakage }, 130);
+      const sp = pointSpectrum(simulate(g, src, { layers: [layerOf(g, rcv.z)], duration: 3 }), rcv, freqs, new Map());
+      return freqs.map((_, i) => db(sp.re[i], sp.im[i]));
+    };
+    const modal = (leakage: Leakage) => transfer(prepareModes({ ...room, leakage }, 400), src, rcv, freqs).map((z) => db(z.re, z.im));
+    const ws = wave('sealed'), ms = modal('sealed');
+    for (const l of LEAKS) {
+      const w = wave(l), m = modal(l);
+      freqs.forEach((f, i) => expect(Math.abs(w[i] - ws[i] - (m[i] - ms[i])), `${l}, ${f} Гц`).toBeLessThan(1));
+    }
+  });
+
+  it('с утечкой расчёт устойчив: в закрытой комнате и с открытыми сторонами, с подстройкой и без', () => {
+    const rooms: Room[] = [
+      { ...hard(), slope: { wall: 'front', low: 1.5, run: 1.5 } },
+      { ...hard(), extensions: [corridor()] },
+      { ...hard(), extensions: [corridor({ a0: -0.5, depth: 0.4, openStart: true, openEnd: true, openFar: true })] },
+    ];
+    for (const r of rooms) for (const calibration of [null, { dampingScale: 0.4 }, { dampingScale: 2.5 }]) {
+      const room: Room = { ...r, calibration, leakage: 'open' };
+      const g = buildGrid(room, 140);
+      const sim = simulate(g, { x: 0.3, y: 0.3, z: 0.3 }, { extra: [nearestNode(g, { x: 3, y: 2, z: 1.2 }), nearestNode(g, { x: 1, y: 3, z: 2 })], duration: 4 });
+      const perSec = Math.floor(1 / sim.dtd);
+      const E = [0, 1, 2, 3].map((s) => {
+        let e = 0;
+        for (let k = 0; k < sim.rec.length; k++) for (let t = s * perSec; t < (s + 1) * perSec; t++) e += sim.series[k * sim.T + t] ** 2;
+        return e;
+      });
+      const what = `${room.slope ? 'скос' : room.extensions[0].openEnd ? 'открытый коридор' : 'закрытый коридор'}, ×${calibration?.dampingScale ?? 1}`;
+      expect(E.every(Number.isFinite), what).toBe(true);
+      // после затухания остаётся постоянная часть среднего давления (−90 дБ и ниже) — не растёт
+      for (let s = 1; s < 4; s++) expect(E[s], `${what}: секунда ${s + 1}`).toBeLessThan(E[s - 1] * 1.12);
+      expect(E[3], what).toBeLessThan(E[0]);
     }
   });
 });

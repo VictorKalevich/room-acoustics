@@ -158,7 +158,7 @@ export interface CalibrationResult {
  */
 export function calibrate(room: Room, sources: SourceSpec[], c: Constraints, setup: SetupLike, m: Measurement): CalibrationResult {
   const rmsBefore = compareMeasurement(room, sources, c, setup, m).rms;
-  // в волновой модели утечки заданы проёмами и коридорами явно — подбирается только затухание
+  // в волновой модели герметичность не подбирается: каждая — отдельный волновой расчёт (042), подбирается только затухание
   const leaks = isWave(room) ? [room.leakage] : LEAKAGES;
   const seen = new Map<number, { leakage: Leakage; rms: number }>();
   const tryScale = (k: number) => {

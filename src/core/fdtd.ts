@@ -10,6 +10,7 @@ import { treatmentKey } from './treatments';
 import { cornerLegs, patchContains, roomPatches, type Patch } from './patches';
 import { branchCoeffs, fitAdmittance, fitAdmittanceC, type AdmittanceFit, type Branch } from './admittance';
 import { alphaStat, apertureBeta, betaFromAlpha, openEndAdmittance } from './paris';
+import { LEAK_HZ } from './response';
 
 export const LAMBDA = 0.577; // число Куранта, чуть меньше 1/√3
 const PPW = 10; // узлов на длину волны верхней частоты
@@ -65,6 +66,12 @@ export interface FastKernel {
   bcd: Float32Array;
   /** Частотно-зависимые границы: ветви проводимости граничных узлов (нет — граница с постоянной β). */
   fd?: FdBranches;
+  /**
+   * Утечка однородной составляющей (042): a = δ·dt, n — число воздушных узлов; carry = A + 6L — с этим множителем
+   * внутренний узел переносит общее смещение давления (в float32 не ровно 2); e1, e0 — поправка граничного узла b
+   * к этому переносу (у жёстких границ — около нуля). Нет — «наглухо».
+   */
+  leak?: { a: number; n: number; carry: number; e1: Float64Array; e0: Float64Array };
 }
 
 /** Ветви граничных узлов: для узла b — индексы off[b]…off[b+1]. */
@@ -116,7 +123,7 @@ interface FaceAbs {
 export function geometryKey(room: Room, fMax: number, boundary: BoundaryModel = BOUNDARY_DEFAULT): string {
   return JSON.stringify([boundary,
     room.depth, room.width, room.height, room.temperatureC, room.materials, room.furnishing, room.furnitureList ? furnishingOctaves(room) : null,
-    room.openings, room.extensions, room.calibration, Math.round(fMax), treatmentKey(room), room.slope ?? null,
+    room.openings, room.extensions, room.calibration, Math.round(fMax), treatmentKey(room), room.slope ?? null, room.leakage ?? 'typical',
     (room.features ?? []).map((f) => [f.kind, f.wall, f.a0, f.a1, f.bottom, f.top]),
   ]);
 }
@@ -427,6 +434,19 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000, op
       iC: Float64Array.from(fdB.iC), cw: Float64Array.from(fdB.cw), cpsi: Float64Array.from(fdB.cpsi),
     };
   }
+  const leakHz = LEAK_HZ[room.leakage ?? 'typical'];
+  if (leakHz > 0) {
+    const nb = fast.bCell.length;
+    const carry = fast.A + 6 * fast.L;
+    const e1 = new Float64Array(nb), e0 = new Float64Array(nb);
+    for (let b = 0; b < nb; b++) {
+      let K = 0;
+      for (let d = 0; d < 6; d++) if (fast.bNbr[6 * b + d] !== total) K++;
+      e1[b] = fast.bca[b] + K * fast.bcb[b] - carry;
+      e0[b] = 1 - fast.bcd[b];
+    }
+    fast.leak = { a: Math.PI * leakHz * dt, n: N, carry, e1, e0 };
+  }
 
   return {
     key: geometryKey(room, fMaxWanted, boundary),
@@ -479,35 +499,54 @@ function fdState(k: FastKernel): FdState | undefined {
   return { w: [new Float64Array(n), new Float64Array(n)], psi: [new Float64Array(n), new Float64Array(n)], parity: 0, acc: new Float64Array(k.bCell.length) };
 }
 
-/** Один шаг схемы на плотной сетке: p2 ← f(p1, p0). */
-function stepFast(k: FastKernel, p0: Float32Array, p1: Float32Array, p2: Float32Array, st?: FdState) {
-  const { runs, sx, sxy, A, L, bCell, bNbr, bca, bcb, bcd } = k;
-  if (k.fd && st) { stepFd(k, k.fd, st, p0, p1, p2); return; }
+/** Внутренние узлы; с утечкой — заодно сумма их давлений (в ls.sum: отдельный проход заметно дольше). */
+function stepInterior(k: FastKernel, p0: Float32Array, p1: Float32Array, p2: Float32Array, ls?: LeakState) {
+  const { runs, sx, sxy, A, L } = k;
+  if (!ls) {
+    for (let r = 0; r < runs.length; r += 2) {
+      const end = runs[r] + runs[r + 1];
+      for (let c = runs[r]; c < end; c++) {
+        const sum = p1[c - 1] + p1[c + 1] + p1[c - sx] + p1[c + sx] + p1[c - sxy] + p1[c + sxy];
+        p2[c] = A * p1[c] + L * sum - p0[c];
+      }
+    }
+    return;
+  }
+  let s = 0;
   for (let r = 0; r < runs.length; r += 2) {
     const end = runs[r] + runs[r + 1];
     for (let c = runs[r]; c < end; c++) {
       const sum = p1[c - 1] + p1[c + 1] + p1[c - sx] + p1[c + sx] + p1[c - sxy] + p1[c + sxy];
-      p2[c] = A * p1[c] + L * sum - p0[c];
+      const v = A * p1[c] + L * sum - p0[c];
+      p2[c] = v;
+      s += v;
     }
   }
+  ls.sum = s;
+}
+
+/** Один шаг схемы на плотной сетке: p2 ← f(p1, p0). */
+function stepFast(k: FastKernel, p0: Float32Array, p1: Float32Array, p2: Float32Array, st?: FdState, ls?: LeakState) {
+  const { bCell, bNbr, bca, bcb, bcd } = k;
+  if (k.fd && st) { stepFd(k, k.fd, st, p0, p1, p2, ls); return; }
+  stepInterior(k, p0, p1, p2, ls);
   for (let b = 0; b < bCell.length; b++) {
     const c = bCell[b];
     const o = 6 * b;
     const sum = p1[bNbr[o]] + p1[bNbr[o + 1]] + p1[bNbr[o + 2]] + p1[bNbr[o + 3]] + p1[bNbr[o + 4]] + p1[bNbr[o + 5]];
     p2[c] = bca[b] * p1[c] + bcb[b] * sum - bcd[b] * p0[c];
   }
+  if (ls) {
+    const { e1, e0 } = k.leak!;
+    for (let b = 0; b < bCell.length; b++) p2[bCell[b]] += e1[b] * ls.dn + e0[b] * ls.dm;
+    leakSum(k, p2, ls);
+  }
 }
 
 /** Шаг с частотно-зависимыми границами: внутренние узлы — как обычно, граничные — с ветвями проводимости. */
-function stepFd(k: FastKernel, fd: FdBranches, st: FdState, p0: Float32Array, p1: Float32Array, p2: Float32Array) {
-  const { runs, sx, sxy, A, L, bCell, bNbr, bca, bcb, bcd } = k;
-  for (let r = 0; r < runs.length; r += 2) {
-    const end = runs[r] + runs[r + 1];
-    for (let c = runs[r]; c < end; c++) {
-      const sum = p1[c - 1] + p1[c + 1] + p1[c - sx] + p1[c + sx] + p1[c - sxy] + p1[c + sxy];
-      p2[c] = A * p1[c] + L * sum - p0[c];
-    }
-  }
+function stepFd(k: FastKernel, fd: FdBranches, st: FdState, p0: Float32Array, p1: Float32Array, p2: Float32Array, ls?: LeakState) {
+  const { bCell, bNbr, bca, bcb, bcd } = k;
+  stepInterior(k, p0, p1, p2, ls);
   const { ia, b: bb, iC, cw, cpsi, node, cell } = fd;
   const kk = fd.k;
   const nBr = ia.length;
@@ -516,7 +555,8 @@ function stepFd(k: FastKernel, fd: FdBranches, st: FdState, p0: Float32Array, p1
   st.parity ^= 1;
   // длинные плоские циклы по ветвям быстрее коротких вложенных по узлам
   const acc = st.acc;
-  acc.fill(0);
+  if (ls) leakCarry(k, acc, ls);
+  else acc.fill(0);
   for (let m = 0; m < nBr; m++) acc[node[m]] += cw[m] * w[m] + cpsi[m] * ps[m];
   for (let b = 0; b < bCell.length; b++) {
     const c = bCell[b];
@@ -524,13 +564,72 @@ function stepFd(k: FastKernel, fd: FdBranches, st: FdState, p0: Float32Array, p1
     const sum = p1[bNbr[o]] + p1[bNbr[o + 1]] + p1[bNbr[o + 2]] + p1[bNbr[o + 3]] + p1[bNbr[o + 4]] + p1[bNbr[o + 5]];
     p2[c] = bca[b] * p1[c] + bcb[b] * sum - bcd[b] * p0[c] + acc[b];
   }
+  if (ls) leakSum(k, p2, ls);
+  const dh = ls ? (k.leak!.carry * ls.dn) / 2 : 0;
   for (let m = 0; m < nBr; m++) {
     const c = cell[m];
-    const half = (p2[c] + p0[c]) / 2;
+    const half = (p2[c] + p0[c]) / 2 + dh;
     const wm = w[m];
     const wn = (half - bb[m] * wm - iC[m] * ps[m]) * ia[m];
     ps[m] += kk * (wn + wm);
     w[m] = wn;
+  }
+}
+
+/**
+ * Утечка (042): однородная составляющая давления затухает, как нулевая мода прямоугольной модели:
+ * p̄'' + 2δ·p̄' = …, центральной разностью p̄⁺ = (q̄ + a·p̄⁻)/(1 + a), a = δ·dt, q̄ — среднее после шага схемы.
+ * Поправка одинакова во всех узлах, поэтому остальные моды (их среднее — ноль) не затрагивает. Чтобы не проходить
+ * по всем узлам ещё раз, она не прибавляется к массивам, а копится общим смещением: давление = массив + D.
+ * Внутренний узел переносит смещение сам (D⁺ = carry·D − D⁻, carry = A + 6L ≈ 2), граничный — с поправкой e1·D + e0·D⁻.
+ * Смещение раз в LEAK_FLUSH шагов переносится в массивы: иначе оно медленно качается с размахом пика среднего
+ * давления, и округление float32 у больших чисел в массивах даёт шум и сдвиг среднего.
+ * m0, m1 — средние давления, dm, dn — смещения D на шагах n − 1 и n, sum — сумма массива после шага.
+ */
+export interface LeakState { m0: number; m1: number; dm: number; dn: number; sum: number; steps: number }
+
+const LEAK_FLUSH = 64;
+
+const leakState = (k: FastKernel): LeakState | undefined => (k.leak ? { m0: 0, m1: 0, dm: 0, dn: 0, sum: 0, steps: 0 } : undefined);
+
+function addAir(k: FastKernel, p: Float32Array, d: number) {
+  const { runs, bCell } = k;
+  for (let r = 0; r < runs.length; r += 2) {
+    const end = runs[r] + runs[r + 1];
+    for (let c = runs[r]; c < end; c++) p[c] += d;
+  }
+  for (let b = 0; b < bCell.length; b++) p[bCell[b]] += d;
+}
+
+/** Поправка граничных узлов за перенос смещения (out[b] — добавка к давлению узла b). */
+function leakCarry(k: FastKernel, out: Float64Array, ls: LeakState) {
+  const { e1, e0 } = k.leak!;
+  const { dn, dm } = ls;
+  for (let b = 0; b < out.length; b++) out[b] = e1[b] * dn + e0[b] * dm;
+}
+
+/** Добавляет к сумме внутренних узлов сумму граничных. */
+function leakSum(k: FastKernel, p2: Float32Array, ls: LeakState) {
+  const { bCell } = k;
+  let s = 0;
+  for (let b = 0; b < bCell.length; b++) s += p2[bCell[b]];
+  ls.sum += s;
+}
+
+/** Шаг утечки после шага схемы и источника (sv — добавка источника): новое смещение D (p1, p2 — шаги n и n + 1). */
+function leakStep(k: FastKernel, sv: number, ls: LeakState, p1: Float32Array, p2: Float32Array) {
+  const { a, n, carry } = k.leak!;
+  const free = carry * ls.dn - ls.dm;
+  const q = (ls.sum + sv) / n + free;
+  const m = (q + a * ls.m0) / (1 + a);
+  ls.dm = ls.dn;
+  ls.dn = free + m - q;
+  ls.m0 = ls.m1;
+  ls.m1 = m;
+  if (++ls.steps % LEAK_FLUSH === 0) {
+    addAir(k, p1, ls.dm);
+    addAir(k, p2, ls.dn);
+    ls.dm = ls.dn = 0;
   }
 }
 
@@ -615,15 +714,18 @@ export function simulate(g: WaveGrid, srcPos: Vec3, opts: { layers?: number[]; e
   const R = rec.length;
   const recCell = rec.map((n) => g.nodeCell[n]);
   const st = fdState(k);
+  const ls = leakState(k);
   let t = 0;
   for (let step = 0; step < steps; step++) {
-    stepFast(k, p0, p1, p2, st);
+    stepFast(k, p0, p1, p2, st, ls);
     const sv = sourceSignal(step * g.dt, g.fMax);
     p2[s] += sv;
+    if (ls) leakStep(k, sv, ls, p1, p2);
     const tmp = p0; p0 = p1; p1 = p2; p2 = tmp;
     if (step % decim === 0 && t < T) {
       src[t] = sv;
-      for (let r = 0; r < R; r++) series[r * T + t] = p1[recCell[r]];
+      const dn = ls ? ls.dn : 0;
+      for (let r = 0; r < R; r++) series[r * T + t] = p1[recCell[r]] + dn;
       t++;
     }
     if (opts.onProgress && step % 500 === 0) opts.onProgress(step / steps);
@@ -693,12 +795,14 @@ export function simulateField(
     }
   };
   const st = fdState(k);
+  const ls = leakState(k);
   let t = 0;
   let j = 0;
   for (let step = 0; step < steps; step++) {
-    stepFast(k, p0, p1, p2, st);
+    stepFast(k, p0, p1, p2, st, ls);
     const sv = sourceSignal(step * g.dt, g.fMax);
     p2[s] += sv;
+    if (ls) leakStep(k, sv, ls, p1, p2);
     const tmp = p0; p0 = p1; p1 = p2; p2 = tmp;
     if (step % decim === 0 && t < T) {
       const win = t >= T - tail ? 0.5 * (1 + Math.cos((Math.PI * (t - (T - tail))) / tail)) : 1;
@@ -710,7 +814,8 @@ export function simulateField(
         sRe[f] += sv * cw;
         sIm[f] -= sv * sw;
       }
-      for (let n = 0; n < N; n++) buf[n * B + j] = p1[cell[n]];
+      const dn = ls ? ls.dn : 0;
+      for (let n = 0; n < N; n++) buf[n * B + j] = p1[cell[n]] + dn;
       j++;
       t++;
       if (j === B) { flush(B); j = 0; }
