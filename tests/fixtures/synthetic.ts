@@ -150,6 +150,51 @@ export function toPLY(tri: Float32Array, format: 'ascii' | 'binary_little_endian
   return out;
 }
 
+/** Треугольники как data:-адрес буфера glTF. */
+export function dataUri(tri: Float32Array): string {
+  const b = new Uint8Array(tri.buffer, tri.byteOffset, tri.byteLength);
+  let s = '';
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return `data:application/octet-stream;base64,${btoa(s)}`;
+}
+
+/** glTF 2.0: одна сетка из треугольников без индексов; `uri` буфера — data:, имя внешнего файла или нет (блок GLB). */
+export function gltfJson(tri: Float32Array, uri?: string): Record<string, unknown> {
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < tri.length; i++) { min[i % 3] = Math.min(min[i % 3], tri[i]); max[i % 3] = Math.max(max[i % 3], tri[i]); }
+  return {
+    asset: { version: '2.0' },
+    scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: tri.length / 3, type: 'VEC3', min, max }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: tri.byteLength }],
+    buffers: [{ byteLength: tri.byteLength, ...(uri !== undefined ? { uri } : {}) }],
+  };
+}
+
+/** GLB: блок JSON и, если есть, двоичный блок; `version` — версия контейнера в заголовке. */
+export function toGLB(json: object, bin?: Float32Array, version = 2): Uint8Array<ArrayBuffer> {
+  const text = new TextEncoder().encode(JSON.stringify(json));
+  const jl = Math.ceil(text.length / 4) * 4;
+  const bl = bin ? Math.ceil(bin.byteLength / 4) * 4 : 0;
+  const total = 20 + jl + (bin ? 8 + bl : 0);
+  const out = new Uint8Array(total);
+  const dv = new DataView(out.buffer);
+  out.set(new TextEncoder().encode('glTF'));
+  dv.setUint32(4, version, true);
+  dv.setUint32(8, total, true);
+  dv.setUint32(12, jl, true);
+  dv.setUint32(16, 0x4e4f534a, true); // JSON
+  out.fill(0x20, 20, 20 + jl);
+  out.set(text, 20);
+  if (bin) {
+    dv.setUint32(20 + jl, bl, true);
+    dv.setUint32(24 + jl, 0x004e4942, true); // BIN
+    out.set(new Uint8Array(bin.buffer, bin.byteOffset, bin.byteLength), 28 + jl);
+  }
+  return out;
+}
+
 /** Двоичный STL. */
 export function toSTL(tri: Float32Array): ArrayBuffer {
   const n = tri.length / 9;

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadScan, ScanError, MAX_FILE_MB } from '../../src/scan/load';
 import { cleanTriangles } from '../../src/scan/clean';
 import { detectRoom, DetectError } from '../../src/scan/detect';
-import { makeRoomScan, toOBJ, toPLY, toSTL } from '../fixtures/synthetic';
+import { dataUri, gltfJson, makeRoomScan, toGLB, toOBJ, toPLY, toSTL } from '../fixtures/synthetic';
 
 const room = makeRoomScan({ depth: 5, width: 4, height: 2.6, noise: 0.005, furniture: true, openings: true });
 const file = (data: BlobPart, name: string) => new File([data], name);
@@ -201,6 +201,58 @@ describe('PLY: исправные файлы читаются, обрезанн�
         await expectScanError(loadScan(file(b.slice(0, len), 'scan.ply')), cut);
       }
     }
+  });
+});
+
+describe('glTF/GLB: исправные читаются, совет про внешние файлы — только когда геометрия в них (040)', () => {
+  const n = room.length / 9;
+  const EXTERNAL = 'glTF ссылается на внешние файлы. Экспортируйте скан в GLB (один файл).';
+  const BROKEN = 'Не удалось прочитать glTF/GLB: файл повреждён.';
+  // в node нет того, что загрузчик берёт у браузера: ProgressEvent (встроенный буфер .gltf читается через fetch с
+  // событиями хода) и self (загрузка картинок; без него вместо пропуска недоступной текстуры — исключение)
+  beforeAll(() => {
+    if (typeof ProgressEvent === 'undefined') {
+      vi.stubGlobal('ProgressEvent', class extends Event { constructor(type: string, init: object = {}) { super(type); Object.assign(this, init); } });
+    }
+    if (typeof self === 'undefined') vi.stubGlobal('self', globalThis);
+  });
+  afterAll(() => vi.unstubAllGlobals());
+
+  it('GLB с двоичным блоком и со встроенным буфером, .gltf со встроенным буфером и с внешней текстурой — вся комната', async () => {
+    const textured = {
+      ...gltfJson(room, dataUri(room)),
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }],
+      materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+      textures: [{ source: 0 }],
+      images: [{ uri: 'texture.jpg' }],
+    };
+    const cases: [BlobPart, string][] = [
+      [toGLB(gltfJson(room), room), 'GLB'],
+      [toGLB(gltfJson(room, dataUri(room))), 'GLB, буфер data:'],
+      [JSON.stringify(gltfJson(room, dataUri(room))), '.gltf, буфер data:'],
+      [JSON.stringify(textured), '.gltf, текстура во внешнем файле'],
+    ];
+    for (const [data, what] of cases) {
+      const s = await loadScan(file(data, what.startsWith('GLB') ? 'scan.glb' : 'scan.gltf'));
+      expect(s.triangleCount, what).toBe(n);
+      const r = detectRoom(s.triangles);
+      expect([r.depth, r.width, r.height].map((v) => Math.round(v * 100) / 100), what).toEqual([5, 4, 2.6]);
+    }
+  });
+
+  it('геометрия во внешнем файле — совет экспортировать GLB', async () => {
+    const twoBuffers = { ...gltfJson(room, dataUri(room)), buffers: [{ byteLength: room.byteLength, uri: dataUri(room) }, { byteLength: 4, uri: 'extra.bin' }] };
+    await expectScanError(loadScan(file(JSON.stringify(gltfJson(room, 'scan.bin')), 'scan.gltf')), EXTERNAL);
+    await expectScanError(loadScan(file(JSON.stringify(twoBuffers), 'scan.gltf')), EXTERNAL);
+    await expectScanError(loadScan(file(toGLB(gltfJson(room, 'scan.bin')), 'scan.glb')), EXTERNAL);
+  });
+
+  it('повреждённый — «файл повреждён», а не совет про внешние файлы', async () => {
+    const glb = toGLB(gltfJson(room), room);
+    const noAsset = { ...gltfJson(room, dataUri(room)), asset: undefined };
+    await expectScanError(loadScan(file(toGLB(gltfJson(room), room, 1), 'scan.glb')), BROKEN);
+    await expectScanError(loadScan(file(JSON.stringify(noAsset), 'scan.gltf')), BROKEN);
+    await expectScanError(loadScan(file(glb.slice(0, glb.length >> 1), 'scan.glb')), BROKEN);
   });
 });
 

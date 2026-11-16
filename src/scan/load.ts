@@ -71,14 +71,22 @@ async function parse(buf: ArrayBuffer, format: ScanFormat): Promise<THREE.Object
     }
     case 'glb':
     case 'gltf': {
+      // соседние файлы приложению недоступны: геометрия во внешнем буфере — отказ до попытки его загрузить;
+      // внешние картинки не мешают (нужна только геометрия)
+      let external = false;
+      const loader = new GLTFLoader().register((parser) => ({
+        name: 'room_acoustics_external_buffers',
+        beforeRoot: () => {
+          const buffers: { uri?: unknown }[] = parser.json.buffers ?? [];
+          external = buffers.some((b) => typeof b.uri === 'string' && !/^data:/i.test(b.uri));
+          return external ? Promise.reject(new Error('external buffer')) : null;
+        },
+      }));
       try {
-        const gltf = await new GLTFLoader().parseAsync(buf, '');
+        const gltf = await loader.parseAsync(buf, '');
         return gltf.scene;
-      } catch (e) {
-        const msg = String((e as Error)?.message ?? e);
-        if (/load|fetch|uri/i.test(msg)) {
-          throw new ScanError('glTF ссылается на внешние файлы. Экспортируйте скан в GLB (один файл).');
-        }
+      } catch {
+        if (external) throw new ScanError('glTF ссылается на внешние файлы. Экспортируйте скан в GLB (один файл).');
         throw new ScanError('Не удалось прочитать glTF/GLB: файл повреждён.');
       }
     }
