@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_DROP, autoDeepHz, boxOrder, butterworthHp, deepPlan, normalizePassport, rolloffAt, subRolloff,
+  DEFAULT_DROP, autoDeepHz, boxOrder, butterworthHp, deepPlan, normalizePassport, rolloffAt, passportRolloff,
 } from '../../src/core/deepBass';
 import { bw2 } from '../../src/core/filters';
 import { cabs, logFreqs } from '../../src/core/frequency';
@@ -9,13 +9,13 @@ import { evaluateSetup, filterSet } from '../../src/core/system';
 import { optimizePlacement } from '../../src/core/placement';
 import { listenerHeatmap, subHeatmap } from '../../src/core/field';
 import { defaultConstraints, defaultRoom } from '../../src/state/project';
-import type { BassObjective, Constraints, ObjectiveId, SourceSpec, SubPassport } from '../../src/core/types';
+import type { BassObjective, Constraints, ObjectiveId, SourceSpec, Passport } from '../../src/core/types';
 
 const room = defaultRoom();
 const base = defaultConstraints(room);
 const spk = (id: string): SourceSpec => ({ id, kind: 'speaker', fLow: 80, fHigh: 20000, height: 1 });
-const sub = (passport?: SubPassport, fLow = 30, id = 'sub1'): SourceSpec => ({ id, kind: 'sub', fLow, fHigh: 80, height: 0.3, ...(passport ? { passport } : {}) });
-const S104: SubPassport = { f3: 30, f10: 27, box: 'ported' };
+const sub = (passport?: Passport, fLow = 30, id = 'sub1'): SourceSpec => ({ id, kind: 'sub', fLow, fHigh: 80, height: 0.3, ...(passport ? { passport } : {}) });
+const S104: Passport = { f3: 30, f10: 27, box: 'ported' };
 const deep = (o: Partial<BassObjective> = {}): BassObjective => ({ id: 'deep', ...o });
 const level = (order: number, fc: number, f: number) => 20 * Math.log10(cabs(butterworthHp(order, fc, f)));
 
@@ -37,34 +37,34 @@ describe('044: спад сабвуфера по паспорту', () => {
   });
 
   it('обе точки: порядок по ним, −10 дБ ровно на своей частоте; KRK S10.4 (30 / 27 Гц) — 10-й порядок', () => {
-    const r = subRolloff(sub(S104));
+    const r = passportRolloff(sub(S104));
     expect(r).toMatchObject({ order: 10, by: 'both', conflict: false });
     expect(level(r.order, r.fc, 27)).toBeCloseTo(-10, 9);
     expect(level(r.order, r.fc, 30)).toBeGreaterThan(-3.5);
     expect(level(r.order, r.fc, 30)).toBeLessThan(-2.5);
     // корпус при двух точках не нужен
-    expect(subRolloff(sub({ ...S104, box: 'sealed' }))).toEqual(r);
+    expect(passportRolloff(sub({ ...S104, box: 'sealed' }))).toEqual(r);
     // границы крутизны
-    expect(subRolloff(sub({ f3: 30, f10: 29.9 })).order).toBe(12);
-    expect(subRolloff(sub({ f3: 100, f10: 10 })).order).toBe(1);
+    expect(passportRolloff(sub({ f3: 30, f10: 29.9 })).order).toBe(12);
+    expect(passportRolloff(sub({ f3: 100, f10: 10 })).order).toBe(1);
   });
 
   it('одна точка: крутизна по корпусу (закрытый — 2-й порядок, фазоинвертор и не указано — 4-й)', () => {
     expect([boxOrder('sealed'), boxOrder('ported'), boxOrder(undefined)]).toEqual([2, 4, 4]);
     for (const box of ['sealed', 'ported'] as const) {
-      const r10 = subRolloff(sub({ f10: 28, box }));
+      const r10 = passportRolloff(sub({ f10: 28, box }));
       expect(r10).toMatchObject({ order: boxOrder(box), by: 'f10', conflict: false });
       expect(level(r10.order, r10.fc, 28)).toBeCloseTo(-10, 9);
       expect(rolloffAt(r10, 10)).toBeCloseTo(28, 9);
-      const r3 = subRolloff(sub({ f3: 35, box }));
+      const r3 = passportRolloff(sub({ f3: 35, box }));
       expect(r3).toMatchObject({ order: boxOrder(box), fc: 35, by: 'f3' });
     }
   });
 
   it('без паспорта — от «Диапазона от» и корпуса; −10 дБ не ниже −3 дБ — по точке −10 дБ с предупреждением', () => {
-    expect(subRolloff(sub(undefined, 25))).toMatchObject({ order: 4, fc: 25, by: 'range' });
-    expect(subRolloff(sub({ box: 'sealed' }, 25))).toMatchObject({ order: 2, fc: 25, by: 'range' });
-    const bad = subRolloff(sub({ f3: 27, f10: 30 }));
+    expect(passportRolloff(sub(undefined, 25))).toMatchObject({ order: 4, fc: 25, by: 'range' });
+    expect(passportRolloff(sub({ box: 'sealed' }, 25))).toMatchObject({ order: 2, fc: 25, by: 'range' });
+    const bad = passportRolloff(sub({ f3: 27, f10: 30 }));
     expect(bad).toMatchObject({ order: 4, by: 'f10', conflict: true });
     expect(rolloffAt(bad, 10)).toBeCloseTo(30, 9);
   });

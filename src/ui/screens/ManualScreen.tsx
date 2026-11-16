@@ -15,6 +15,7 @@ import { inMainThread } from '../compute';
 import { useComputed } from '../useCompute';
 import { PlanView, HeatLegend, type PlanItem, type PlanMark } from '../components/PlanView';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
+import { chartCurve } from '../components/Charts';
 import { NumberField, Panel, Segmented, Note, Details } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -53,7 +54,8 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
   const effMode: Mode = mode === 'sub' && subs.length ? 'sub' : 'listener';
   const effSub = subs.some((s) => s.id === subId) ? subId : subs[0]?.id ?? '';
 
-  const { ev: evalCurMaybe, busy: evalBusy, error: evalError } = useSetupEval(room, sources, c, current, ppo);
+  // 045: текущая, проба и сравнение — с кривой графика ниже полосы оценки
+  const { ev: evalCurMaybe, busy: evalBusy, error: evalError } = useSetupEval(room, sources, c, current, ppo, true);
   const wave = isWave(room);
 
   // Пересчёт карты с задержкой (во время перетаскивания не дёргаем воркер): прежняя задача досчитывается до запуска
@@ -91,7 +93,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
       ? { ...current, positions: { ...current.positions, [effSub]: { x: probe.x, y: probe.y, z: current.positions[effSub]?.z ?? 0.3 } } }
       : { ...current, listener: { x: probe.x, y: probe.y, z: c.earHeight } };
   }, [probe, current, effMode, effSub, c.earHeight]);
-  const { ev: probeEval } = useSetupEval(room, sources, c, probeSetup, ppo);
+  const { ev: probeEval } = useSetupEval(room, sources, c, probeSetup, ppo, true);
 
   const compareSetup = project.setups.find((s) => s.id === compareId) ?? null;
   // оценки сохранённых вариантов — на той же сетке, что и текущая расстановка (раньше — на сетке поиска: у той же
@@ -101,7 +103,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
     () => (inMainThread(room) ? Object.fromEntries(project.setups.map((s) => [s.id, evaluateSetup(room, sources, c, s, { ppo }).objScore])) : null),
     [room, sources, c, project.setups, ppo],
   );
-  const { ev: compareEval } = useSetupEval(room, sources, c, compareSetup, ppo);
+  const { ev: compareEval } = useSetupEval(room, sources, c, compareSetup, ppo, true);
 
   const items: PlanItem[] = [
     ...sources.filter((s) => current.positions[s.id]).map((s) => ({
@@ -116,6 +118,9 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
 
   const selItem = items.find((i) => i.id === selected) ?? null;
   const evalCur = evalCurMaybe;
+  const curve = evalCur ? chartCurve(evalCur, evalCur.fLo) : null;
+  const compareCurve = compareEval ? chartCurve(compareEval, compareEval.fLo) : null;
+  const probeCurve = probeEval ? chartCurve(probeEval, probeEval.fLo) : null;
   const itemName = (id: string) => (id === 'listener' ? S.placement.listener : S.placement.sourceName(id));
 
   const saveVariant = () => {
@@ -228,16 +233,17 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
           </div>
         )}
         <h3 class="subhead">{S.manual.responseHere}</h3>
-        {evalCur ? (
+        {evalCur && curve ? (
           <>
             <SmoothedResponseChart screen="placement-manual"
-              fLo={evalCur.fLo}
+              fLo={Math.min(curve.f[0], ...[compareCurve, probeCurve].flatMap((k) => (k ? [k.f[0]] : [])))}
               fHi={evalCur.fHi}
+              scoredFrom={curve.scoredFrom}
               lines={[
-                { f: evalCur.response.f, db: evalCur.response.target, cls: 'is-target', dash: true },
-                ...(compareEval ? [{ f: compareEval.response.f, db: compareEval.response.db, cls: 'is-compare' }] : []),
-                ...(probeEval ? [{ f: probeEval.response.f, db: probeEval.response.db, cls: 'is-probe' }] : []),
-                { f: evalCur.response.f, db: evalCur.response.db, cls: 'is-room' },
+                { f: curve.f, db: curve.target, cls: 'is-target', dash: true },
+                ...(compareCurve ? [{ f: compareCurve.f, db: compareCurve.db, cls: 'is-compare' }] : []),
+                ...(probeCurve ? [{ f: probeCurve.f, db: probeCurve.db, cls: 'is-probe' }] : []),
+                { f: curve.f, db: curve.db, cls: 'is-room' },
               ]}
             />
             <div class="legend">
@@ -245,7 +251,9 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
               {probeEval && <span class="legend__item legend__item--probe">{S.manual.legendProbe}</span>}
               {compareEval && <span class="legend__item legend__item--compare">{S.manual.legendCompare}</span>}
               <span class="legend__item legend__item--target">{c.houseCurve ? S.house.legend(c.houseCurve) : S.placement.legendTarget}</span>
+              {curve.f[0] < curve.scoredFrom && <span class="legend__item legend__item--unscored">{S.placement.legendUnscored}</span>}
             </div>
+            {evalCur.low && evalCur.chart && <p class="muted small">{S.placement.chartDeep}</p>}
             {evalCur.penalties.length > 0 && <ul class="plain-list small">{evalCur.penalties.map((p, ki) => <li key={ki}>{p.name}</li>)}</ul>}
           </>
         ) : evalError ? (

@@ -163,8 +163,8 @@ export function normalizeProject(raw: any): Project {
       n.maxDelayMs = finite(n.maxDelayMs, d.maxDelayMs!);
       if (n.peqBands !== undefined && !isNum(n.peqBands)) delete n.peqBands;
     }
-    // 044: паспорт спада — только у сабвуфера, неверные поля убираются
-    const passport = n.kind === 'sub' ? normalizePassport(n.passport) : undefined;
+    // 044: паспорт спада сабвуфера, 045: и колонок; неверные поля убираются
+    const passport = normalizePassport(n.passport);
     if (passport) n.passport = passport;
     else delete n.passport;
     return n;

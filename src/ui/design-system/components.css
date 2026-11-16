@@ -275,6 +275,8 @@ td.num { text-align: right; }
 .chart__degenerate { fill: var(--warn); }
 .chart__schroeder line { stroke: var(--ink); stroke-dasharray: 3 3; opacity: 0.6; }
 .chart__schroeder text { fill: var(--ink); font-size: var(--text-diagram); opacity: 0.8; }
+/* 045: часть графика ниже полосы оценки */
+.chart__unscored { fill: var(--muted); opacity: 0.14; }
 
 .legend { display: flex; flex-wrap: wrap; gap: var(--space-6) var(--space-16); font-size: var(--text-meta); color: var(--muted); }
 .legend__item { display: inline-flex; align-items: center; gap: var(--space-6); }
@@ -284,6 +286,7 @@ td.num { text-align: right; }
 .legend__item--oblique::before { background: var(--oblique); }
 .legend__item--target::before { background: repeating-linear-gradient(90deg, var(--ink) 0 4px, transparent 4px 7px); opacity: 0.6; }
 .legend__item--baseline::before { background: var(--muted); opacity: 0.5; }
+.legend__item--unscored::before { width: 12px; height: 12px; background: var(--muted); opacity: 0.3; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

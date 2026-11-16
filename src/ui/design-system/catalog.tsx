@@ -11,6 +11,7 @@ import '../../styles.css';
 import { ActionMenu, CalculationStatus, ConfirmSheet, Details, FailurePanel, Note, NumberField, Panel, SectionNav, Segmented, SelectField } from './index';
 import { componentFamilies } from './registry';
 import { WallView } from '../components/WallView';
+import { ResponseChart } from '../components/Charts';
 import { defaultRoom } from '../../state/project';
 import type { Room } from '../../core/types';
 
@@ -24,6 +25,13 @@ const sampleRoom: Room = {
   ],
   zones: [{ id: 'z', kind: 'furniture', furniture: 'wardrobe', name: 'Шкаф (МДФ)', height: 2.2, canSit: false, x0: 0, x1: 0.6, y0: 0.1, y1: 1.1 }],
 };
+
+/** Пример для каталога: АЧХ с продолжением ниже полосы оценки 30–200 Гц (спад 24 дБ на октаву, без расчётов). */
+const sampleChart = (() => {
+  const f = Array.from({ length: 73 }, (_, i) => 20 * Math.pow(10, i / 72));
+  const target = f.map((x) => -10 * Math.log10(1 + Math.pow(30 / x, 8)));
+  return { f, target, db: target.map((v, i) => v + 4 * Math.sin(i / 4) + (f[i] < 45 ? 3 : 0)) };
+})();
 
 function Catalog() {
   const [number, setNumber] = useState(160);
@@ -100,6 +108,18 @@ function Catalog() {
     <Panel title="Развёртка стены">
       <WallView room={sampleRoom} wall="front" />
       <p class="small muted">Вид изнутри комнаты: окно, плотные шторы, ковёр на стене и шкаф у стены.</p>
+    </Panel>
+    <Panel title="График: часть ниже полосы оценки">
+      <ResponseChart fLo={sampleChart.f[0]} fHi={200} scoredFrom={30} lines={[
+        { f: sampleChart.f, db: sampleChart.target, cls: 'is-target', dash: true },
+        { f: sampleChart.f, db: sampleChart.db, cls: 'is-room' },
+      ]} />
+      <div class="legend">
+        <span class="legend__item legend__item--room">в комнате</span>
+        <span class="legend__item legend__item--target">без комнаты</span>
+        <span class="legend__item legend__item--unscored">не входит в оценку</span>
+      </div>
+      <p class="small muted">Затенение — частоты ниже полосы оценки (045): кривая продолжена вниз по модели спада, шкала центрируется по оцениваемой части.</p>
     </Panel>
     <Panel title="Реестр визуальных семейств">
       <dl class="glossary">{componentFamilies.map(([name, api]) => <div key={name}><dt>{name}</dt><dd class="small text-code">{api}</dd></div>)}</dl>

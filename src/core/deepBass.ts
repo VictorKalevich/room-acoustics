@@ -1,6 +1,7 @@
-// Цель подбора «Глубже низ» (044): спад сабвуфера по паспорту и план расчёта цели.
-// Читается только этой целью: «Диапазон» источников и другие расчёты от паспорта не зависят.
-import type { BassObjective, Complex, DeepDrop, Enclosure, SourceSpec, SubPassport } from './types';
+// Спад источника по паспорту (044, у колонок — 045) и план расчёта цели подбора «Глубже низ» (044).
+// Паспорт читают только эта цель и график «Расстановки» ниже полосы оценки (045): «Диапазон» источников и другие
+// расчёты от паспорта не зависят.
+import type { BassObjective, Complex, DeepDrop, Enclosure, SourceSpec, Passport } from './types';
 import { cmul } from './frequency';
 
 export const DEEP_DROPS: readonly DeepDrop[] = [3, 6, 10];
@@ -55,11 +56,11 @@ export function butterworthHp(order: number, fc: number, f: number): Complex {
 const okHz = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= PASSPORT_MIN && v <= PASSPORT_MAX;
 
 /**
- * Спад сабвуфера по паспорту (data-model 044): обе точки (−10 дБ ниже −3 дБ) — порядок по ним; одна точка — порядок
+ * Спад источника по паспорту (data-model 044): обе точки (−10 дБ ниже −3 дБ) — порядок по ним; одна точка — порядок
  * по корпусу; без паспорта — по корпусу от нижней границы «Диапазона». −10 дБ, если указана, — ровно на своей частоте.
  * conflict — точка −10 дБ не ниже точки −3 дБ: взята только точка −10 дБ.
  */
-export function subRolloff(s: SourceSpec): Rolloff & { by: RolloffBy; conflict: boolean } {
+export function passportRolloff(s: SourceSpec): Rolloff & { by: RolloffBy; conflict: boolean } {
   const p = s.passport ?? {};
   const f3 = okHz(p.f3) ? p.f3 : undefined;
   const f10 = okHz(p.f10) ? p.f10 : undefined;
@@ -85,7 +86,7 @@ const clampHz = (v: number) => Math.max(DEEP_HZ_MIN, Math.min(DEEP_HZ_MAX, v));
 export function autoDeepHz(sources: SourceSpec[]): number | null {
   const subs = sources.filter((s) => s.kind === 'sub');
   if (!subs.length) return null;
-  return clampHz(Math.round(Math.min(...subs.map((s) => rolloffAt(subRolloff(s), 10)))));
+  return clampHz(Math.round(Math.min(...subs.map((s) => rolloffAt(passportRolloff(s), 10)))));
 }
 
 /**
@@ -105,7 +106,7 @@ export function deepPlan(sources: SourceSpec[], o: BassObjective | undefined): D
   if (!subs.length) return null;
   const curves: Record<string, Rolloff> = {};
   for (const s of subs) {
-    const { order, fc } = subRolloff(s);
+    const { order, fc } = passportRolloff(s);
     curves[s.id] = { order, fc };
   }
   const split = Math.min(...Object.values(curves).map((r) => r.fc));
@@ -115,10 +116,10 @@ export function deepPlan(sources: SourceSpec[], o: BassObjective | undefined): D
 }
 
 /** Паспорт из файла проекта: неверные поля убираются, пустой паспорт — нет поля. */
-export function normalizePassport(raw: unknown): SubPassport | undefined {
+export function normalizePassport(raw: unknown): Passport | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
-  const r = raw as SubPassport;
-  const out: SubPassport = {};
+  const r = raw as Passport;
+  const out: Passport = {};
   if (okHz(r.f3)) out.f3 = r.f3;
   if (okHz(r.f10)) out.f10 = r.f10;
   if (r.box === 'ported' || r.box === 'sealed') out.box = r.box;

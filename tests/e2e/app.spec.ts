@@ -260,7 +260,9 @@ test('005: план обработки, скос потолка и помощн�
 test('аудит: свои фильтры сабвуфера — возможности, подбор, применение', async ({ page }) => {
   await page.goto('/#placement');
   await page.getByText('Регулировки сабвуфера').click();
-  await page.locator('.sub-caps').first().getByRole('radio', { name: '4' }).click();
+  // 045: выше — блок «Спад по паспорту» с той же разметкой
+  const caps = page.locator('details', { has: page.locator(':scope > summary', { hasText: 'Регулировки сабвуфера' }) });
+  await caps.locator('.sub-caps').first().getByRole('radio', { name: '4' }).click();
   await page.getByText('Есть all-pass (фазовый) фильтр').first().click();
   await page.goto('/#tuning/sub');
   await page.getByText('Дополнительно: свои PEQ и all-pass для каждого сабвуфера').click();
@@ -488,6 +490,9 @@ test('044: глубже низ — паспорт сабвуфера, строк
   await page.getByLabel('Что искать').selectOption('deep');
   await expect(page.getByText('Места, где комната помогает сабвуферу играть ниже')).toBeVisible();
   await expect(page.locator('.setup-card__summary')).toContainText('глубже низ');
+  // 045: паспорт — в «Системе», под «Диапазоном»
+  await expect(page.getByText('Спад сабвуфера цель берёт из паспорта')).toBeVisible();
+  await page.getByText('Спад по паспорту', { exact: true }).click();
   const f3 = page.locator('#sub1-f3');
   const f10 = page.locator('#sub1-f10');
   const curve = page.locator('.sub-caps p.muted').filter({ hasText: 'Спад:' });
@@ -527,6 +532,56 @@ test('044: глубже низ — паспорт сабвуфера, строк
   await draftSaved(page, 'частота цели по паспорту', (d) => d.constraints.objective?.id === 'deep' && d.constraints.objective.deepHz === undefined);
   await page.locator('#deep-hz').blur();
   await expect(page.locator('#deep-hz')).toHaveValue('27');
+});
+
+test('045: график ниже полосы оценки — паспорт колонок без сабвуфера, затенение, паспорт сабвуфера в «Системе», «Глубже низ», хранится в проекте', async ({ page }) => {
+  await page.goto('/#placement');
+  const shade = page.locator('svg.chart:visible .chart__unscored');
+  const unscored = page.locator('.legend__item--unscored').locator('visible=true');
+  // колонки без сабвуфера: паспорт колонок — один на все
+  await page.getByRole('radiogroup', { name: 'Сабвуферы' }).getByRole('radio', { name: 'Нет' }).click();
+  await page.getByText('Спад по паспорту', { exact: true }).click();
+  const curve = page.locator('.sub-caps p.muted').filter({ hasText: 'Спад:' });
+  await expect(curve).toHaveCount(1);
+  await expect(curve).toContainText('паспорт не указан');
+  await page.locator('#spk-f3').fill('55');
+  await page.locator('#spk-f10').fill('40');
+  await expect(curve).toContainText('(по двум точкам)');
+  await page.getByRole('radiogroup', { name: 'Корпус (колонки)' }).getByRole('radio', { name: 'Закрытый' }).click();
+  await draftSaved(page, 'паспорт колонок', (d) => d.sources.length === 2 && d.sources.every((s) => s.passport?.f3 === 55 && s.passport.f10 === 40 && s.passport.box === 'sealed'));
+  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await expect(page.locator('.score__value').first()).toBeVisible({ timeout: 30_000 });
+  await expect(shade).toHaveCount(1);
+  await expect(unscored).toHaveText('не входит в оценку');
+  // с сабвуфером блок колонок скрыт, их паспорт хранится; паспорт сабвуфера — там же, в «Системе»
+  await page.getByRole('radiogroup', { name: 'Сабвуферы' }).getByRole('radio', { name: '1' }).click();
+  await expect(page.locator('#spk-f3')).toHaveCount(0);
+  await expect(page.locator('#sub1-f3')).toBeVisible();
+  await page.locator('[id="Сабвуфер 1-lo"]').fill('30');
+  await page.locator('#sub1-f3').fill('30');
+  await page.locator('#sub1-f10').fill('27');
+  await draftSaved(page, 'паспорт сабвуфера, паспорт колонок хранится', (d) => d.sources.some((s) => s.kind === 'sub' && s.fLow === 30 && s.passport?.f10 === 27)
+    && d.sources.filter((s) => s.kind === 'speaker').every((s) => s.passport?.f3 === 55));
+  await page.getByRole('button', { name: /Подобрать расстановку|Пересчитать/ }).click();
+  await expect(page.getByText('Параметры изменились — результат устарел.')).toHaveCount(0, { timeout: 30_000 });
+  await expect(shade).toHaveCount(1);
+  await expect(page.getByText('График — по цели «Глубже низ»')).toHaveCount(0);
+  // «Глубже низ»: график по модели цели, затенение ниже частоты цели
+  await page.getByLabel('Что искать').selectOption('deep');
+  await page.getByRole('button', { name: 'Пересчитать' }).click();
+  await expect(page.locator('.score__second').locator('visible=true').filter({ hasText: 'Самый низ:' }).first()).toContainText('на 27 Гц', { timeout: 30_000 });
+  await expect(page.getByText('График — по цели «Глубже низ»').locator('visible=true')).toHaveCount(1);
+  await expect(shade).toHaveCount(1);
+  // ручной режим: тот же график текущей расстановки
+  await page.getByRole('radiogroup', { name: 'Режим расстановки' }).getByRole('radio', { name: 'Вручную' }).click();
+  await expect(shade).toHaveCount(1);
+  await expect(unscored).toHaveText('не входит в оценку');
+  await page.reload();
+  await page.goto('/#placement');
+  await expect(page.locator('#sub1-f10')).toHaveValue('27');
+  await expect(shade).toHaveCount(1);
+  await page.getByRole('radiogroup', { name: 'Режим расстановки' }).getByRole('radio', { name: 'Автоподбор' }).click();
+  await expect(shade).toHaveCount(1);
 });
 
 test('011: обработка на планах — только когда учтена; оценка под галочкой; «Удалить все» с подтверждением', async ({ page }) => {

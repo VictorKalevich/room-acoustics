@@ -201,6 +201,8 @@ describe('неверная форма сохранённых данных не �
       (r) => { r.result.best[0].robust = 'да'; },
       (r) => { r.result.best[0].scheme = 1; },
       (r) => { r.result.best[0].subSettings = { sub1: { delayMs: 1, phaseDeg: 0, gainDb: 0, peq: 3 } }; },
+      (r) => { r.result.best[0].chart = { f: 'f', db: [], target: [], scoredFrom: 30 }; },
+      (r) => { r.result.baseline.chart = { f: [20], db: [0], target: [0], scoredFrom: '30' }; },
     ];
     for (const [i, f] of broken.entries()) {
       const n = open(f);
@@ -209,6 +211,12 @@ describe('неверная форма сохранённых данных не �
       // остальное не тронуто
       expect(n.current.subSettings).toEqual(good.current.subSettings);
     }
+  });
+
+  it('045: кривая графика у варианта — необязательная; верная сохраняется, без неё — результат до 045', () => {
+    const chart = { f: [20, 25, 30], db: [-9, -4, null], target: [-8, -3, 0], scoredFrom: 30 };
+    expect(open((r) => { r.result.best[0].chart = chart; }).result!.best[0].chart).toEqual(chart);
+    expect(open((r) => { delete r.result.best[0].chart; delete r.result.baseline.chart; }).result).not.toBeNull();
   });
 
   it('выбранный вариант — целое неотрицательное число', () => {

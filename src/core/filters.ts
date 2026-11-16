@@ -46,6 +46,11 @@ export function sourceLowPass(spec: SourceSpec, system: SourceSpec[], f: number)
   return filterParts(spec, system, f).lp;
 }
 
+/** Спад источника снизу в номинальной модели (045: с ним сшивается спад по паспорту ниже полосы оценки). */
+export function sourceHighPass(spec: SourceSpec, system: SourceSpec[], f: number): Complex {
+  return filterParts(spec, system, f).hp;
+}
+
 function filterParts(spec: SourceSpec, system: SourceSpec[], f: number): { hp: Complex; lp: Complex } {
   const xo = isCrossover(system);
   if (spec.kind === 'speaker') {

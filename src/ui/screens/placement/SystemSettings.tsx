@@ -1,12 +1,13 @@
 import { useMemo } from 'preact/hooks';
 import type { Project } from '../../../state/project';
 import { defaultSources, validateSources } from '../../../state/project';
-import type { BassObjective, Constraints, SourceSpec, SubZone, PhaseMode } from '../../../core/types';
+import type { BassObjective, Constraints, Passport, SourceSpec, SubZone, PhaseMode } from '../../../core/types';
 import { evalBand } from '../../../core/system';
 import { NumberField, Segmented, Note, Details, SelectField } from '../../design-system';
 import { SetupCard } from '../../components/SetupCard';
 import { ObjectivePicker } from '../../components/ObjectivePicker';
 import { DeepBassOptions } from '../../components/DeepBassOptions';
+import { PassportFields } from '../../components/PassportFields';
 import { PrecisionPicker } from '../../components/PrecisionPicker';
 import { normalizePrecision, type Precision } from '../../../core/precision';
 import { HOUSE_RISES, normalizeHouseRise } from '../../../core/houseCurve';
@@ -83,6 +84,20 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
           />
         ))}
         {srcErrors.map((e, ki) => <Note key={ki} tone="warn">{e.message}</Note>)}
+        {/* 045: паспорт колонок — один на все, как «Диапазон», и только без сабвуфера (при нём хранится, но скрыт) */}
+        <Details summary={S.passport.title}>
+          <p class="muted small">{S.passport.intro}</p>
+          {subs.length === 0 && spk[0] && (
+            <PassportFields id="spk" label={S.placement.speakerRange} source={spk[0]}
+              onChange={(p) => onSources(sources.map((s) => (s.kind === 'speaker' ? withPassport(s, p) : s)))} />
+          )}
+          {subs.map((s, i) => (
+            <PassportFields key={s.id} id={s.id} label={S.placement.subRange(i + 1)} source={s}
+              onChange={(p) => onSources(sources.map((x) => (x.id === s.id ? withPassport(x, p) : x)))} />
+          ))}
+          <p class="muted small">{S.passport.boxHow}</p>
+          <p class="muted small">{S.passport.model}</p>
+        </Details>
         {subs.length > 0 && (
           <Details summary={S.sub.caps}>
             {subs.map((s, i) => (
@@ -196,7 +211,7 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
       <p class="muted small">{S.objective.intro}</p>
       <ObjectivePicker room={room} value={c.objective} onChange={(o: BassObjective) => setC({ objective: o })} band={band} />
       {c.objective?.id === 'deep' && (
-        <DeepBassOptions sources={sources} value={c.objective} onChange={(o) => setC({ objective: o })} onSources={onSources} />
+        <DeepBassOptions sources={sources} value={c.objective} onChange={(o) => setC({ objective: o })} />
       )}
       <Segmented
         label={S.house.label}
@@ -217,6 +232,13 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
   ) + (precision === 'standard' ? '' : ` · ${S.precision.summary(S.precision.names[precision].toLowerCase())}`);
   const sharedCard = <SetupCard title={S.setup.title} summary={summary}>{sharedBody}</SetupCard>;
   return sharedCard;
+}
+
+/** Источник с паспортом p; без паспорта поле не хранится. */
+function withPassport(s: SourceSpec, p: Passport | undefined): SourceSpec {
+  const { passport: _p, ...rest } = s;
+  void _p;
+  return p ? { ...rest, passport: p } : rest;
 }
 
 function RangeRow(p: { label: string; lo: number; hi: number; onLo: (v: number) => void; onHi: (v: number) => void }) {

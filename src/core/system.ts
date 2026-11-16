@@ -1,13 +1,14 @@
 // Общие элементы оценки системы: контекст расчёта, фильтры, места прослушивания, зоны,
 // регулировки сабвуфера и оценка произвольного варианта расстановки.
 import type {
-  Complex, Constraints, LowReach, Penalty, ReverbResult, Room, Setup, SourceSpec, SubSetting, Vec3, Zone,
+  ChartCurve, Complex, Constraints, LowReach, Penalty, ReverbResult, Room, Setup, SourceSpec, SubSetting, Vec3, Zone,
 } from './types';
 import { computeReverb } from './reverb';
 import { speedOfSound } from './physics';
 import { db20, logFreqs } from './frequency';
 import { sourceFilter, sourceLowPass } from './filters';
 import { butterworthHp, deepPlan, type DeepPlan } from './deepBass';
+import { tailCurves, tailFloor, tailGrid, type TailCurve } from './chartTail';
 import { applyKernel, modeShapes, prepareModes, receiverKernel, type PreparedModes } from './response';
 import { flatnessScore } from './metric';
 import { isFlat, lowReach, makeScorer } from './objective';
@@ -102,6 +103,7 @@ export type Spectrum = { re: Float64Array; im: Float64Array };
  * Фильтры источников на частотах (с учётом кроссовера и регулировок сабвуферов) и целевая кривая
  * (сумма номинальных фильтров без регулировок, дБ, плюс подъём низа `rise` — 043).
  * С планом цели «Глубже низ» (044) спад сабвуферов снизу — по паспорту, а в целевой кривой его нет.
+ * Для графика ниже полосы оценки (045, `tail`) спад источников с паспортом — по паспорту со сшивкой, он же в цели.
  */
 export function filterSet(
   sources: SourceSpec[],
@@ -110,6 +112,7 @@ export function filterSet(
   settings?: Record<string, SubSetting>,
   rise?: number,
   plan?: DeepPlan | null,
+  tail?: Record<string, TailCurve>,
 ): { filt: Record<string, Spectrum>; target: number[] } {
   const sys = withCrossover(sources, crossoverHz);
   const n = freqs.length;
@@ -120,6 +123,7 @@ export function filterSet(
     const re = new Float64Array(n);
     const im = new Float64Array(n);
     const curve = plan && s.kind === 'sub' ? plan.curves[s.id] : undefined;
+    const stitched = curve ? undefined : tail?.[s.id];
     for (let i = 0; i < n; i++) {
       let h: Complex;
       if (curve) {
@@ -127,6 +131,10 @@ export function filterSet(
         h = cmul(butterworthHp(curve.order, curve.fc, freqs[i]), lp);
         tRe[i] += lp.re;
         tIm[i] += lp.im;
+      } else if (stitched) {
+        h = cmul(cmul(butterworthHp(stitched.order, stitched.fc, freqs[i]), stitched.k), sourceLowPass(s, sys, freqs[i]));
+        tRe[i] += h.re;
+        tIm[i] += h.im;
       } else {
         h = sourceFilter(s, sys, freqs[i]);
         tRe[i] += h.re;
@@ -296,6 +304,8 @@ export interface SetupEval {
   model: 'modal' | 'wave';
   /** Низ по цели «Глубже низ» (только у этой цели). */
   low?: LowReach;
+  /** Кривая графика «Расстановки» ниже полосы оценки и по цели «Глубже низ» (045): только по запросу `chart`. */
+  chart?: ChartCurve;
 }
 
 /**
@@ -312,7 +322,7 @@ export function evaluateSetup(
   sources: SourceSpec[],
   c: Constraints,
   setup: Pick<Setup, 'listener' | 'positions' | 'subSettings' | 'crossoverHz'>,
-  opts: { ppo?: number; ctx?: EvalCtx; onProgress?: (v: number) => void } = {},
+  opts: { ppo?: number; ctx?: EvalCtx; onProgress?: (v: number) => void; chart?: boolean } = {},
 ): SetupEval {
   const ctx = opts.ctx ?? makeCtx(room, sources);
   const freqs = logFreqs(ctx.fLo, ctx.fHi, opts.ppo ?? 24);
@@ -331,6 +341,7 @@ export function evaluateSetup(
   const plan = deepPlan(sources, c.objective);
   let perObj = perReceiver;
   let low: LowReach | undefined;
+  let deep: Curve | undefined;
   if (plan) {
     const fd = logFreqs(plan.fT, ctx.fHi, opts.ppo ?? 24);
     const d = filterSet(sources, fd, setup.crossoverHz, setup.subSettings, c.houseCurve, plan);
@@ -338,7 +349,9 @@ export function evaluateSetup(
     const dbsD = pts.map((_, r) => sumDb(rawD, d.filt, r, fd.length, ids));
     const scorer = makeScorer(fd, c.objective, room, undefined, plan);
     perObj = dbsD.map((v) => scorer(v, d.target));
-    low = lowReach(fd, average(dbsD, fd.length), d.target, plan);
+    const shownD = average(dbsD, fd.length);
+    low = lowReach(fd, shownD, d.target, plan);
+    deep = { f: fd, db: shownD, target: d.target };
   } else if (!isFlat(c.objective)) {
     const scorer = makeScorer(freqs, c.objective, room, objectiveSys(room, c));
     perObj = dbs.map((d) => scorer(d, target));
@@ -350,6 +363,30 @@ export function evaluateSetup(
   for (let j = 0; j < n; j++) off += shown[j] - target[j];
   off /= n;
   const pen = sumPenalties(penalties);
+  // 045: кривая графика продолжается вниз той же сеткой; хвост считают только графики
+  let chart: ChartCurve | undefined;
+  if (opts.chart) {
+    const sys = withCrossover(sources, setup.crossoverHz);
+    const curves = plan ? {} : tailCurves(sys, ctx.fLo);
+    const floor = tailFloor(sys, ctx.fLo, curves, plan);
+    const extend = (band: Curve, from: number): Curve => {
+      const tf = tailGrid(band.f, from);
+      if (!tf.length) return band;
+      const t = filterSet(sources, tf, setup.crossoverHz, setup.subSettings, c.houseCurve, plan, curves);
+      const rawT = rawResponses(ctx, pts, tf, setup.positions);
+      const db = average(pts.map((_, r) => sumDb(rawT, t.filt, r, tf.length, ids)), tf.length);
+      return { f: [...tf, ...band.f], db: [...db, ...band.db], target: [...t.target, ...band.target] };
+    };
+    if (plan && deep) {
+      // модель цели «Глубже низ»: медиана отклонения от цели выше среза — 0, «обычный уровень баса» строки «Самый низ»
+      const all = extend(deep, Math.min(floor, ctx.fLo));
+      const ref = medianDev(all, plan.split);
+      chart = { ...all, db: all.db.map((v) => v - ref), scoredFrom: Math.min(plan.fT, ctx.fLo) };
+    } else if (floor < ctx.fLo) {
+      const all = extend({ f: freqs, db: shown, target }, floor);
+      chart = { ...all, db: all.db.map((v) => v - off), scoredFrom: ctx.fLo };
+    }
+  }
   return {
     score: perReceiver.reduce((a, s, i) => a + s * weights[i], 0) + pen,
     objScore: perObj.reduce((a, s, i) => a + s * weights[i], 0) + pen,
@@ -364,7 +401,18 @@ export function evaluateSetup(
     fHi: ctx.fHi,
     model: isWave(room) ? 'wave' : 'modal',
     ...(low ? { low } : {}),
+    ...(chart ? { chart } : {}),
   };
+}
+
+type Curve = { f: number[]; db: number[]; target: number[] };
+
+/** Медиана отклонения кривой от цели на частотах от f0 (таких нет — по всей кривой), как опорный уровень цели «Глубже низ». */
+function medianDev(curve: Curve, f0: number): number {
+  let dev = curve.f.flatMap((f, i) => (f >= f0 ? [curve.db[i] - curve.target[i]] : []));
+  if (!dev.length) dev = curve.db.map((v, i) => v - curve.target[i]);
+  dev.sort((a, b) => a - b);
+  return dev[dev.length >> 1];
 }
 
 /** Точка внутри комнаты с отступом от стен. */

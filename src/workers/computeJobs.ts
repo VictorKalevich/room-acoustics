@@ -64,7 +64,7 @@ export interface ComputeJobs {
   integrate: Job<SetupArgs<IntegrateArgs> & Opts<IntegrateArgs[4], 'ppo'>, ReturnType<typeof optimizeSubs>>;
   calibrate: Job<SetupArgs<CalibrateArgs> & { measurement: CalibrateArgs[4] }, ReturnType<typeof calibrate>>;
   compare: Job<SetupArgs<CompareArgs> & { measurement: CompareArgs[4] }, ReturnType<typeof compareMeasurement>>;
-  evaluate: Job<SetupArgs<EvaluateArgs> & Opts<EvaluateArgs[4], 'ppo'>, ReturnType<typeof evaluateSetup>>;
+  evaluate: Job<SetupArgs<EvaluateArgs> & Opts<EvaluateArgs[4], 'ppo' | 'chart'>, ReturnType<typeof evaluateSetup>>;
   modes: Job<{ room: ModesArgs[0]; fMax?: ModesArgs[1] }, ReturnType<typeof waveSystemModes>>;
   field: Job<Parameters<typeof computeField>[0], ReturnType<typeof computeField>>;
   subFilters: Job<SetupArgs<SubFiltersArgs> & Opts<SubFiltersArgs[4], 'ppo'>, ReturnType<typeof optimizeSubFilters>>;

@@ -131,7 +131,7 @@ export function baselinePositions(room: Room, sources: SourceSpec[], c: Constrai
 }
 
 function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listener: Vec3, positions: Record<string, Vec3>, subSettings: Record<string, SubSetting> = {}, ppo = 24): Placement {
-  const e = evaluateSetup(ctx.room, sources, c, { listener, positions, subSettings, crossoverHz: null }, { ctx, ppo });
+  const e = evaluateSetup(ctx.room, sources, c, { listener, positions, subSettings, crossoverHz: null }, { ctx, ppo, chart: true });
   const single = (c.seats?.count ?? 1) <= 1;
   const others = e.perReceiver.slice(1);
   return {
@@ -146,6 +146,7 @@ function toPlacement(ctx: EvalCtx, sources: SourceSpec[], c: Constraints, listen
     penalties: e.penalties,
     angleDeg: e.angleDeg,
     response: e.response,
+    ...(e.chart ? { chart: e.chart } : {}),
     ...(e.low ? { low: e.low } : {}),
   };
 }

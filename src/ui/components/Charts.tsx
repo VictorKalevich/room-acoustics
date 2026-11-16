@@ -1,4 +1,4 @@
-import type { Mode } from '../../core/types';
+import type { ChartCurve, Mode } from '../../core/types';
 import { fmt } from '../format';
 import { S } from '../strings';
 import { modeWhere } from '../../core/modes';
@@ -21,15 +21,22 @@ interface Line {
   dash?: boolean;
 }
 
+/** Кривая графика «Расстановки» (045): с продолжением ниже полосы оценки, если оно посчитано; иначе — `response` от fLo. */
+export function chartCurve(e: { response: { f: number[]; db: number[]; target: number[] }; chart?: ChartCurve }, fLo: number): ChartCurve {
+  return e.chart ?? { ...e.response, scoredFrom: fLo };
+}
+
 /**
  * АЧХ в точке прослушивания: комната, цель (без комнаты), базовая для сравнения.
  * yRange — своя шкала с нулём на 0 дБ (например, голос относительно прямого звука), иначе — по среднему, 33 дБ.
+ * scoredFrom — граница оценки (045): ниже неё полоса затенена, шкала центрируется только по оцениваемой части.
  */
-export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks: yt }: { lines: Line[]; referenceLines?: Line[]; fLo: number; fHi: number; yRange?: [number, number]; yTicks?: number[] }) {
+export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks: yt, scoredFrom }: { lines: Line[]; referenceLines?: Line[]; fLo: number; fHi: number; yRange?: [number, number]; yTicks?: number[]; scoredFrom?: number }) {
   const W = 340, H = 210, l = 34, r = 10, t = 12, b = 26;
   const x = logScale(fLo, fHi, l, W - r);
+  const from = scoredFrom != null && scoredFrom > fLo ? Math.min(scoredFrom, fHi) : null;
   // центрируем по цели
-  const all = (referenceLines ?? lines).flatMap((ln) => ln.db).filter((v) => Number.isFinite(v));
+  const all = (referenceLines ?? lines).flatMap((ln) => (from != null ? ln.db.filter((_, i) => ln.f[i] >= from) : ln.db)).filter((v) => Number.isFinite(v));
   const mean = all.reduce((a, v) => a + v, 0) / Math.max(1, all.length);
   const ref = yRange ? 0 : Math.round(mean / 5) * 5;
   const yMin = yRange ? yRange[0] : ref - 18;
@@ -39,6 +46,7 @@ export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks:
   const yTicks = yt ?? [-10, 0, 10];
   return (
     <svg class="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="График АЧХ">
+      {from != null && <rect class="chart__unscored" x={l} y={t} width={x(from) - l} height={H - t - b} />}
       {ticks.map((f, ki) => (
         <g key={ki} class="chart__grid">
           <line x1={x(f)} x2={x(f)} y1={t} y2={H - b} />

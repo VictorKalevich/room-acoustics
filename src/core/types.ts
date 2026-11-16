@@ -230,14 +230,17 @@ export interface SourceSpec {
   /** Сколько полос параметрического эквалайзера есть у канала сабвуфера (0 — нет) и есть ли all-pass. */
   peqBands?: number;
   allpass?: boolean;
-  /** Только для сабвуферов: паспорт спада для цели «Глубже низ» (044). Другие расчёты его не читают. */
-  passport?: SubPassport;
+  /**
+   * Паспорт спада: у сабвуфера — для цели «Глубже низ» (044) и графика ниже полосы оценки, у колонок (одинаковый у
+   * всех) — для графика в системе без сабвуфера (045). Другие расчёты его не читают.
+   */
+  passport?: Passport;
 }
 
 export type Enclosure = 'ported' | 'sealed';
 
-/** Паспорт спада сабвуфера: частоты спада на −3 и −10 дБ (любая может быть не указана) и тип корпуса. */
-export interface SubPassport {
+/** Паспорт спада источника: частоты спада на −3 и −10 дБ (любая может быть не указана) и тип корпуса. */
+export interface Passport {
   f3?: number;
   f10?: number;
   /** Нет — фазоинвертор. */
@@ -309,6 +312,18 @@ export interface LowReach {
   reach: number | null;
 }
 
+/**
+ * Кривая графика АЧХ «Расстановки» (045): `response`, продолженная вниз ниже полосы оценки — до частоты, где спад
+ * источника по модели достигает −20 дБ, не ниже 20 Гц; при цели «Глубже низ» — отклик и цель этой цели. Читают только
+ * графики; ниже `scoredFrom` кривая не входит в оценку.
+ */
+export interface ChartCurve {
+  f: number[];
+  db: number[];
+  target: number[];
+  scoredFrom: number;
+}
+
 export interface Constraints {
   speakerMinFront: number;
   speakerMinSide: number;
@@ -376,6 +391,8 @@ export interface Placement {
   penalties: Penalty[];
   angleDeg: number | null;
   response: { f: number[]; db: number[]; target: number[] };
+  /** Кривая графика с продолжением ниже полосы оценки (045); у результатов до 045 нет — график по `response`. */
+  chart?: ChartCurve;
   /** Настройки сабвуферов варианта (например, для схемы DBA) и схема. */
   subSettings?: Record<string, SubSetting>;
   scheme?: 'dba';

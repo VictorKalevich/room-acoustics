@@ -62,14 +62,27 @@ describe('044: паспорт сабвуфера и цель «Глубже ни
     expect(JSON.parse(serializeProject(newProject())).project.sources.some((s: object) => 'passport' in s)).toBe(false);
 
     const raw = JSON.parse(serializeProject(p));
-    raw.project.sources = raw.project.sources.map((s: { kind: string }) => ({ ...s, passport: s.kind === 'sub' ? { f3: '30', f10: 27, box: 'horn' } : { f3: 30 } }));
+    raw.project.sources = raw.project.sources.map((s: { kind: string }) => ({ ...s, passport: s.kind === 'sub' ? { f3: '30', f10: 27, box: 'horn' } : { f3: 300, box: 'sealed' } }));
     raw.project.constraints.objective = { id: 'deep', deepHz: 70, deepDrop: 5 };
     const bad = parseProjectFile(JSON.stringify(raw));
     expect(bad.sources.find((s) => s.kind === 'sub')!.passport).toEqual({ f10: 27 });
-    expect(bad.sources.filter((s) => s.kind === 'speaker').every((s) => s.passport === undefined)).toBe(true);
+    // 045: у колонок паспорт тоже хранится и проверяется (до 045 убирался целиком)
+    expect(bad.sources.filter((s) => s.kind === 'speaker').map((s) => s.passport)).toEqual([{ box: 'sealed' }, { box: 'sealed' }]);
     expect(bad.constraints.objective).toEqual({ id: 'deep' });
     raw.project.sources = raw.project.sources.map((s: object) => ({ ...s, passport: { f3: 2 } }));
     expect(parseProjectFile(JSON.stringify(raw)).sources.every((s) => !('passport' in s))).toBe(true);
+  });
+});
+
+describe('045: паспорт спада колонок в файле проекта', () => {
+  it('паспорт колонок сохраняется у каждой колонки; неверные поля отбрасываются', () => {
+    const p = newProject();
+    p.sources = p.sources.filter((s) => s.kind === 'speaker').map((s) => ({ ...s, fLow: 45, passport: { f3: 48, f10: 36, box: 'sealed' } }));
+    const back = parseProjectFile(serializeProject(p));
+    expect(back.sources.map((s) => s.passport)).toEqual([{ f3: 48, f10: 36, box: 'sealed' }, { f3: 48, f10: 36, box: 'sealed' }]);
+    const raw = JSON.parse(serializeProject(p));
+    raw.project.sources = raw.project.sources.map((s: object) => ({ ...s, passport: { f3: 48, f10: 'x', box: 'horn' } }));
+    expect(parseProjectFile(JSON.stringify(raw)).sources.map((s) => s.passport)).toEqual([{ f3: 48 }, { f3: 48 }]);
   });
 });
 

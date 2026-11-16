@@ -15,6 +15,7 @@ import type { Heatmap } from '../../core/field';
 import { isFlat } from '../../core/objective';
 import { normalizeHouseRise } from '../../core/houseCurve';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
+import { chartCurve } from '../components/Charts';
 import { S } from '../strings';
 import { Term } from '../components/Term';
 import { fmt, fmtInt } from '../format';
@@ -88,6 +89,9 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
   const variants: Placement[] = result ? [...result.best, result.baseline] : [];
   const sel = Math.min(project.selectedIndex, Math.max(0, variants.length - 1));
   const current = variants[sel] ?? null;
+  // 045: график с продолжением ниже полосы оценки; у результатов до 045 — по `response`
+  const curve = result && current ? chartCurve(current, result.fLo) : null;
+  const baseCurve = result && sel !== variants.length - 1 ? chartCurve(result.baseline, result.fLo) : null;
 
   // карта звука для выбранного варианта (как в ручном режиме): место слушателя или сабвуфера
   const [mapKind, setMapKind] = useState<'listener' | 'sub'>('listener');
@@ -186,7 +190,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
             <p class="small">{S.placement.empty}</p>
           </Panel>
         )}
-        {result && current && (
+        {result && current && curve && (
           <Panel class="panel--hero">
             <CalculationStatus stale={result.stale ? S.placement.stale : undefined} />
             <div class="tabs" role="tablist">
@@ -246,21 +250,22 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
             <Positions p={current} />
             <h3 class="subhead">{S.placement.response}</h3>
             <SmoothedResponseChart screen="placement-auto"
-              fLo={result.fLo}
+              fLo={Math.min(curve.f[0], ...(baseCurve ? [baseCurve.f[0]] : []))}
               fHi={result.fHi}
+              scoredFrom={curve.scoredFrom}
               lines={[
-                { f: current.response.f, db: current.response.target, cls: 'is-target', dash: true },
-                ...(sel !== variants.length - 1
-                  ? [{ f: result.baseline.response.f, db: result.baseline.response.db, cls: 'is-baseline' }]
-                  : []),
-                { f: current.response.f, db: current.response.db, cls: 'is-room' },
+                { f: curve.f, db: curve.target, cls: 'is-target', dash: true },
+                ...(baseCurve ? [{ f: baseCurve.f, db: baseCurve.db, cls: 'is-baseline' }] : []),
+                { f: curve.f, db: curve.db, cls: 'is-room' },
               ]}
             />
             <div class="legend">
               <span class="legend__item legend__item--room">{S.placement.legendRoom}</span>
               <span class="legend__item legend__item--target">{normalizeHouseRise(result.houseCurve) ? S.house.legend(result.houseCurve!) : S.placement.legendTarget}</span>
-              {sel !== variants.length - 1 && <span class="legend__item legend__item--baseline">{S.placement.legendBaseline}</span>}
+              {baseCurve && <span class="legend__item legend__item--baseline">{S.placement.legendBaseline}</span>}
+              {curve.f[0] < curve.scoredFrom && <span class="legend__item legend__item--unscored">{S.placement.legendUnscored}</span>}
             </div>
+            {current.low && current.chart && <p class="muted small">{S.placement.chartDeep}</p>}
             {current.penalties.length > 0 && (
               <>
                 <h3 class="subhead">{S.placement.penalties}</h3>

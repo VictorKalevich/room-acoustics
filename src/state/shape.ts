@@ -46,11 +46,12 @@ export function cleanSubSettings(raw: unknown): Record<string, SubSetting> {
 /**
  * Вариант подбора: то, без чего его нельзя показать или посчитать (места, оценки, штрафы, график).
  * Необязательные поля прежних версий могут отсутствовать: seats (появилось в 002), objScore, robust, angleDeg,
- * subSettings, scheme, notes; если поле есть — оно своего типа.
+ * subSettings, scheme, notes, chart (045); если поле есть — оно своего типа.
  */
 function okPlacement(p: unknown): boolean {
   if (!isObj(p)) return false;
   const r = p.response;
+  const okChart = (v: unknown) => isObj(v) && [v.f, v.db, v.target].every(isList(numOrNull)) && isNum(v.scoredFrom);
   return isPoint(p.listener)
     && opt(p.seats, isList(isPoint))
     && Array.isArray(p.sources) && p.sources.every((s) => isObj(s) && typeof s.id === 'string' && isPoint(s.pos))
@@ -58,6 +59,7 @@ function okPlacement(p: unknown): boolean {
     && [p.objScore, p.robust, p.angleDeg].every((v) => opt(v, numOrNull))
     && Array.isArray(p.penalties) && p.penalties.every(isObj)
     && isObj(r) && [r.f, r.db, r.target].every(isList(numOrNull))
+    && opt(p.chart, okChart)
     && opt(p.subSettings, (v) => isObj(v) && cleanSubSettings(v) === v)
     && opt(p.scheme, (v) => typeof v === 'string')
     && opt(p.notes, Array.isArray);
