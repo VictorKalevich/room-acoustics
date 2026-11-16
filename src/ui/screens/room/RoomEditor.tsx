@@ -26,6 +26,7 @@ import { ROOM_STEPS, setLeaveGuard, type RoomStep } from '../../navigation';
 import { useViewState } from '../../useViewState';
 import { DIMS, draftDiffers, dropRoomDraft, loadRoomDraft, saveRoomDraft, withOutside, type DimKey, type RoomDraft } from '../../roomDraft';
 import { requestScanFix } from '../../scanFix';
+import { saveRoom } from '../../roomSetup';
 import { RotateIcon } from './icons';
 import { S } from '../../strings';
 import { fmt } from '../../format';
@@ -101,17 +102,21 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
     setSaved(false);
     persist(r, { entered: e });
   };
-  const forget = () => {
-    dropRoomDraft(project.id);
+  /** Черновика больше нет: на экране сохранённая комната, ручная настройка — с начала. */
+  const clearLocal = () => {
     setDraft(null);
     setReached('size');
     setEntered([]);
     setTouched([]);
   };
+  const forget = () => {
+    dropRoomDraft(project.id);
+    clearLocal();
+  };
 
   const commit = (r: Room, after?: () => void) => {
-    onRoom(r, { roomReady: true });
-    forget();
+    saveRoom(project, r, onRoom);
+    clearLocal();
     setFitAsk(null);
     if (after) after();
     else if (wizard) onBack();
