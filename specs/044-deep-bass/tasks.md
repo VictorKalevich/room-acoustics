@@ -48,7 +48,7 @@
   проверка» `spec.md`
 - [x] T4413 Spec Kit: `spec.md` (статус, реализация и проверка), 009 (таблица целей), `specs/README.md`,
   `specs/decisions.md` (D39), `specs/current-state.md`, `specs/deferred.md` (если что-то замечено), README
-- [ ] T4414 Коммит фичи, вливание в `main`, push, проверка запуска CI
+- [x] T4414 Коммит фичи, вливание в `main`, push, проверка запуска CI (`build` и `deploy` — успешно; `e2e-safari` — прежний сбой, не блокирует)
 
 ## Dependencies
 
