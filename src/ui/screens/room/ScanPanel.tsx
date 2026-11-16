@@ -6,27 +6,26 @@
 // 022: применённый скан ведёт в те же шаги, что и ручной ввод («Сохранить» в конце создаёт комнату);
 // при уверенности ниже 50 % сначала открывается «Поправить границы комнаты»; сама кнопка поправки —
 // в группе «Изменить комнату» и на шаге «Размеры», здесь — блок поправки (по просьбе requestScanFix).
+// 037: применение и поправка — операции roomSetup: проект, черновик конструктора и скан на устройстве.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
 import type { Project } from '../../../state/project';
-import { defaultConstraints, makeId } from '../../../state/project';
 import type { Room, WallId } from '../../../core/types';
 import type { DetectResult, Units } from '../../../scan/detect';
 import type { LayoutResult } from '../../../scan/layout';
 import type { WallItemKind } from '../../../core/wallItems';
-import { SIT_DEFAULT, defaultChoice, fixScan, foundWallItems, scanProblem, type ScanChoice, type ScanNames } from '../../../scan/apply';
-import { loadStoredScan, saveScan, thinScan } from '../../../state/storage';
+import { SIT_DEFAULT, defaultChoice, foundWallItems, scanProblem, type ScanChoice } from '../../../scan/apply';
+import { loadStoredScan } from '../../../state/storage';
 import type { DetectDone, LayoutDone, RunScanWorker, ScanMessage, ScanReply, ScanRequest } from '../../../workers/detectJobs';
 import { LayoutEditor, type Rect } from '../../components/LayoutEditor';
 import { Panel, SelectField, Note, Segmented } from '../../design-system';
 import { S } from '../../strings';
 import { fmt, fmtInt } from '../../format';
 import { logError } from '../../../state/errlog';
-import { dropRoomDraft } from '../../roomDraft';
 import { onScanFixRequest } from '../../scanFix';
 import type { Destination } from '../../navigation';
-import { applyScan, type ScanFile } from '../../roomSetup';
+import { applyScan, applyScanFix, type ScanFile } from '../../roomSetup';
 
 type ScanState =
   | { phase: 'idle' }
@@ -38,12 +37,6 @@ type ScanState =
 interface Loaded extends ScanFile {
   preview: Object3D | null;
 }
-
-const NAMES: ScanNames = {
-  furniture: (n) => S.layout.furnitureNames[n] ?? S.layout.furnitureOther,
-  corridor: S.openings.corridor,
-  id: makeId,
-};
 
 export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom: (room: Room, extra?: Partial<Project>) => void; onGo?: (t: Destination) => void }) {
   const [state, setState] = useState<ScanState>({ phase: 'idle' });
@@ -161,46 +154,16 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
     defaultsFor(initial.layout);
   };
 
-  /** Сохранить скан проекта на устройстве вместе с применённым выбором. */
-  const persist = (l: Loaded, d: DetectResult, init: { layout: LayoutResult; rect: Rect }, c: ScanChoice, u: Units | 'auto') => {
-    const t = thinScan(l.triangles, l.labels);
-    saveScan({
-      projectId: project.id, fileName: l.fileName, format: l.format, count: l.count, decimated: l.decimated, dropped: l.dropped,
-      thinned: t.thinned || !!l.thinned, triangles: t.triangles, labels: t.labels, units: u, det: d, initial: init, applied: c,
-    }).catch((e) => logError('scan', e, 'сохранение скана на устройстве'));
-  };
-
-  const summaryOf = (d: DetectResult, l: Loaded) => {
-    const { transform: _t, ...rest } = d;
-    void _t;
-    return { ...rest, fileName: l.fileName, format: l.format };
-  };
-
   /** Первое применение скана или новый скан поверх применённого (037, строки 1–2). */
   const applyFirst = (l: Loaded, d: DetectResult, init: { layout: LayoutResult; rect: Rect }, c: ScanChoice, u: Units | 'auto') => {
     applyScan(project, { file: l, det: d, initial: init, choice: c, units: u }, { onRoom, onGo });
     applied.current = { choice: c, units: d.units };
   };
 
-  /** Поправка границ того же скана: найденное пересоздаётся, ручное остаётся на своих местах. */
+  /** Поправка границ того же скана: найденное пересоздаётся, ручное остаётся на своих местах (037, строка 3). */
   const applyFix = (l: Loaded, d: DetectResult, init: { layout: LayoutResult; rect: Rect }, c: ScanChoice, u: Units | 'auto') => {
-    // от каких границ считать сдвиг: от тех, по которым построена комната проекта (026 — хранятся в проекте и
-    // откатываются вместе с ним); у проектов до 026 — от сохранённых вместе со сканом
-    const known = project.scanInfo?.applied ?? (applied.current ? { rect: applied.current.choice.rect, units: applied.current.units } : null);
-    const prev = known && known.units === d.units ? known.rect : c.rect;
-    const fixed = fixScan(project, c, prev, project.scanInfo?.rotation ?? 0, NAMES);
-    onRoom(fixed.room, {
-      current: fixed.current,
-      setups: fixed.setups,
-      scanInfo: { ...summaryOf(d, l), rotation: project.scanInfo?.rotation ?? 0, applied: { rect: c.rect, units: d.units } },
-      constraints: { ...project.constraints, ...zoneFor(fixed.room) },
-    });
-    // черновик конструктора снят с прежних границ — с новыми он вернул бы старую комнату
-    dropRoomDraft(project.id);
+    applyScanFix(project, { file: l, det: d, initial: init, choice: c, units: u }, applied.current, { onRoom, onGo });
     applied.current = { choice: c, units: d.units };
-    persist(l, d, init, c, u);
-    // поправка во время проверки по шагам — назад к шагам
-    if (!project.roomReady) onGo?.('room/size');
   };
 
   const onFile = async (file: File) => {
@@ -528,9 +491,4 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
       )}
     </Panel>
   );
-}
-
-function zoneFor(room: Room) {
-  const d = defaultConstraints(room);
-  return { listenerMinX: d.listenerMinX, listenerMaxX: d.listenerMaxX };
 }
