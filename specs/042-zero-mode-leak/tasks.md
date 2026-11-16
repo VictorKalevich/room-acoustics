@@ -51,7 +51,7 @@
 - [x] T4211 Spec Kit: `spec.md` (статус, FR-4202 и приёмка 3 по исследованию, реализация и проверка, замечено), 010
   (T911 закрыта, «Известные ограничения»), `specs/README.md`, `specs/decisions.md` (D37), `specs/current-state.md`,
   `specs/deferred.md` (T911 из таблицы незавершённых), README
-- [ ] T4212 Коммит фичи, вливание в `main`, push, проверка запуска CI
+- [x] T4212 Коммит фичи, вливание в `main`, push, проверка запуска CI (`build` и `deploy` — успешно; `e2e-safari` — прежний сбой, не блокирует)
 
 ## Dependencies
 
