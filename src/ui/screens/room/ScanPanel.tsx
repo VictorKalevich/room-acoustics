@@ -10,12 +10,12 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { FunctionComponent } from 'preact';
 import type { Object3D } from 'three';
 import type { Project } from '../../../state/project';
-import { clearedRoom, defaultConstraints, makeId } from '../../../state/project';
+import { defaultConstraints, makeId } from '../../../state/project';
 import type { Room, WallId } from '../../../core/types';
 import type { DetectResult, Units } from '../../../scan/detect';
-import type { LayoutResult, ScanLabels } from '../../../scan/layout';
+import type { LayoutResult } from '../../../scan/layout';
 import type { WallItemKind } from '../../../core/wallItems';
-import { SIT_DEFAULT, defaultChoice, fixScan, foundWallItems, scanProblem, scanRoom, type ScanChoice, type ScanNames } from '../../../scan/apply';
+import { SIT_DEFAULT, defaultChoice, fixScan, foundWallItems, scanProblem, type ScanChoice, type ScanNames } from '../../../scan/apply';
 import { loadStoredScan, saveScan, thinScan } from '../../../state/storage';
 import type { DetectDone, LayoutDone, RunScanWorker, ScanMessage, ScanReply, ScanRequest } from '../../../workers/detectJobs';
 import { LayoutEditor, type Rect } from '../../components/LayoutEditor';
@@ -26,6 +26,7 @@ import { logError } from '../../../state/errlog';
 import { dropRoomDraft } from '../../roomDraft';
 import { onScanFixRequest } from '../../scanFix';
 import type { Destination } from '../../navigation';
+import { applyScan, type ScanFile } from '../../roomSetup';
 
 type ScanState =
   | { phase: 'idle' }
@@ -34,16 +35,8 @@ type ScanState =
   | { phase: 'done'; fileName: string };
 
 /** Исходный скан в памяти: из выбранного файла (preview — его сцена) или из хранилища (preview нет). */
-interface Loaded {
+interface Loaded extends ScanFile {
   preview: Object3D | null;
-  triangles: Float32Array;
-  labels?: ScanLabels;
-  format: string;
-  count: number;
-  decimated: boolean;
-  dropped: number;
-  thinned?: boolean;
-  fileName: string;
 }
 
 const NAMES: ScanNames = {
@@ -183,24 +176,10 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
     return { ...rest, fileName: l.fileName, format: l.format };
   };
 
-  /**
-   * Первое применение скана — как «Применить размеры». Новый скан поверх уже применённого
-   * сбрасывает комнату так же, как «Очистить».
-   */
+  /** Первое применение скана или новый скан поверх применённого (037, строки 1–2). */
   const applyFirst = (l: Loaded, d: DetectResult, init: { layout: LayoutResult; rect: Rect }, c: ScanChoice, u: Units | 'auto') => {
-    const reset = project.scanInfo ? clearedRoom(project) : null;
-    const room = scanRoom(reset?.room ?? project.room, c, 'first', NAMES);
-    onRoom(room, {
-      ...reset,
-      scanInfo: { ...summaryOf(d, l), rotation: 0, applied: { rect: c.rect, units: d.units } },
-      constraints: { ...(reset?.constraints ?? project.constraints), ...zoneFor(room) },
-      // 022: комната ещё не создана — её проверяют по тем же шагам, что и при ручном вводе, и сохраняют
-      roomReady: false,
-    });
-    dropRoomDraft(project.id);
-    onGo?.('room/size');
+    applyScan(project, { file: l, det: d, initial: init, choice: c, units: u }, { onRoom, onGo });
     applied.current = { choice: c, units: d.units };
-    persist(l, d, init, c, u);
   };
 
   /** Поправка границ того же скана: найденное пересоздаётся, ручное остаётся на своих местах. */
