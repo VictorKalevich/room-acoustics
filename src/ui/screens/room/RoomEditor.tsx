@@ -3,6 +3,7 @@
 // 021: правки копятся в черновике (ui/roomDraft) и попадают в проект только по «Сохранить». Пока комната
 // не создана, это ручная настройка по шагам («Далее», на последнем шаге «Сохранить»); потом — правка с
 // переходами между шагами, «Сохранить» внизу каждого шага и вопросом при уходе с несохранёнными изменениями.
+// 037: «Сохранить», «Не сохранять», «Сбросить черновик», поворот и переход к поправке — операции roomSetup.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
 import { makeId } from '../../../state/project';
@@ -24,9 +25,8 @@ import { ShapePanel, SlopeBlock, WallItemsPanel } from './OpeningsPanel';
 import { ZonesPanel } from './ZonesPanel';
 import { ROOM_STEPS, setLeaveGuard, type RoomStep } from '../../navigation';
 import { useViewState } from '../../useViewState';
-import { DIMS, draftDiffers, dropRoomDraft, loadRoomDraft, saveRoomDraft, withOutside, type DimKey, type RoomDraft } from '../../roomDraft';
-import { requestScanFix } from '../../scanFix';
-import { discardRoomDraft, saveRoom, turnInSteps } from '../../roomSetup';
+import { DIMS, draftDiffers, loadRoomDraft, saveRoomDraft, withOutside, type DimKey, type RoomDraft } from '../../roomDraft';
+import { discardRoomDraft, openScanFix, saveRoom, turnInSteps } from '../../roomSetup';
 import { RotateIcon } from './icons';
 import { S } from '../../strings';
 import { fmt } from '../../format';
@@ -109,10 +109,6 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
     setEntered([]);
     setTouched([]);
   };
-  const forget = () => {
-    dropRoomDraft(project.id);
-    clearLocal();
-  };
 
   const commit = (r: Room, after?: () => void) => {
     saveRoom(project, r, onRoom);
@@ -147,12 +143,10 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
   };
   /** «Колонки у другой стены» при проверке скана: поворот сразу в проекте и в черновике (037, строка 7). */
   const rotate = () => setDraft(turnInSteps(project, room, { reached, entered, touched }, onRoom).room);
-  /** Поправить границы: введённое на шагах уходит в комнату проекта, блок поправки — на экране «Комната». */
+  /** Поправить границы: введённое на шагах уходит в комнату проекта, блок поправки — на экране «Комната» (037, строка 8). */
   const fixBounds = () => {
-    onRoom(room);
-    forget();
-    requestScanFix();
-    onBack();
+    openScanFix(project, room, { onRoom, onBack });
+    clearLocal();
   };
 
   // уход из конструктора с несохранёнными изменениями: «Сохранить» / «Не сохранять» / «Остаться».
