@@ -3,17 +3,22 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadScan, ScanError, MAX_FILE_MB } from '../../src/scan/load';
 import { cleanTriangles } from '../../src/scan/clean';
 import { detectRoom, DetectError } from '../../src/scan/detect';
-import { makeRoomScan, toOBJ, toSTL } from '../fixtures/synthetic';
+import { makeRoomScan, toOBJ, toPLY, toSTL } from '../fixtures/synthetic';
 
 const room = makeRoomScan({ depth: 5, width: 4, height: 2.6, noise: 0.005, furniture: true, openings: true });
 const file = (data: BlobPart, name: string) => new File([data], name);
 
-/** Ошибка загрузки: только ScanError с непустым русским текстом. */
-async function expectScanError(p: Promise<unknown>, re?: RegExp) {
+/** Сообщение об обрезанном PLY с числами из заголовка (039). */
+const plyCut = (vertices: number, faces: number) =>
+  `Файл PLY обрезан или повреждён: в заголовке ${vertices.toLocaleString('ru-RU')} точек и ${faces.toLocaleString('ru-RU')} граней, а данных меньше. Скопируйте или экспортируйте файл заново.`;
+
+/** Ошибка загрузки: только ScanError с непустым русским текстом; строка — точный текст. */
+async function expectScanError(p: Promise<unknown>, re?: RegExp | string) {
   const e = await p.then(() => null, (x) => x);
   expect(e, 'файл должен быть отвергнут').toBeInstanceOf(ScanError);
   expect((e as Error).message).toMatch(/[а-я]/i);
-  if (re) expect((e as Error).message).toMatch(re);
+  if (typeof re === 'string') expect((e as Error).message).toBe(re);
+  else if (re) expect((e as Error).message).toMatch(re);
 }
 
 // загрузчик three.js пишет предупреждения на каждую непонятную строку — в тестах они не нужны
@@ -75,7 +80,7 @@ describe('загрузка: битые файлы', () => {
 
   it('PLY: заявлено больше вершин и граней, чем есть', async () => {
     const ply = 'ply\nformat ascii 1.0\nelement vertex 1000\nproperty float x\nproperty float y\nproperty float z\nelement face 2000\nproperty list uchar int vertex_indices\nend_header\n0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n';
-    await expectScanError(loadScan(file(ply, 'scan.ply')));
+    await expectScanError(loadScan(file(ply, 'scan.ply')), plyCut(1000, 2000));
   });
 
   it('OBJ: только вершины, без граней', async () => {
@@ -121,6 +126,81 @@ describe('загрузка: годные файлы с мусором внутр
     expect(r.depth).toBeCloseTo(5, 1);
     expect(r.width).toBeCloseTo(4, 1);
     expect(r.height).toBeCloseTo(2.6, 1);
+  });
+});
+
+describe('PLY: исправные файлы читаются, обрезанные отвергаются (039)', () => {
+  const n = room.length / 9;
+  const text = (b: Uint8Array) => new TextDecoder().decode(b);
+  const expectRoom = async (data: BlobPart, what: string) => {
+    const s = await loadScan(file(data, 'scan.ply'));
+    expect(s.format, what).toBe('ply');
+    expect(s.triangleCount, what).toBe(n);
+    const r = detectRoom(s.triangles);
+    expect([r.depth, r.width, r.height].map((v) => Math.round(v * 100) / 100), what).toEqual([5, 4, 2.6]);
+  };
+
+  it('текстовый, двоичный (оба порядка байтов), с переводами строк Windows и без перевода строки в конце', async () => {
+    const ascii = text(toPLY(room));
+    await expectRoom(ascii, 'ascii');
+    await expectRoom(ascii.replace(/\n/g, '\r\n'), 'ascii CRLF');
+    await expectRoom(ascii.trimEnd(), 'ascii без перевода строки в конце');
+    await expectRoom(toPLY(room, 'binary_little_endian'), 'binary LE');
+    await expectRoom(toPLY(room, 'binary_big_endian', 'int'), 'binary BE, число вершин грани — int');
+  });
+
+  it('четырёхугольные грани, нормали и цвета вершин, лишний элемент после граней', async () => {
+    // пол 4 × 4 м из 16 четырёхугольников: загрузчик делит каждый на два треугольника
+    const v: number[][] = [];
+    const f: number[][] = [];
+    for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) v.push([i, j, 0]);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) f.push([i * 5 + j, (i + 1) * 5 + j, (i + 1) * 5 + j + 1, i * 5 + j + 1]);
+    const header = (format: string) => `ply\nformat ${format} 1.0\nelement vertex ${v.length}\nproperty float x\nproperty float y\nproperty float z\n`
+      + 'property float nx\nproperty float ny\nproperty float nz\nproperty uchar red\nproperty uchar green\nproperty uchar blue\n'
+      + `element face ${f.length}\nproperty list uchar int vertex_indices\nelement material 1\nproperty uchar red\nend_header\n`;
+    const ascii = header('ascii') + [...v.map((p) => `${p.join(' ')} 0 0 1 200 180 160`), ...f.map((q) => `4 ${q.join(' ')}`), '200'].join('\n') + '\n';
+    const head = new TextEncoder().encode(header('binary_little_endian'));
+    const bin = new Uint8Array(head.length + v.length * 27 + f.length * 17 + 1);
+    bin.set(head);
+    const dv = new DataView(bin.buffer);
+    let o = head.length;
+    for (const p of v) {
+      for (const x of [...p, 0, 0, 1]) { dv.setFloat32(o, x, true); o += 4; }
+      for (const c of [200, 180, 160]) dv.setUint8(o++, c);
+    }
+    for (const q of f) {
+      dv.setUint8(o++, 4);
+      for (const k of q) { dv.setInt32(o, k, true); o += 4; }
+    }
+    dv.setUint8(o, 200);
+    for (const data of [ascii, bin]) expect((await loadScan(file(data, 'scan.ply'))).triangleCount).toBe(32);
+  });
+
+  it('двоичный с лишними байтами в конце читается', async () => {
+    const b = toPLY(room, 'binary_little_endian');
+    const padded = new Uint8Array(b.length + 7);
+    padded.set(b);
+    await expectRoom(padded, 'binary + 7 байт');
+  });
+
+  it('обрезанный — понятная ошибка с числами из заголовка, где бы ни оборвались данные', async () => {
+    const cut = plyCut(n * 3, n);
+    const lines = text(toPLY(room)).split('\n');
+    const body = lines.indexOf('end_header') + 1;
+    const keep = (rows: number) => lines.slice(0, body + rows).join('\n') + '\n';
+    // текстовый: обрыв среди точек, среди граней, без последней грани, последняя грань без последнего номера
+    await expectScanError(loadScan(file(keep(n), 'scan.ply')), cut);
+    await expectScanError(loadScan(file(keep(n * 3 + Math.floor(n / 2)), 'scan.ply')), cut);
+    await expectScanError(loadScan(file(keep(n * 4 - 1), 'scan.ply')), cut);
+    await expectScanError(loadScan(file(keep(n * 4).replace(/ \d+\n$/, '\n'), 'scan.ply')), cut);
+    // двоичный: обрыв среди точек, среди граней, без последнего байта
+    for (const format of ['binary_little_endian', 'binary_big_endian'] as const) {
+      const b = toPLY(room, format);
+      const head = b.length - n * 9 * 4 - n * 13;
+      for (const len of [head + n * 9 * 2, head + n * 9 * 4 + n * 6, b.length - 1]) {
+        await expectScanError(loadScan(file(b.slice(0, len), 'scan.ply')), cut);
+      }
+    }
   });
 });
 

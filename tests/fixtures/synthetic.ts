@@ -123,6 +123,33 @@ export function toOBJ(tri: Float32Array): string {
   return lines.join('\n') + '\n';
 }
 
+/** PLY: вершины — по три на треугольник, грани — треугольники; `countType` — тип числа вершин грани. */
+export function toPLY(tri: Float32Array, format: 'ascii' | 'binary_little_endian' | 'binary_big_endian' = 'ascii', countType: 'uchar' | 'int' = 'uchar'): Uint8Array<ArrayBuffer> {
+  const n = tri.length / 9;
+  const header = `ply\nformat ${format} 1.0\ncomment synthetic room scan\nelement vertex ${n * 3}\nproperty float x\nproperty float y\nproperty float z\n`
+    + `element face ${n}\nproperty list ${countType} int vertex_indices\nend_header\n`;
+  if (format === 'ascii') {
+    const lines: string[] = [];
+    for (let i = 0; i < tri.length; i += 3) lines.push(`${tri[i].toFixed(5)} ${tri[i + 1].toFixed(5)} ${tri[i + 2].toFixed(5)}`);
+    for (let f = 0; f < n; f++) lines.push(`3 ${f * 3} ${f * 3 + 1} ${f * 3 + 2}`);
+    return new TextEncoder().encode(header + lines.join('\n') + '\n');
+  }
+  const head = new TextEncoder().encode(header);
+  const cs = countType === 'uchar' ? 1 : 4;
+  const out = new Uint8Array(head.length + tri.length * 4 + n * (cs + 12));
+  out.set(head);
+  const dv = new DataView(out.buffer);
+  const le = format === 'binary_little_endian';
+  let o = head.length;
+  for (let i = 0; i < tri.length; i++, o += 4) dv.setFloat32(o, tri[i], le);
+  for (let f = 0; f < n; f++) {
+    if (cs === 1) dv.setUint8(o, 3); else dv.setInt32(o, 3, le);
+    o += cs;
+    for (let k = 0; k < 3; k++, o += 4) dv.setInt32(o, f * 3 + k, le);
+  }
+  return out;
+}
+
 /** Двоичный STL. */
 export function toSTL(tri: Float32Array): ArrayBuffer {
   const n = tri.length / 9;

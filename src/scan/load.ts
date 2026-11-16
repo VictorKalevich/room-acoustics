@@ -88,6 +88,7 @@ async function parse(buf: ArrayBuffer, format: ScanFormat): Promise<THREE.Object
       if (!faces || Number(faces[1]) === 0) {
         throw new ScanError('Файл PLY содержит облако точек без поверхностей — экспортируйте сетку (mesh).');
       }
+      checkPly(buf);
       const g = new PLYLoader().parse(buf);
       if (!g.getAttribute('normal')) g.computeVertexNormals();
       return new THREE.Mesh(g, defaultMaterial(!!g.getAttribute('color')));
@@ -119,6 +120,101 @@ function checkStl(buf: ArrayBuffer) {
     throw new ScanError(`Файл STL обрезан или повреждён: в заголовке ${faces.toLocaleString('ru-RU')} треугольников, а данных меньше.`);
   }
   // лишние байты в конце (некоторые программы дописывают) — не страшно
+}
+
+interface PlyProp { type: string; countType?: string }
+interface PlyElement { name: string; count: number; props: PlyProp[] }
+
+const PLY_SIZE: Record<string, number> = {
+  char: 1, uchar: 1, int8: 1, uint8: 1, short: 2, ushort: 2, int16: 2, uint16: 2,
+  int: 4, uint: 4, int32: 4, uint32: 4, float: 4, float32: 4, double: 8, float64: 8,
+};
+
+/** Заголовок PLY: формат, элементы и смещение данных; null — заголовок не разобрать (тогда решает загрузчик). */
+function plyHeader(buf: ArrayBuffer): { format: string; elements: PlyElement[]; body: number } | null {
+  const bytes = new Uint8Array(buf, 0, Math.min(buf.byteLength, 65536));
+  const text = new TextDecoder('latin1').decode(bytes);
+  const end = /end_header[ \t]*\r?\n/.exec(text);
+  if (!end) return null;
+  let format = '';
+  const elements: PlyElement[] = [];
+  for (const line of text.slice(0, end.index).split(/\r?\n/)) {
+    const w = line.trim().split(/\s+/);
+    if (w[0] === 'format') format = w[1];
+    else if (w[0] === 'element') elements.push({ name: w[1], count: Number(w[2]), props: [] });
+    else if (w[0] === 'property' && elements.length) {
+      elements[elements.length - 1].props.push(w[1] === 'list' ? { type: w[3], countType: w[2] } : { type: w[1] });
+    }
+  }
+  if (!elements.every((e) => Number.isInteger(e.count) && e.count >= 0)) return null;
+  return { format, elements, body: end.index + end[0].length };
+}
+
+/**
+ * Обрезанный PLY (файл не докопирован): загрузчик three.js текстовый файл читает частично — комната распознаётся по
+ * части скана или не распознаётся с советом пересканировать, — а на двоичном падает. Проверяем, что данных столько,
+ * сколько заявлено в заголовке.
+ */
+function checkPly(buf: ArrayBuffer) {
+  const h = plyHeader(buf);
+  if (!h) return;
+  const truncated = () => {
+    const n = (name: string) => (h.elements.find((e) => e.name === name)?.count ?? 0).toLocaleString('ru-RU');
+    return new ScanError(`Файл PLY обрезан или повреждён: в заголовке ${n('vertex')} точек и ${n('face')} граней, а данных меньше. Скопируйте или экспортируйте файл заново.`);
+  };
+  const data = new Uint8Array(buf, h.body);
+  if (h.format === 'ascii') {
+    // в текстовом PLY строка данных — одна строка файла
+    let rows = 0, inRow = false, lastStart = 0, lastEnd = data.length;
+    for (let i = 0; i < data.length; i++) {
+      const c = data[i];
+      if (c === 10 || c === 13) {
+        if (inRow) { rows++; inRow = false; lastEnd = i; }
+      } else if (c !== 32 && c !== 9 && !inRow) {
+        inRow = true;
+        lastStart = i;
+        lastEnd = data.length;
+      }
+    }
+    if (inRow) rows++;
+    const total = h.elements.reduce((s, e) => s + e.count, 0);
+    if (rows < total) throw truncated();
+    // последняя строка оборвана: значений меньше, чем требуют свойства её элемента
+    const last = h.elements.filter((e) => e.count > 0).at(-1);
+    if (!last || rows > total) return;
+    const words = new TextDecoder().decode(data.subarray(lastStart, lastEnd)).trim().split(/\s+/);
+    let k = 0;
+    for (const p of last.props) k += p.countType ? 1 + Number(words[k]) : 1;
+    if (!(k <= words.length)) throw truncated();
+    return;
+  }
+  if (h.format !== 'binary_little_endian' && h.format !== 'binary_big_endian') return;
+  const little = h.format === 'binary_little_endian';
+  const dv = new DataView(buf);
+  const read = (type: string, at: number) => {
+    switch (PLY_SIZE[type]) {
+      case 1: return dv.getUint8(at);
+      case 2: return dv.getUint16(at, little);
+      default: return dv.getUint32(at, little);
+    }
+  };
+  let at = h.body;
+  for (const e of h.elements) {
+    if (e.props.some((p) => !PLY_SIZE[p.type] || (p.countType && !PLY_SIZE[p.countType]))) return;
+    if (!e.props.some((p) => p.countType)) {
+      at += e.count * e.props.reduce((s, p) => s + PLY_SIZE[p.type], 0);
+      if (at > buf.byteLength) throw truncated();
+      continue;
+    }
+    for (let r = 0; r < e.count; r++) {
+      for (const p of e.props) {
+        if (!p.countType) { at += PLY_SIZE[p.type]; continue; }
+        if (at + PLY_SIZE[p.countType] > buf.byteLength) throw truncated();
+        at += PLY_SIZE[p.countType] + read(p.countType, at) * PLY_SIZE[p.type];
+      }
+      if (at > buf.byteLength) throw truncated();
+    }
+  }
 }
 
 const LABEL_RE = /^(door|window|opening)[\s_-]*\d*$/i;
