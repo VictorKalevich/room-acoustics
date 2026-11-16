@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { draftSaved } from './helpers';
+import { draftSaved, fitsWidth } from './helpers';
 
 // 026: точность расчёта — общая настройка проекта; узкое сглаживание доступно только при подробных данных
 test('точность расчёта открывает сглаживание 1/24 и 1/48, предупреждает о времени и общая для расстановки и голоса', async ({ page }) => {
@@ -42,6 +42,6 @@ test('точность расчёта открывает сглаживание 
   await expect(manual.getByRole('button', { name: 'Сглаживание 1/48', exact: true })).toHaveCount(0);
   for (const width of [320, 393]) {
     await page.setViewportSize({ width, height: 852 });
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect.poll(() => fitsWidth(page)).toBe(true);
   }
 });

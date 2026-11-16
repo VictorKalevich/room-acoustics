@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
-import { roomDraft } from './helpers';
+import { fitsWidth, roomDraft } from './helpers';
 
 async function add(page: Page, name: string) {
   await page.getByRole('button', { name: 'Добавить проём', exact: true }).click();
@@ -58,7 +58,7 @@ test('wall picker creates presets, keeps edited sizes and separates cards from a
       return [...cards.slice(1).map((card, i) => card.top - cards[i].bottom), action.top - cards[cards.length - 1].bottom];
     });
     for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(11);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await fitsWidth(page)).toBe(true);
   }
   await door.getByLabel('Что это', { exact: true }).selectOption('arch');
   const converted = page.locator('.wall-items .zone-card').filter({ has: page.getByLabel('Проём 2: стена', { exact: true }) });

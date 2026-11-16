@@ -88,6 +88,13 @@ export async function scanToSteps(page: Page, file: string) {
   await expect(page.getByRole('heading', { name: 'Шаг 1 из 4: Размеры' })).toBeVisible({ timeout: 30_000 });
 }
 
+/**
+ * Страница не шире окна. Сравнение — с `clientWidth`: в мобильной эмуляции Chrome `innerWidth` растёт до ширины
+ * содержимого, и сравнение с ним переполнения не замечает (047).
+ */
+export const fitsWidth = (page: Page, slack = 0) =>
+  page.evaluate((s) => document.documentElement.scrollWidth <= document.documentElement.clientWidth + s, slack);
+
 /** Журнал ошибок на устройстве (028). */
 export const errlog = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('ra-errors') ?? '[]') as { msg: string; ctx?: string }[]);
 
@@ -97,7 +104,7 @@ export async function fits(page: Page, what: string) {
     await page.emulateMedia({ colorScheme: theme });
     for (const width of [320, 393]) {
       await page.setViewportSize({ width, height: 852 });
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), { message: `${what}: ${theme} ${width}` }).toBe(true);
+      await expect.poll(() => fitsWidth(page, 1), { message: `${what}: ${theme} ${width}` }).toBe(true);
       expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe(theme === 'dark' ? 'rgb(228, 234, 236)' : 'rgb(23, 34, 43)');
       await expect(page.locator('[role=alert] .panel .small').first()).toHaveCSS('font-size', '14px');
     }

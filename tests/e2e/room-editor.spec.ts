@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { draftSaved } from './helpers';
+import { draftSaved, fitsWidth } from './helpers';
 
 // 019: конструктор комнаты — шаги, развёртка стены, ковры и шторы, мебель по списку.
 
@@ -213,7 +213,7 @@ test('027: шаг «Мебель» — при «Общей оценкой» од
   await expect(places.locator('.zone-card')).toHaveCount(2);
   for (const width of [320, 393]) {
     await page.setViewportSize({ width, height: 852 });
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect.poll(() => fitsWidth(page)).toBe(true);
   }
   if (process.env.UI_SCREENSHOTS) await page.screenshot({ path: 'test-results/furniture-general.png', fullPage: true });
 });

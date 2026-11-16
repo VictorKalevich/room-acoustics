@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { fitsWidth } from './helpers';
 
 const value = (page: Page, metric: string) => page.getByTestId(metric).locator('.voice-metric__value');
 const ready = async (page: Page) => {
@@ -62,7 +63,7 @@ test('room recommendations and best facing use the room metric, while RT60 stays
   await expect(value(page, 'voice-reverb')).toHaveText(rt!);
   for (const width of [320, 393]) {
     await page.setViewportSize({ width, height: 852 });
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect.poll(() => fitsWidth(page)).toBe(true);
   }
   if (process.env.UI_SCREENSHOTS) await page.locator('.voice-metrics').screenshot({ path: `work/previews/voice-metrics-${test.info().project.name}.png` });
 });

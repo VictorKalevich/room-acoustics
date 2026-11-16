@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { draftSaved } from './helpers';
+import { draftSaved, fitsWidth } from './helpers';
 
 test('smoothing preferences are independent for voice, manual and auto and survive reload', async ({ page }) => {
   await page.goto('/#voice');
@@ -57,7 +57,7 @@ test('smoothing changes only the curve, not the score, map or worker calculation
   await expect(curve).toHaveAttribute('points', before!);
   for (const width of [320, 393]) {
     await page.setViewportSize({ width, height: 852 });
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect.poll(() => fitsWidth(page)).toBe(true);
   }
   if (process.env.UI_SCREENSHOTS) await chart.screenshot({ path: 'work/previews/smoothing-voice.png' });
 });

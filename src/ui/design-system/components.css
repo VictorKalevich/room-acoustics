@@ -112,6 +112,8 @@ textarea { font-size: var(--text-body); }
   display: flex; padding: var(--space-3); gap: var(--space-3);
   background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-control);
 }
+/* 047: варианты, не помещающиеся в строку, переходят на следующую; помещающиеся — прежние, равной ширины */
+.segmented { flex-wrap: wrap; }
 .segmented button, .tabs button {
   flex: 1; min-height: var(--touch-min); border: 0; border-radius: var(--r-small); background: none;
   font-size: var(--text-control); font-weight: var(--weight-medium); color: var(--muted); cursor: pointer;

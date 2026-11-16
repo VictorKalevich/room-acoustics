@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { draftSaved } from './helpers';
+import { draftSaved, fitsWidth } from './helpers';
 
 test('analysis entry, remembered subsection, back and forward', async ({ page }) => {
   await page.goto('/#room');
@@ -85,7 +85,7 @@ test('workspace fits small iPhone and desktop without horizontal overflow', asyn
     for (const route of ['room', 'room/size', 'room/walls', 'room/floor', 'room/furniture', 'analysis', 'tuning/sub', 'tuning/eq', 'tuning/treatment', 'measure/compare']) {
       await page.goto(`/#${route}`);
       await expect(page.locator('.topbar__title')).toBeVisible();
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await expect.poll(() => fitsWidth(page)).toBe(true);
       if (process.env.UI_SCREENSHOTS && width === 393) {
         await page.screenshot({ path: `work/previews/${route.replace('/', '-')}.png`, fullPage: true });
       }

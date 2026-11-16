@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { controlSkins } from '../../src/ui/design-system/registry';
+import { fitsWidth } from './helpers';
 
 test('all screens use registered control skins and shared text in both themes', async ({ page }) => {
   for (const theme of ['light', 'dark']) {
@@ -10,7 +11,7 @@ test('all screens use registered control skins and shared text in both themes', 
       await expect(page.locator('.topbar__title')).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
       // Font loading and retained-route layout can settle on the next rendering frame.
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), { message: `${theme} ${route}: overflow` }).toBe(true);
+      await expect.poll(() => fitsWidth(page, 1), { message: `${theme} ${route}: overflow` }).toBe(true);
       const audit = await page.evaluate((skins) => {
         const visible = (e: Element) => e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height > 0;
         const missing = [...document.querySelectorAll('button,input,select,textarea')].filter(visible).filter(e =>
