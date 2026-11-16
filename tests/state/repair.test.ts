@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearedRoom, defaultSources, newProject } from '../../src/state/project';
+import { clearedRoom, defaultSetup, defaultSources, newProject } from '../../src/state/project';
 import { normalizeProject, serializeProject } from '../../src/state/storage';
 import { markPlaced } from '../../src/state/variant';
 import { optimizePlacement } from '../../src/core/placement';
@@ -13,13 +13,17 @@ const raw = (p: unknown) => JSON.parse(serializeProject(p as never)).project;
 describe('проект с частично неверными данными открывается, а не заменяется новым (026)', () => {
   it('неверный диапазон одного источника возвращается к значениям по умолчанию', () => {
     const p = newProject();
-    const r = raw({ ...p, name: 'Студия', sources: p.sources.map((s) => (s.kind === 'sub' ? { ...s, fLow: 100, fHigh: 80 } : s)) });
+    const r = raw({
+      ...p,
+      name: 'Студия',
+      sources: p.sources.map((s) => (s.kind === 'sub' ? { ...s, fLow: 100, fHigh: 80 } : s.id === 'spkL' ? { ...s, fLow: 60 } : s)),
+    });
     const n = normalizeProject(r);
     expect(n.name).toBe('Студия');
     const sub = n.sources.find((s) => s.kind === 'sub')!;
     expect([sub.fLow, sub.fHigh]).toEqual([20, 80]);
-    // верные диапазоны не трогаются
-    expect(n.sources.find((s) => s.id === 'spkL')!.fLow).toBe(80);
+    // верный, но не стандартный диапазон не трогается
+    expect(n.sources.find((s) => s.id === 'spkL')!.fLow).toBe(60);
   });
 
   it('коридор мельче допустимого убирается, комната остаётся', () => {
@@ -42,14 +46,16 @@ describe('проект с частично неверными данными о�
     r.current.listener = { x: null, y: 1, z: 1 };
     r.current.positions.spkL = { x: null, y: null, z: null };
     const n = normalizeProject(r);
-    expect(n.sources.length).toBe(p.sources.length);
+    expect(n.sources).toEqual(p.sources);
     expect(n.room.openings).toEqual([]);
+    expect(n.room.zones).toEqual([]);
     expect(n.room.furnishing).toBe('typical');
     expect(n.constraints.earHeight).toBe(p.constraints.earHeight);
-    for (const v of [n.current.listener, ...Object.values(n.current.positions)]) {
-      expect([v.x, v.y, v.z].every(Number.isFinite)).toBe(true);
-    }
-    expect(Object.keys(n.current.positions).sort()).toEqual(p.sources.map((s) => s.id).sort());
+    // испорченные слушатель и колонка — на местах по умолчанию, остальные места не тронуты
+    const d = defaultSetup(n.room, n.sources, n.constraints);
+    expect(n.current.listener).toEqual(d.listener);
+    expect(n.current.positions.spkL).toEqual(d.positions.spkL);
+    expect(n.current.positions).toEqual({ ...p.current.positions, spkL: d.positions.spkL });
   });
 
   it('точность расчёта сохраняется в файле; стандартная не пишется', () => {

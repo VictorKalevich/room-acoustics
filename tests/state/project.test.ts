@@ -103,8 +103,8 @@ describe('окна и двери на плане', () => {
     const p = newProject();
     p.room.features = [{ id: 'w', kind: 'window', wall: 'left', a0: 1, a1: 2, bottom: 0.9, top: 2.2 }];
     const r = rotateRoom(p.room);
-    expect(r.features[0].wall).toBe('front');
-    expect(r.features[0].a1 - r.features[0].a0).toBeCloseTo(1);
+    // комната 5 × 4 м: левая стена (вдоль глубины) становится передней шириной 5 м, отсчёт — от другого торца
+    expect(r.features[0]).toEqual({ ...p.room.features[0], wall: 'front', a0: 3, a1: 4 });
     expect(rotateRoom(rotateRoom(rotateRoom(r)))).toEqual(p.room);
     const back = parseProjectFile(serializeProject(p));
     expect(back.room.features).toEqual(p.room.features);

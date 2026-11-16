@@ -19,11 +19,14 @@ describe('разбор планировки', () => {
     // в координатах распознавания коридор может оказаться за левой или правой стеной
     expect(['left', 'right']).toContain(e.wall);
     expect(Math.abs(e.depth - 1.2)).toBeLessThan(0.1);
-    expect(Math.abs(e.arch.a1 - e.arch.a0 - 1.4)).toBeLessThan(0.25);
-    expect(Math.abs(e.arch.height - 2.1)).toBeLessThan(0.15);
     expect(Math.abs(e.a1 - e.a0 - 5)).toBeLessThan(0.15);
-    // один из торцов открыт, другой закрыт
-    expect(e.openStart !== e.openEnd).toBe(true);
+    // в синтетике арка 1,0–2,4 м от передней стены, высотой 2,1 м; торец коридора у передней стены закрыт.
+    // За левой стеной комната распознана повёрнутой на 180°: отсчёт вдоль стены идёт от другого торца
+    const flip = e.wall === 'left';
+    expect(Math.abs(e.arch.a0 - (flip ? 2.6 : 1.0))).toBeLessThan(0.1);
+    expect(Math.abs(e.arch.a1 - (flip ? 4.0 : 2.4))).toBeLessThan(0.1);
+    expect(Math.abs(e.arch.height - 2.1)).toBeLessThan(0.1);
+    expect([e.openStart, e.openEnd]).toEqual(flip ? [true, false] : [false, true]);
     expect(lay.outline.length).toBeGreaterThan(100);
   });
 
@@ -33,6 +36,13 @@ describe('разбор планировки', () => {
     const lay = analyzeLayout(t2, d2.transform, d2);
     // окно 1,0–2,5 м на высоте 0,9–2,1 — не проём; дверь 0,5–1,4 м до 2,0 м — проём
     expect(lay.openings.length).toBe(1);
-    expect(lay.openings[0].a1 - lay.openings[0].a0).toBeGreaterThan(0.6);
+    // найденный проём — дверь на задней стене (у передней — если комната распознана повёрнутой на 180°), с точностью
+    // до клетки синтетического скана 0,2 м
+    const d = lay.openings[0];
+    expect(['back', 'front']).toContain(d.wall);
+    const [a0, a1] = d.wall === 'back' ? [0.5, 1.4] : [4 - 1.4, 4 - 0.5];
+    expect(Math.abs(d.a0 - a0)).toBeLessThanOrEqual(0.1 + 1e-9);
+    expect(Math.abs(d.a1 - a1)).toBeLessThanOrEqual(0.1 + 1e-9);
+    expect(Math.abs(d.height - 2.0)).toBeLessThanOrEqual(0.1 + 1e-9);
   });
 });

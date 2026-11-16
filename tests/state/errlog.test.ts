@@ -95,8 +95,10 @@ describe('отчёт о проблеме', () => {
     logError('scan', 'Неизвестный формат', 'scan.txt');
     const r = buildReport({ build: { time: '2026-11-08T10:00:00Z', sha: 'abc1234' }, device, errors: readErrors(), note: '  гудит  ' });
     expect(r.kind).toBe('room-acoustics-report');
-    expect(r.app.sha).toBe('abc1234');
-    expect(r.errors.length).toBe(1);
+    expect(r.app).toEqual({ build: '2026-11-08T10:00:00Z', sha: 'abc1234' });
+    expect(r.device).toEqual(device);
+    expect(r.errors).toEqual(readErrors());
+    expect(r.errors).toMatchObject([{ kind: 'scan', msg: 'Неизвестный формат', ctx: 'scan.txt' }]);
     expect(r.note).toBe('гудит');
     expect('project' in r).toBe(false);
     const withP = buildReport({ build: { time: '', sha: '' }, device, errors: [], project: { a: 1 } });

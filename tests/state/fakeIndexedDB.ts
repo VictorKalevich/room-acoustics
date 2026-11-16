@@ -50,7 +50,7 @@ export class FakeDB {
   get objectStoreNames() { return { contains: (n: string) => this.server.stores.has(n) }; }
   createObjectStore(name: string, opts?: { keyPath?: string }) { this.server.stores.set(name, { keyPath: opts?.keyPath, data: new Map() }); }
   transaction(name: string) {
-    if (this.closed) throw new DOMException('соединение закрыто', 'InvalidStateError');
+    if (this.closed) { this.server.closedTransactions++; throw new DOMException('соединение закрыто', 'InvalidStateError'); }
     const store = this.server.stores.get(name);
     if (!store) throw new DOMException(`нет хранилища ${name}`, 'NotFoundError');
     this.server.transactions++;
@@ -67,6 +67,8 @@ export class FakeIndexedDB {
   /** Сколько раз вызывали open и сколько транзакций начали. */
   opens = 0;
   transactions = 0;
+  /** Сколько раз пытались начать транзакцию на уже закрытом соединении. */
+  closedTransactions = 0;
   /** Столько следующих открытий завершится ошибкой. */
   failOpens = 0;
   /** Столько следующих открытий сначала получат blocked, а успех придёт позже. */

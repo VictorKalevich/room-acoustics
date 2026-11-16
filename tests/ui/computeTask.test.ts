@@ -229,12 +229,25 @@ describe('034: манера показа', () => {
 });
 
 describe('034: считать нечего', () => {
-  it('restart: change — задача снимается, «считаем», ошибка и результат сброшены', () => {
+  it('restart: change — задача снимается, «считаем», ошибка и результат сброшены', async () => {
     const s = setup();
-    s.change('A', { delay: 250, previous: 'keep' });
+    const opts: TaskOptions<string> = { delay: 250, previous: 'keep' };
+    s.change('A', opts);
     s.advance(250);
-    s.change(null, { delay: 250, previous: 'keep' });
-    expect(s.jobs[0].cancelled).toBe(true);
+    s.jobs[0].resolve('A');
+    await flush();
+    s.change('B', opts);
+    s.advance(250);
+    s.jobs[1].reject(new Error('сбой'));
+    await flush();
+    expect(s.state()).toMatchObject({ value: 'A', input: 'A', busy: false, error: 'сбой' });
+    s.change(null, opts);
+    expect(s.state()).toMatchObject({ value: null, input: null, busy: false, error: null });
+    s.change('C', opts);
+    s.advance(250);
+    expect(s.state().busy).toBe(true);
+    s.change(null, opts);
+    expect(s.jobs[2].cancelled).toBe(true);
     expect(s.state()).toMatchObject({ value: null, input: null, busy: false, error: null });
   });
 
@@ -243,12 +256,17 @@ describe('034: считать нечего', () => {
     const opts: TaskOptions<string> = { delay: 300, restart: 'start', previous: 'keep' };
     s.change('A', opts);
     s.advance(300);
-    s.change(null, opts);
-    expect(s.jobs[0].cancelled).toBe(false);
-    expect(s.state()).toMatchObject({ value: null, busy: true });
     s.jobs[0].resolve('A');
     await flush();
-    expect(s.state()).toMatchObject({ value: 'A', busy: false });
+    s.change('B', opts);
+    s.advance(300);
+    expect(s.state()).toMatchObject({ value: 'A', input: 'A', busy: true });
+    s.change(null, opts);
+    expect(s.jobs[1].cancelled).toBe(false);
+    expect(s.state()).toMatchObject({ value: null, input: null, busy: true });
+    s.jobs[1].resolve('B');
+    await flush();
+    expect(s.state()).toMatchObject({ value: 'B', input: 'B', busy: false });
   });
 
   it('idle: keep — задача снимается, «считаем» и ошибка сброшены, результат и его входы остаются; без него сброшены', async () => {

@@ -65,10 +65,13 @@ describe('исходы чтения черновика при запуске', (
     expect(idb.peek('meta', 'draft')).toEqual(JSON.parse(JSON.stringify(b)));
   });
 
-  it('ra-draft-pending удаляется после сохранения', async () => {
+  it('clearPendingDraft удаляет запись ra-draft-pending — открывается сохранённый черновик', async () => {
+    await st.saveDraft(project('Сохранённый'));
     st.stashPendingDraft(project('При уходе'));
+    expect(mem.getItem('ra-draft-pending')).not.toBeNull();
     st.clearPendingDraft();
     expect(mem.getItem('ra-draft-pending')).toBeNull();
+    expect((await st.loadDraft())?.name).toBe('Сохранённый');
   });
 });
 
@@ -122,6 +125,8 @@ describe('соединение с базой (029)', () => {
     idb.dropConnections(true);
     expect((await st.loadDraft())?.name).toBe('Студия');
     expect(idb.opens).toBe(2);
+    // новое соединение открыто сразу, без попытки на закрытом (её исправляет только повтор при молчаливом закрытии)
+    expect(idb.closedTransactions).toBe(0);
   });
 
   it('браузер закрыл соединение молча — операция повторяется один раз с новым', async () => {
@@ -130,6 +135,7 @@ describe('соединение с базой (029)', () => {
     await st.saveDraft(project('После'));
     expect((await st.loadDraft())?.name).toBe('После');
     expect(idb.opens).toBe(2);
+    expect(idb.closedTransactions).toBe(1);
   });
 
   it('после ошибки запроса следующая операция идёт по новому соединению', async () => {

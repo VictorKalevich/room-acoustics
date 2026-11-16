@@ -61,11 +61,11 @@ describe('загрузка: битые файлы', () => {
     b.set(new TextEncoder().encode('glTF'), 0);
     new DataView(b.buffer).setUint32(4, 2, true);
     new DataView(b.buffer).setUint32(8, 256, true);
-    await expectScanError(loadScan(file(b, 'scan.glb')), /glTF|GLB/);
+    await expectScanError(loadScan(file(b, 'scan.glb')), /^Не удалось прочитать glTF\/GLB: файл повреждён\.$/);
   });
 
   it('glTF: оборванный JSON', async () => {
-    await expectScanError(loadScan(file('{"asset":{"version":"2.0"},"meshes":[{', 'scan.gltf')));
+    await expectScanError(loadScan(file('{"asset":{"version":"2.0"},"meshes":[{', 'scan.gltf')), /^Не удалось прочитать glTF\/GLB: файл повреждён\.$/);
   });
 
   it('PLY: облако точек без граней', async () => {
@@ -102,8 +102,7 @@ describe('загрузка: битые файлы', () => {
         const t0 = performance.now();
         const r = await loadScan(file(b, `scan.${ext}`)).then(() => 'ok', (e) => e);
         expect(performance.now() - t0, `${ext}/${size}`).toBeLessThan(3000);
-        // либо понятная ошибка, либо (редко) из мусора всё-таки собралось что-то читаемое
-        if (r !== 'ok') expect(r, `${ext}/${size}: ${String(r)}`).toBeInstanceOf(ScanError);
+        expect(r, `${ext}/${size}: ${String(r)}`).toBeInstanceOf(ScanError);
       }
     }
   });
@@ -150,17 +149,21 @@ describe('очистка треугольников', () => {
   });
 
   it('номера размеченных объектов остаются при своих треугольниках', () => {
-    const t = new Float32Array(room.length + 18);
-    t.set(room);
-    t.fill(NaN, room.length, room.length + 9); // битый
-    t.set([5e5, 5e5, 5e5, 5e5 + 1, 5e5, 5e5, 5e5, 5e5 + 1, 5e5], room.length + 9); // далёкий
-    const n = t.length / 9;
+    // битый треугольник — четвёртым, далёкий — одиннадцатым: номера после них должны сдвинуться вместе с треугольниками
+    const bad = 3, far = 10;
+    const n = room.length / 9 + 2;
+    const t = new Float32Array(n * 9);
+    for (let i = 0, k = 0; i < n; i++) {
+      if (i === bad) t.fill(NaN, i * 9, i * 9 + 9);
+      else if (i === far) t.set([5e5, 5e5, 5e5, 5e5 + 1, 5e5, 5e5, 5e5, 5e5 + 1, 5e5], i * 9);
+      else t.set(room.subarray(9 * k, 9 * ++k), i * 9);
+    }
     const ids = new Uint16Array(n).map((_, i) => i % 7);
     const c = cleanTriangles(t, ids);
     expect(c.invalid).toBe(1);
     expect(c.outliers).toBe(1);
-    expect(c.ids!.length).toBe(n - 2);
-    expect(Array.from(c.ids!.subarray(0, 50))).toEqual(Array.from(ids.subarray(0, 50)));
+    expect(Array.from(c.triangles)).toEqual(Array.from(room));
+    expect(Array.from(c.ids!)).toEqual(Array.from(ids).filter((_, i) => i !== bad && i !== far));
   });
 });
 

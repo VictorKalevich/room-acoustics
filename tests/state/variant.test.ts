@@ -41,12 +41,13 @@ describe('варианты расстановки', () => {
   });
 
   it('применение варианта: места и настройки сабвуферов из варианта, раздел сброшен, имя и замер на месте', () => {
-    const cur = { ...def, name: 'Моя', crossoverHz: 80, subSettings: { x: { delayMs: 3, phaseDeg: 0, gainDb: 0 } } };
+    const measurement = { name: 'Замер', importedAt: '2026-11-14T10:00:00.000Z', f: [20, 500], db: [70, 70] };
+    const cur = { ...def, name: 'Моя', crossoverHz: 80, measurement, subSettings: { x: { delayMs: 3, phaseDeg: 0, gainDb: 0 } } };
     const v = variant(0.5, { subSettings: { [ids[ids.length - 1]]: { delayMs: 1.5, phaseDeg: 180, gainDb: -2 } } });
     const s = setupFromPlacement(cur, v);
     expect(s.name).toBe('Моя');
     expect(s.id).toBe(cur.id);
-    expect(s.measurement).toBe(cur.measurement);
+    expect(s.measurement).toBe(measurement);
     expect(s.crossoverHz).toBeNull();
     expect(s.subSettings).toEqual(v.subSettings);
     expect(sameLayout(s, placementLayout(v))).toBe(true);
