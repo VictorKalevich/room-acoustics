@@ -26,7 +26,7 @@ import { ROOM_STEPS, setLeaveGuard, type RoomStep } from '../../navigation';
 import { useViewState } from '../../useViewState';
 import { DIMS, draftDiffers, dropRoomDraft, loadRoomDraft, saveRoomDraft, withOutside, type DimKey, type RoomDraft } from '../../roomDraft';
 import { requestScanFix } from '../../scanFix';
-import { saveRoom } from '../../roomSetup';
+import { discardRoomDraft, saveRoom } from '../../roomSetup';
 import { RotateIcon } from './icons';
 import { S } from '../../strings';
 import { fmt } from '../../format';
@@ -240,7 +240,7 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
       {leave && (
         <ConfirmSheet title={S.editor.leaveTitle} text={S.editor.leaveText} tone="primary"
           confirm={S.editor.save} cancel={S.editor.leaveStay}
-          extra={{ label: S.editor.leaveDiscard, onClick: () => { const go = leave.proceed; setLeave(null); forget(); go(); } }}
+          extra={{ label: S.editor.leaveDiscard, onClick: () => { const go = leave.proceed; setLeave(null); discardRoomDraft(project); clearLocal(); go(); } }}
           onCancel={() => setLeave(null)}
           onConfirm={() => { const go = leave.proceed; setLeave(null); save(go); }} />
       )}
