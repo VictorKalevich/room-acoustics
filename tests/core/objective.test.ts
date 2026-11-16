@@ -65,11 +65,12 @@ describe('цели подбора', () => {
     const first = objectiveModes(room, { id: 'modes', modePreset: 'first' }, 20, 200);
     expect(first.map((m) => m.n.join(''))).toEqual(expect.arrayContaining(['100', '010', '001']));
     expect(first).toHaveLength(3);
+    const all = computeModes(room, 200).filter((m) => m.f >= 20);
     const axial = objectiveModes(room, { id: 'modes', modePreset: 'axial' }, 20, 200);
-    expect(axial.every((m) => m.f <= 150 && m.n.filter((v) => v > 0).length === 1)).toBe(true);
+    expect(axial.map((m) => m.n.join(''))).toEqual(all.filter((m) => m.kind === 'axial' && m.f <= 150).map((m) => m.n.join('')));
     expect(axial.find((m) => m.n.join('') === '100')!.w).toBeGreaterThan(axial.find((m) => m.n.join('') === '200')!.w);
     const lowest = objectiveModes(room, { id: 'modes', modePreset: 'lowest' }, 20, 200);
-    expect(lowest).toHaveLength(6);
+    expect(lowest.map((m) => [m.n.join(''), m.f])).toEqual(all.slice(0, 6).map((m) => [m.n.join(''), m.f]));
     const custom = objectiveModes(room, { id: 'modes', modePreset: 'custom', modes: [[1, 1, 0], [9, 9, 9]] }, 20, 200);
     expect(custom.map((m) => [m.n.join(''), m.w])).toEqual([['110', 0.5]]);
   });
@@ -117,19 +118,21 @@ describe('цель в подборе и на картах', () => {
   const sources = defaultSources(2, 1);
   const base = defaultConstraints(room);
   const flatC = { ...base, objective: { id: 'flat' as const } };
-  const lowC = { ...base, objective: { id: 'lowDips' as const } };
-  const evalWith = (p: Placement, c: typeof base) => {
-    const positions = Object.fromEntries(p.sources.map((s) => [s.id, s.pos]));
-    return evaluateSetup(room, sources, c, { listener: p.listener, positions, subSettings: {}, crossoverHz: null });
-  };
 
-  it('подбор по цели находит вариант не хуже по этой цели, чем подбор по ровности, и наоборот', () => {
-    const byFlat = optimizePlacement({ room, sources, constraints: flatC }).best[0];
-    const byLow = optimizePlacement({ room, sources, constraints: lowC }).best[0];
-    expect(evalWith(byLow, lowC).objScore).toBeLessThanOrEqual(evalWith(byFlat, lowC).objScore + 1e-6);
-    expect(evalWith(byFlat, flatC).score).toBeLessThanOrEqual(evalWith(byLow, flatC).score + 1e-6);
+  it('подбор по цели находит вариант лучше по этой цели, чем подбор по ровности, и наоборот', () => {
+    // в 5 × 4 × 2,5 м лучшие варианты по провалам и по ровности совпадают; в 6 × 4,2 × 2,7 м — разные
+    const r6 = { ...room, depth: 6, width: 4.2, height: 2.7 };
+    const c6 = defaultConstraints(r6);
+    const flat6 = { ...c6, objective: { id: 'flat' as const } };
+    const low6 = { ...c6, objective: { id: 'lowDips' as const } };
+    const ev6 = (p: Placement, c: typeof c6) =>
+      evaluateSetup(r6, sources, c, { listener: p.listener, positions: Object.fromEntries(p.sources.map((s) => [s.id, s.pos])), subSettings: {}, crossoverHz: null });
+    const byFlat = optimizePlacement({ room: r6, sources, constraints: flat6 }).best[0];
+    const byLow = optimizePlacement({ room: r6, sources, constraints: low6 }).best[0];
+    expect(ev6(byLow, low6).objScore).toBeLessThan(ev6(byFlat, low6).objScore - 0.2);
+    expect(ev6(byFlat, flat6).score).toBeLessThan(ev6(byLow, flat6).score - 0.2);
     // оценка варианта по цели записана в нём
-    expect(byLow.objScore).toBeCloseTo(evalWith(byLow, lowC).objScore, 6);
+    expect(byLow.objScore).toBeCloseTo(ev6(byLow, low6).objScore, 6);
   });
 
   it('при «ровном басе» оценка по цели совпадает с неровностью', () => {

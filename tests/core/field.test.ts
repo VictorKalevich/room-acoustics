@@ -31,10 +31,14 @@ describe('карта мест слушателя', () => {
   it('точки в зоне «нельзя сидеть» не оцениваются', () => {
     const zr = { ...room, zones: [{ id: 'z', kind: 'furniture' as const, x0: 2, x1: 3.5, y0: 1, y1: 3, canSit: false }] };
     const hz = listenerHeatmap(zr, sources, c, setup);
+    expect(hz.best.length).toBe(3);
     for (const b of hz.best) expect(b.pos.x >= 2 && b.pos.x <= 3.5 && b.pos.y >= 1 && b.pos.y <= 3).toBe(false);
-    const i = Math.round((2.5 - hz.x0) / hz.step);
-    const j = Math.round((2 - hz.y0) / hz.step);
-    expect(Number.isNaN(hz.scores[i * hz.ny + j])).toBe(true);
+    const cell = (x: number, y: number) => Math.round((x - hz.x0) / hz.step) * hz.ny + Math.round((y - hz.y0) / hz.step);
+    expect(Number.isNaN(hz.scores[cell(2.5, 2)])).toBe(true);
+    expect(hz.allowed[cell(2.5, 2)]).toBe(0);
+    // вне зоны точка оценивается, как и без зоны
+    expect(hz.scores[cell(1.5, 2)]).toBeCloseTo(h.scores[cell(1.5, 2)], 9);
+    expect(Number.isFinite(h.scores[cell(2.5, 2)])).toBe(true);
   });
 });
 
@@ -50,6 +54,17 @@ describe('карта мест сабвуфера', () => {
 
   it('зона «углы» — рекомендации только в углах', () => {
     const hc = subHeatmap(room, sources, { ...c, subZone: 'corners' }, setup, 'sub1');
+    expect(hc.best.length).toBe(3);
+    // допустимы только узлы у двух стен сразу (не дальше 0,5 м), и такие узлы есть
+    let corners = 0, others = 0;
+    for (let i = 0; i < hc.nx; i++)
+      for (let j = 0; j < hc.ny; j++) {
+        const x = hc.x0 + i * hc.step, y = hc.y0 + j * hc.step;
+        const near = Math.min(x, room.depth - x) <= 0.5 + 1e-9 && Math.min(y, room.width - y) <= 0.5 + 1e-9;
+        if (hc.allowed[i * hc.ny + j]) { if (near) corners++; else others++; }
+      }
+    expect(others).toBe(0);
+    expect(corners).toBeGreaterThanOrEqual(4);
     for (const b of hc.best) {
       expect(Math.min(b.pos.x, room.depth - b.pos.x)).toBeLessThanOrEqual(0.5 + 1e-9);
       expect(Math.min(b.pos.y, room.width - b.pos.y)).toBeLessThanOrEqual(0.5 + 1e-9);

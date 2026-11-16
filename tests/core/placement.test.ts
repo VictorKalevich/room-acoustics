@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { optimizePlacement, baselinePlacement } from '../../src/core/placement';
 import { defaultConstraints, defaultRoom, defaultSources } from '../../src/state/project';
 import { PlacementError, type Placement, type Constraints, type Room } from '../../src/core/types';
+import { evaluateSetup } from '../../src/core/system';
 
 const room = defaultRoom();
 const sources = defaultSources(2, 1);
@@ -47,7 +48,9 @@ describe('optimizePlacement', () => {
     const r = p.sources.find((s) => s.id === 'spkR')!.pos;
     expect(l.x).toBeCloseTo(r.x, 9);
     expect(l.y + r.y).toBeCloseTo(room.width, 9);
-    expect(p.angleDeg).not.toBeNull();
+    // угол между направлениями от слушателя на левую и правую колонку на плане (колонки впереди)
+    const dir = (q: { x: number; y: number }) => Math.atan2(q.y - p.listener.y, p.listener.x - q.x);
+    expect(p.angleDeg!).toBeCloseTo((Math.abs(dir(l) - dir(r)) * 180) / Math.PI, 6);
   });
 
   it('диапазон сабвуфера влияет на оценку', () => {
@@ -81,7 +84,8 @@ describe('optimizePlacement', () => {
     const b = baselinePlacement(room, sources, constraints);
     expect(b.listener.x).toBeCloseTo(0.38 * room.depth, 6);
     const sub = b.sources.find((s) => s.id === 'sub1')!.pos;
-    expect(sub.x).toBeLessThan(0.5);
+    expect(sub.x).toBeCloseTo(constraints.subWallGap, 9);
+    expect(Math.min(sub.y, room.width - sub.y)).toBeCloseTo(constraints.subWallGap, 9);
   });
 });
 
@@ -89,8 +93,16 @@ describe('места и зоны в автоподборе', () => {
   it('три места: все внутри комнаты, оценка по местам', () => {
     const c3 = { ...constraints, seats: { count: 3, spacing: 0.6 } };
     const r = optimizePlacement({ room, sources, constraints: c3 });
-    expect(r.best[0].seats.length).toBe(3);
-    for (const s of r.best[0].seats) { expect(s.y).toBeGreaterThan(0); expect(s.y).toBeLessThan(room.width); }
+    const b = r.best[0];
+    expect(b.seats.length).toBe(3);
+    for (const s of b.seats) { expect(s.y).toBeGreaterThan(0); expect(s.y).toBeLessThan(room.width); }
+    // оценка варианта — неровность, усреднённая поровну по трём местам, плюс штрафы расстановки колонок
+    const e = evaluateSetup(room, sources, c3, { listener: b.listener, positions: Object.fromEntries(b.sources.map((s) => [s.id, s.pos])), subSettings: {}, crossoverHz: null });
+    expect(e.receivers).toEqual(b.seats);
+    const mean = e.perReceiver.reduce((a, v) => a + v, 0) / 3;
+    expect(b.scoreSeats).toBeCloseTo(mean, 6);
+    expect(b.score).toBeCloseTo(mean + b.penalties.reduce((a, x) => a + x.value, 0), 6);
+    expect(new Set(e.perReceiver.map((v) => v.toFixed(3))).size).toBe(3);
   });
 
   it('зона на лучшем месте сабвуфера → сабвуфер ставится в другом месте', () => {

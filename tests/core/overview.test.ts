@@ -4,6 +4,8 @@ import { audibleDecay, buildOverview, decayLimit, ebuLimit, ebuTm, modeDecays, r
 import { computeModes } from '../../src/core/modes';
 import { computeReverb } from '../../src/core/reverb';
 import { evaluateSetup } from '../../src/core/system';
+import { modalAbsorptionAt } from '../../src/core/response';
+import type { ModeKind } from '../../src/core/types';
 
 describe('обзор комнаты', () => {
   const p = newProject();
@@ -38,9 +40,14 @@ describe('обзор комнаты', () => {
     const d = modeDecays(p.room, modes, rev, 200);
     expect(d.length).toBeGreaterThan(10);
     expect(d.every((x) => x.t60 > 0 && Number.isFinite(x.t60))).toBe(true);
-    const ax = d.find((x) => x.kind === 'axial')!;
-    const ob = d.find((x) => x.kind === 'oblique')!;
-    expect(ob.t60).toBeLessThan(ax.t60 * 1.01);
+    // одна частота: δ ∝ εx·Bx + εy·By + εz·Bz, ε = 2 по оси с n > 0, иначе 1 — у косой моды поглощают все стены вдвое
+    const at = (n: [number, number, number], kind: ModeKind) => ({ n, f: 60, kind, degenerate: false, clustered: false });
+    const [ax, tg, ob] = modeDecays(p.room, [at([1, 0, 0], 'axial'), at([1, 1, 0], 'tangential'), at([1, 1, 1], 'oblique')], rev, 200).map((x) => x.t60);
+    const a = modalAbsorptionAt(p.room, 60);
+    const [bx, by, bz] = [a.front + a.back, a.left + a.right, a.floor + a.ceiling];
+    expect(ax / ob).toBeCloseTo((2 * bx + 2 * by + 2 * bz) / (2 * bx + by + bz), 6);
+    expect(tg / ob).toBeCloseTo((2 * bx + 2 * by + 2 * bz) / (2 * bx + 2 * by + bz), 6);
+    expect(tg).toBeLessThan(ax);
   });
 
   it('оценка 0–100 и проблемы с действиями', () => {

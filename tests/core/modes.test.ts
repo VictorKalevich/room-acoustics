@@ -51,6 +51,10 @@ describe('computeModes', () => {
     const cube = computeModes(room(4, 4, 2), 200);
     const m100 = cube.find((m) => m.n.join() === '1,0,0')!;
     expect(m100.degenerate).toBe(true);
+    // 5 × 4 × 2,5 м: 34,3 Гц ни с чем не совпадает, а (2,0,0) и (0,0,1) — обе 68,6 Гц
+    const box = computeModes(room(5, 4, 2.5), 200);
+    const deg = (n: string) => box.find((m) => m.n.join() === n)!.degenerate;
+    expect([deg('1,0,0'), deg('0,1,0'), deg('2,0,0'), deg('0,0,1')]).toEqual([false, false, true, true]);
     expect(proportionsNotes(room(4, 4, 2)).length).toBeGreaterThan(0);
     expect(proportionsNotes(room(5.2, 4.1, 2.7)).length).toBe(0);
   });

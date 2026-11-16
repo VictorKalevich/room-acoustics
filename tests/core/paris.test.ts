@@ -22,7 +22,10 @@ describe('проводимость проёма в стене', () => {
   });
 
   it('на басу в 5–7 раз меньше согласованной границы ρc (β = 1); проём больше — проводимость выше', () => {
-    expect(8 * apertureBeta(1.8, 50)).toBeLessThan(1.6);
+    for (const f of [30, 40, 50, 63]) {
+      expect(apertureBeta(1.8, f), `${f} Гц`).toBeGreaterThan(1 / 7);
+      expect(apertureBeta(1.8, f), `${f} Гц`).toBeLessThan(1 / 5);
+    }
     expect(apertureBeta(6, 60)).toBeGreaterThan(apertureBeta(1.8, 60));
   });
 });

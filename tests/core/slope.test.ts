@@ -23,7 +23,16 @@ describe('скос потолка', () => {
   });
   it('волновая сетка без воздуха под скосом', () => {
     const g0 = buildGrid(p.room, 120), g1 = buildGrid(room, 120);
-    expect(g1.N).toBeLessThan(g0.N);
+    expect(g1.h).toBe(g0.h);
+    // узлов меньше настолько, насколько меньше объём, и ни одного узла над наклонным потолком
+    expect(g1.N / g0.N).toBeCloseTo(roomVolume(room) / roomVolume(p.room), 1);
+    let above = 0;
+    for (let n = 0; n < g1.N; n++) {
+      const cell = g1.nodeCell[n];
+      const x = g1.x0 + (cell % g1.nx) * g1.h, y = g1.y0 + (Math.floor(cell / g1.nx) % g1.ny) * g1.h, z = g1.z0 + Math.floor(cell / (g1.nx * g1.ny)) * g1.h;
+      if (z > ceilingAt(room, x, y) + 1e-9) above++;
+    }
+    expect(above).toBe(0);
   });
   it('поворот переносит скос к другой стене', () => {
     expect(rotateRoom(room).slope!.wall).toBe('right');

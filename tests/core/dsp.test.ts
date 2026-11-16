@@ -93,8 +93,11 @@ describe('участок свипа в длинной записи', () => {
     rec.set(sw, fs * 3);
     const seg = sweepSegment(rec, sw.length, fs)!;
     expect(seg).not.toBeNull();
-    expect(seg.length).toBeLessThan(fs * 4);
-    expect(seg.length).toBeGreaterThan(sw.length);
+    // участок — от 0,3 с до начала свипа до 1,2 с после его конца (с точностью до блока огибающей 10 мс)
+    const from = seg.byteOffset / Float32Array.BYTES_PER_ELEMENT;
+    expect(seg.buffer).toBe(rec.buffer);
+    expect(Math.abs(from - (3 - 0.3) * fs)).toBeLessThanOrEqual(0.01 * fs);
+    expect(Math.abs(from + seg.length - (3 * fs + sw.length + 1.2 * fs))).toBeLessThanOrEqual(0.01 * fs);
     const cut = new Float32Array(fs * 4);
     cut.set(sw.subarray(0, fs * 1.5), fs * 2.5);
     expect(sweepSegment(cut, sw.length, fs)).toBeNull();

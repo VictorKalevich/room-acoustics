@@ -5,6 +5,9 @@ import { computeReverb, absorptionAreaAt } from '../../src/core/reverb';
 import { computeModes } from '../../src/core/modes';
 import { cabs, db20 } from '../../src/core/frequency';
 import { speedOfSound } from '../../src/core/physics';
+import { betaFromAlpha } from '../../src/core/paris';
+import { alphaAt, getMaterial } from '../../src/core/materials';
+import { furnishingOctaves } from '../../src/core/furniture';
 import { defaultRoom } from '../../src/state/project';
 
 const room = defaultRoom(); // 5 × 4 × 2,5
@@ -53,7 +56,11 @@ describe('модальная передаточная функция', () => {
     const rev = computeReverb(room);
     const oblique = computeModes(room, 300).find((m) => m.kind === 'oblique')!;
     const noPatches = { ...room, features: [], openings: [] };
-    const B = Object.values(modalAbsorptionAt(noPatches, oblique.f)).reduce((a, b) => a + b, 0);
+    const { depth: d, width: w, height: h } = noPatches;
+    const S = { floor: d * w, ceiling: d * w, front: w * h, back: w * h, left: d * h, right: d * h };
+    const beta = (k: keyof typeof S) => betaFromAlpha(alphaAt(getMaterial(noPatches.materials[k]).alpha, oblique.f));
+    const B = 8 * (Object.keys(S) as (keyof typeof S)[]).reduce((a, k) => a + beta(k) * S[k], 0) + alphaAt(furnishingOctaves(noPatches), oblique.f) * S.floor;
+    expect(Object.values(modalAbsorptionAt(noPatches, oblique.f)).reduce((a, b) => a + b, 0)).toBeCloseTo(B, 9);
     expect(modeDamping(oblique, noPatches, rev)).toBeCloseTo((c * B) / (8 * rev.volume), 6);
     // β по формуле Пари больше α/8: мода затухает быстрее, чем по Сэбину с табличным α, но не больше чем на треть
     const ratio = modeDamping(oblique, room, rev) / ((c * absorptionAreaAt(rev, oblique.f)) / (8 * rev.volume));
@@ -64,7 +71,19 @@ describe('модальная передаточная функция', () => {
   it('подстройка по замеру умножает затухание (кроме проёмов)', () => {
     const m = computeModes(room, 120)[3];
     const k = 1.7;
-    expect(modeDamping(m, { ...room, openings: [], calibration: { dampingScale: k } })).toBeCloseTo(k * modeDamping(m, { ...room, openings: [] }), 9);
+    const damp = (r: Room, scale = 1) => modeDamping(m, { ...r, calibration: { dampingScale: scale } });
+    // окно и дверь умножаются вместе со стенами
+    const closed: Room = { ...room, openings: [], features: [
+      { id: 'w', kind: 'window', wall: 'left', a0: 1, a1: 2.5, bottom: 0.9, top: 2.1 },
+      { id: 'd', kind: 'door', wall: 'back', a0: 0.5, a1: 1.4, bottom: 0, top: 2 },
+    ] };
+    expect(damp(closed)).not.toBeCloseTo(damp({ ...closed, features: [] }), 6);
+    expect(damp(closed, k)).toBeCloseTo(k * damp(closed), 9);
+    // проводимость проёма не умножается: δ(k) = k·δ_стен + δ_проёма
+    const open: Room = { ...room, features: [], openings: [{ id: 'o', wall: 'back', a0: 0.5, a1: 1.4, height: 2 }] };
+    const aperture = 2 * damp(open) - damp(open, 2);
+    expect(aperture).toBeGreaterThan(0.05 * damp(open));
+    expect(damp(open, k)).toBeCloseTo(k * damp(open) - (k - 1) * aperture, 9);
   });
 });
 

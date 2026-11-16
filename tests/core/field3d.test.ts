@@ -69,10 +69,19 @@ describe('поле в прямоугольной модели', () => {
   });
 
   it('частоты полосы', () => {
+    // равный шаг в октавах, не крупнее 1/24 октавы и как можно меньше точек, но не больше 16
+    const step = (b: number[]) => b.slice(1).map((v, i) => Math.log2(v / b[i]));
     const b = bandFreqs(40, 60);
     expect(b[0]).toBe(40);
-    expect(b[b.length - 1]).toBeCloseTo(60);
-    expect(b.length).toBeLessThanOrEqual(16);
+    expect(b[b.length - 1]).toBeCloseTo(60, 9);
+    expect(b.length).toBe(16);
+    for (const s of step(b)) { expect(s).toBeCloseTo(Math.log2(1.5) / 15, 9); expect(s).toBeLessThanOrEqual(1 / 24); }
+    const narrow = bandFreqs(44, 40);
+    expect(narrow.length).toBe(5);
+    expect([narrow[0], narrow[4]]).toEqual([40, expect.closeTo(44, 9)]);
+    for (const s of step(narrow)) expect(s).toBeCloseTo(Math.log2(1.1) / 4, 9);
+    expect(bandFreqs(40, 80).length).toBe(16);
+    expect(bandFreqs(40, 40.3)).toEqual([40]);
   });
 });
 

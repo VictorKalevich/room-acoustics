@@ -147,8 +147,11 @@ describe('заготовки и геометрия (019)', () => {
     for (let i = 0; i < 4; i++) r = rotateRoom(r);
     expect(r.coverings!.map((c) => [c.surface, +c.u0.toFixed(9), +c.u1.toFixed(9), +c.v0.toFixed(9), +c.v1.toFixed(9)]))
       .toEqual([rug, curtains, { ...curtains, surface: 'front', u0: 0.5, u1: 1.5 }].map((c) => [c.surface, c.u0, c.u1, c.v0, c.v1]));
-    const once = rotateCovering(room(), curtains);
-    expect(once.surface).not.toBe('left');
+    // один поворот 5 × 4 м: точка (x, y) → (y, 5 − x); левая стена становится передней, отсчёт по ней — от новой левой
+    const once = rotateRoom(room({ coverings: [rug, curtains] })).coverings!;
+    expect(once[0]).toMatchObject({ surface: 'floor', u0: 1, u1: 3, v0: 1, v1: 4 });
+    expect(once[1]).toMatchObject({ surface: 'front', u0: 1.5, u1: 4, v0: 0, v1: 2.5 });
+    expect(rotateCovering(room(), { ...curtains, surface: 'front', u0: 0.5, u1: 1.5 })).toMatchObject({ surface: 'right', u0: 0.5, u1: 1.5 });
   });
 
   it('категории скана получают типы мебели', () => {

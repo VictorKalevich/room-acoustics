@@ -20,6 +20,9 @@ describe('parseRew', () => {
     expect(m.f[0]).toBeCloseTo(15, 6);
     expect(m.f.at(-1)).toBeCloseTo(500, 6);
     expect(m.db.length).toBe(m.f.length);
+    // уровни — из второго столбца (SPL), перенесённые на свою сетку частот; до 200 Гц точки файла частые
+    m.f.forEach((x, i) => { if (x <= 200) expect(Math.abs(m.db[i] - (80 + Math.sin(x / 10))), `${x} Гц`).toBeLessThan(0.06); });
+    expect(m.f.filter((x) => x <= 200).length).toBeGreaterThan(50);
   });
 
   it('файл без данных → понятная ошибка', () => {

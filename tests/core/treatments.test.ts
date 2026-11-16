@@ -28,6 +28,13 @@ describe('обработка', () => {
     const g0 = buildGrid(p.room, 120);
     const g1 = buildGrid({ ...p.room, treatments: plan, treatmentsOn: true }, 120);
     expect(g1.key).not.toBe(g0.key);
+    // та же сетка узлов, другие граничные коэффициенты у узлов на обработке, и оценка затухания короче
+    expect(g1.N).toBe(g0.N);
+    let changed = 0;
+    for (let n = 0; n < g0.N; n++) if (g1.ca[n] !== g0.ca[n] || g1.cb[n] !== g0.cb[n] || g1.cd[n] !== g0.cd[n]) changed++;
+    expect(changed).toBeGreaterThan(0);
+    expect(changed).toBeLessThan(g0.N / 4);
+    expect(g1.t60).toBeLessThan(g0.t60 * 0.95);
   });
   it('поворот комнаты 4 раза возвращает план', () => {
     const plan = suggestTreatments(p.room, [{ surface: 'left', point: { x: 1.5, y: 0, z: 1.1 } }, { surface: 'ceiling', point: { x: 1.4, y: 2, z: 2.5 } }], makeId);
