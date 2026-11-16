@@ -67,7 +67,7 @@
 Записано по просьбе владельца 2026-11-14, 2026-11-15 и 2026-11-16 из разделов «Замечено, не исправлено» спецификаций
 [028](028-render-failure/spec.md), [029](029-draft-safety/spec.md), [030](030-typed-worker/spec.md),
 [031](031-project-transitions/spec.md), [033](033-e2e-waits/spec.md), [034](034-compute-hook/spec.md),
-[035](035-worker-priority/spec.md), [036](036-wave-path/spec.md), [037](037-room-setup-operations/spec.md), [040](040-gltf-external/spec.md), [041](041-corridor-open-end/spec.md), [042](042-zero-mode-leak/spec.md) и [044](044-deep-bass/spec.md), из результатов публикаций
+[035](035-worker-priority/spec.md), [036](036-wave-path/spec.md), [037](037-room-setup-operations/spec.md), [040](040-gltf-external/spec.md), [041](041-corridor-open-end/spec.md), [042](042-zero-mode-leak/spec.md), [044](044-deep-bass/spec.md) и [046](046-trivial-fixes/spec.md), из результатов публикаций
 плана рефакторинга (план выполнен и удалён, [D32](decisions.md)) и из аудита тестов 2026-11-16. Каждый пункт — отдельная задача, её нужно согласовать до выполнения.
 
 - **Лишнее поле `subId` у задачи `listenerMap`.** В ручном режиме (`ManualScreen.tsx`) и в карте автоподбора
@@ -198,3 +198,6 @@
 - **«Расстановка» на 320 px шире экрана (замечено в 045, было и до неё).** На ширине 320 px страница шире окна на
   13–29 px (зависит от момента замера, вероятно — от загрузки шрифта): не умещаются кнопка «Максимальная» в «Точности
   расчёта» и нижняя навигация («Голос»). Проверено и на коммите `1d77360` до 045. На 393 px переполнения нет.
+- **Неиспользуемый вариант хода `progress: 'carry'` (046).** После 046 ни один экран не передаёт `useComputed`
+  `progress: 'carry'` (`src/ui/computeTask.ts`, `src/ui/useCompute.ts`); поведение варианта по-прежнему проверяет
+  `tests/ui/computeTask.test.ts`. Удаление варианта меняет договор хука (034, FR-3402) — отдельное решение.
