@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alphaStat, apertureBeta, betaFromAlpha } from '../../src/core/paris';
+import { alphaStat, apertureBeta, betaFromAlpha, openEndAdmittance } from '../../src/core/paris';
 
 describe('α ↔ β (формула Пари)', () => {
   it('обращение точное во всём диапазоне и при малых α даёт α/8', () => {
@@ -27,5 +27,32 @@ describe('проводимость проёма в стене', () => {
       expect(apertureBeta(1.8, f), `${f} Гц`).toBeLessThan(1 / 5);
     }
     expect(apertureBeta(6, 60)).toBeGreaterThan(apertureBeta(1.8, 60));
+  });
+});
+
+describe('041: открытая сторона смежного помещения', () => {
+  const r = ([re, im]: [number, number]) => Math.hypot(1 - re * re - im * im, 2 * im) / ((1 + re) ** 2 + im * im);
+  it('на басу — масса воздуха: Im β ≈ −1/(k·0,85a), Re β ≈ 0,69; на высоких β → 1 (ρc)', () => {
+    const area = 1.2 * 2.4, a = Math.sqrt(area / Math.PI);
+    for (const f of [15, 20, 25]) {
+      const [re, im] = openEndAdmittance(area, f);
+      const k = (2 * Math.PI * f) / 343;
+      expect(-1 / im / (k * a), `${f} Гц`).toBeCloseTo(8 / (3 * Math.PI), 1);
+      expect(re, `${f} Гц`).toBeCloseTo((9 * Math.PI * Math.PI) / 128, 1);
+    }
+    const [re, im] = openEndAdmittance(area, 2000);
+    expect(re).toBeCloseTo(1, 1);
+    expect(Math.abs(im)).toBeLessThan(0.05);
+  });
+
+  it('сечение коридора 1,2 × 2,4 м отражает на басу почти весь звук, на высоких почти ничего; граница ρc не отражает', () => {
+    const area = 1.2 * 2.4;
+    expect(r(openEndAdmittance(area, 20))).toBeGreaterThan(0.85);
+    expect(r(openEndAdmittance(area, 80))).toBeGreaterThan(0.3);
+    expect(r(openEndAdmittance(area, 80))).toBeLessThan(0.5);
+    expect(r(openEndAdmittance(area, 1000))).toBeLessThan(0.1);
+    expect(r([1, 0])).toBe(0);
+    // узкий проём отражает сильнее широкого
+    expect(r(openEndAdmittance(0.5, 60))).toBeGreaterThan(r(openEndAdmittance(6, 60)));
   });
 });

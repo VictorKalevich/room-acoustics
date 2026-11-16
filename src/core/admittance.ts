@@ -13,7 +13,9 @@ export interface AdmittanceFit {
   /** Частотно-независимая часть (действительная). */
   binf: number;
   branches: Branch[];
-  /** Наибольшее отклонение достигнутого α от целевого в полосе подбора. */
+  /** Индуктивная ветвь (масса воздуха): Y = mass/(jω), 1/с. */
+  mass?: number;
+  /** Наибольшее отклонение достигнутого α от целевого в полосе подбора (у fitAdmittanceC — коэффициента отражения). */
   maxErr: number;
 }
 
@@ -54,8 +56,8 @@ export function alphaStatC(re: number, im: number): number {
 }
 
 /** Проводимость подобранной модели на частоте f (ω для ветвей можно передать «предыскажённую»). */
-export function admittanceAt(fit: Pick<AdmittanceFit, 'binf' | 'branches'>, f: number): [number, number] {
-  let re = fit.binf, im = 0;
+export function admittanceAt(fit: Pick<AdmittanceFit, 'binf' | 'branches' | 'mass'>, f: number): [number, number] {
+  let re = fit.binf, im = -(fit.mass ?? 0) / (2 * Math.PI * f);
   for (const b of fit.branches) {
     const x = b.q * (f / b.f0 - b.f0 / f);
     const d = 1 + x * x;
@@ -67,6 +69,8 @@ export function admittanceAt(fit: Pick<AdmittanceFit, 'binf' | 'branches'>, f: n
 
 const CENTERS = [16, 22.6, 32, 45.3, 64, 90.5, 128, 181, 256, 362];
 const Q = 1.6;
+// у проводимости открытого проёма активная часть колеблется до самого верха полосы — нужна ветвь выше неё
+const C_CENTERS = [...CENTERS, 512];
 
 /**
  * Неотрицательные наименьшие квадраты (Lawson–Hanson): точное решение min‖Ax − y‖ при x ≥ 0.
@@ -162,6 +166,61 @@ export function fitAdmittance(alphaOf: (f: number) => number, betaOf: (alpha: nu
     for (const drop of [...best.branches].sort((a, b) => a.g - b.g)) {
       const trial = fitWith(best.branches.filter((b) => b !== drop).map((b) => b.f0));
       if (ok(trial)) { best = trial; changed = true; break; }
+    }
+  }
+  return best;
+}
+
+/** Допуск подбора комплексной проводимости: на сколько коэффициент отражения модели может отличаться от целевого. */
+const C_TOL = 0.025;
+
+/** Коэффициент отражения плоской волны при нормальном падении на границу с проводимостью β: (1 − β)/(1 + β). */
+function reflection([re, im]: [number, number]): [number, number] {
+  const d = (1 + re) * (1 + re) + im * im;
+  return [(1 - re * re - im * im) / d, (-2 * im) / d];
+}
+
+/**
+ * Подбор комплексной проводимости betaOf(f) = [Re β, Im β] в полосе [fLo, fHi]: β∞ + индуктивная ветвь + ветви RLC
+ * с центрами fitAdmittance и ещё одним выше полосы — все коэффициенты неотрицательны (ветви пассивны), неотрицательные
+ * наименьшие квадраты по действительной и мнимой частям сразу. Ошибка β взвешена 1/|1 + β|² — это ошибка
+ * коэффициента отражения: на басу |β| велика, и её абсолютная ошибка на отражение почти не влияет.
+ * Потом лишние ветви убираются по одной (самая слабая), пока |Δr| в допуске: каждая ветвь — работа на каждом шаге
+ * расчёта во всех узлах открытой стороны. maxErr — наибольшее |Δr| при нормальном падении в полосе подбора.
+ */
+export function fitAdmittanceC(betaOf: (f: number) => [number, number], fLo = 20, fHi = 300, warp: (f: number) => number = (f) => f): AdmittanceFit {
+  const n = 60;
+  const fs = Array.from({ length: n }, (_, i) => fLo * Math.pow(fHi / fLo, i / (n - 1)));
+  const target = fs.map((f) => betaOf(f));
+  const fitWith = (centers: number[]): AdmittanceFit => {
+    const A: number[][] = [];
+    const y: number[] = [];
+    fs.forEach((f, i) => {
+      const [br, bi] = target[i];
+      const w = 1 / ((1 + br) * (1 + br) + bi * bi);
+      const fw = warp(f);
+      const xs = centers.map((c) => Q * (fw / c - c / fw));
+      A.push([w, 0, ...xs.map((x) => w / (1 + x * x))]);
+      y.push(br * w);
+      A.push([0, -w / (2 * Math.PI * fw), ...xs.map((x) => (-w * x) / (1 + x * x))]);
+      y.push(bi * w);
+    });
+    const x = nnls(A, y);
+    const fit = { binf: x[0], mass: x[1], branches: centers.map((c, j) => ({ g: x[j + 2], f0: c, q: Q })).filter((b) => b.g > 0) };
+    const maxErr = Math.max(...fs.map((f, i) => {
+      const [tr, ti] = reflection(target[i]);
+      const [gr, gi] = reflection(admittanceAt(fit, warp(f)));
+      return Math.hypot(tr - gr, ti - gi);
+    }));
+    return { ...fit, maxErr };
+  };
+  let best = fitWith(C_CENTERS);
+  const tol = Math.max(C_TOL, best.maxErr);
+  for (let changed = true; changed && best.branches.length;) {
+    changed = false;
+    for (const drop of [...best.branches].sort((a, b) => a.g - b.g)) {
+      const trial = fitWith(best.branches.filter((b) => b !== drop).map((b) => b.f0));
+      if (trial.maxErr <= tol) { best = trial; changed = true; break; }
     }
   }
   return best;

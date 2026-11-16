@@ -47,13 +47,6 @@ export function betaFromAlpha(alpha: number): number {
   return b;
 }
 
-/**
- * Открытый конец смежного помещения (коридор уходит в большой объём): согласованная граница ρc, β = 1 —
- * волна уходит без отражения. Это верхняя оценка: у открытого конца трубы на низах заметная часть звука
- * отражается обратно (с переворотом фазы), а такую границу действительной β не описать.
- */
-export const BETA_OPEN = 1;
-
 function besselJ1(x: number): number {
   let term = x / 2, s = term;
   for (let m = 1; m < 40; m++) { term *= -(x * x) / (4 * m * (m + 1)); s += term; if (Math.abs(term) < 1e-16 * Math.abs(s)) break; }
@@ -65,6 +58,15 @@ function struveH1(x: number): number {
   let term = (x * x) / 4 / ((3 * Math.PI) / 8), s = term;
   for (let m = 1; m < 40; m++) { term *= -(x * x) / (4 * (m + 0.5) * (m + 1.5)); s += term; if (Math.abs(term) < 1e-16 * Math.abs(s)) break; }
   return s;
+}
+
+/**
+ * Излучение поршня в экране, нормированный импеданс R + jX при x = ka (a — эквивалентный радиус проёма):
+ * R = 1 − J₁(2ka)/ka, X = H₁(2ka)/ka. На басу R ≈ (ka)²/2, X ≈ 8ka/3π (масса воздуха, концевая поправка 0,85a).
+ */
+function piston(x: number): [number, number] {
+  if (x < 6) return [1 - besselJ1(2 * x) / x, struveH1(2 * x) / x];
+  return [1, 2 / (Math.PI * x)];
 }
 
 /** Толщина стены у проёма для присоединённой массы, м. */
@@ -83,9 +85,7 @@ const WALL_DEPTH = 0.15;
 export function apertureBeta(area: number, f: number, c = 343): number {
   const a = Math.sqrt(Math.max(area, 1e-4) / Math.PI);
   const k = (2 * Math.PI * Math.max(f, 1)) / c;
-  const x = k * a;
-  let R: number, Xo: number;
-  if (x < 6) { R = 1 - besselJ1(2 * x) / x; Xo = struveH1(2 * x) / x; } else { R = 1; Xo = 2 / (Math.PI * x); }
+  const [R, Xo] = piston(k * a);
   // канал длиной l: Z_вх = (Z + j·t)/(1 + j·Z·t), t = tg(kl); плюс присоединённая масса изнутри
   const t = Math.tan(k * WALL_DEPTH);
   const nRe = R, nIm = Xo + t;
@@ -94,4 +94,18 @@ export function apertureBeta(area: number, f: number, c = 343): number {
   const zRe = (nRe * dRe + nIm * dIm) / dd;
   const zIm = (nIm * dRe - nRe * dIm) / dd + Xo;
   return zRe / (zRe * zRe + zIm * zIm);
+}
+
+/**
+ * Проводимость открытой стороны смежного помещения (коридор уходит в большой объём) площадью area на частоте f:
+ * β = 1/(R + jX) поршня в экране — проём, как у apertureBeta, но без канала в стене и присоединённой массы изнутри:
+ * изнутри сечение продолжается тем же помещением. Возвращает [Re β, Im β]. На басу β почти мнимая — масса воздуха
+ * в проёме: звук отражается обратно с переворотом фазы (у сечения 1,2 × 2,4 м на 20 Гц |r| ≈ 0,9, на 80 Гц ≈ 0,4),
+ * Re β ≈ 0,69; на высоких β → 1 — граница ρc, звук уходит.
+ */
+export function openEndAdmittance(area: number, f: number, c = 343): [number, number] {
+  const a = Math.sqrt(Math.max(area, 1e-4) / Math.PI);
+  const [R, X] = piston(((2 * Math.PI * Math.max(f, 1)) / c) * a);
+  const d = R * R + X * X;
+  return [R / d, -X / d];
 }

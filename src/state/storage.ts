@@ -74,6 +74,9 @@ export function normalizeRoom(rawRoom: any, fit = true): Room {
   // 028: множитель — число (строка проходила сравнение «> 0»)
   if (room.calibration && !(isNum(room.calibration.dampingScale) && room.calibration.dampingScale > 0)) room.calibration = null;
   if (room.calibration) room.calibration = dropBad(room.calibration, { source: (v) => typeof v === 'string' });
+  // 041: модель 4 отличается от 3 только открытыми сторонами смежных помещений — без них подстройка подходит и к 4
+  const openSide = Array.isArray(room.extensions) && room.extensions.some((e: any) => isObj(e) && (e.openStart || e.openEnd || e.openFar));
+  if (room.calibration?.model === 3 && !openSide) room.calibration = { ...room.calibration, model: DAMPING_MODEL };
   // множитель, подобранный для прежней модели затухания, к новой не подходит — подстройку нужно повторить
   if (room.calibration && room.calibration.model !== DAMPING_MODEL) room.calibration = null;
   if (room.calibration && room.calibration.leakageBefore !== undefined && !['sealed', 'typical', 'door', 'open'].includes(room.calibration.leakageBefore)) {

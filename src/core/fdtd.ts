@@ -8,8 +8,8 @@ import { furnishingOctaves } from './furniture';
 import { surfaceAreas } from './reverb';
 import { treatmentKey } from './treatments';
 import { cornerLegs, patchContains, roomPatches, type Patch } from './patches';
-import { branchCoeffs, fitAdmittance, type AdmittanceFit, type Branch } from './admittance';
-import { BETA_OPEN, alphaStat, apertureBeta, betaFromAlpha } from './paris';
+import { branchCoeffs, fitAdmittance, fitAdmittanceC, type AdmittanceFit, type Branch } from './admittance';
+import { alphaStat, apertureBeta, betaFromAlpha, openEndAdmittance } from './paris';
 
 export const LAMBDA = 0.577; // число Куранта, чуть меньше 1/√3
 const PPW = 10; // узлов на длину волны верхней частоты
@@ -102,12 +102,14 @@ export { alphaStat, betaFromAlpha } from './paris';
 
 /**
  * Поглощение грани для частотно-зависимой границы: α отделки по октавам (без обстановки) и есть ли на ней
- * обстановка; aperture — площадь проёма в стене (тогда β(f) — проводимость проёма, apertureBeta).
+ * обстановка; aperture — площадь проёма в стене (тогда β(f) — проводимость проёма, apertureBeta); open — площадь
+ * открытой стороны смежного помещения (β(f) комплексная — излучение проёма, openEndAdmittance).
  */
 interface FaceAbs {
   v: number[];
   furn: boolean;
   aperture?: number;
+  open?: number;
 }
 
 /** Ключ геометрии/материалов для кэша. */
@@ -206,6 +208,8 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000, op
   for (const sf of ROOM_FACE) { betaRoom[sf] = wallBeta(matAlpha(sf), true); betaBare[sf] = wallBeta(matAlpha(sf), false); }
   // стены коридора — штукатурка без обстановки
   const plasterBeta = wallBeta(lfAlpha(getMaterial('plaster').alpha), false);
+  // открытая сторона при постоянной β — активная часть её проводимости в полосе (как у проёмов)
+  const openBand = (area: number) => [40, 63, 100, 160].reduce((s, f) => s + openEndAdmittance(area, f, c)[0], 0) / 4;
   const along = (wall: WallId, x: number, y: number) => (wall === 'front' || wall === 'back' ? y : x);
   // окна, двери, обработка — на своих гранях; угловая ловушка — катетами на двух стенах; проёмы — β проёма
   const patches: Patch[] = roomPatches(room, { withArches: false }).flatMap((p) => (p.diag ? cornerLegs(room, p) : [p]));
@@ -256,11 +260,22 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000, op
     if (!f) { f = { v: [], furn: false, aperture: area }; apertures.set(area, f); }
     return f;
   };
+  const openSides = new Map<number, FaceAbs>();
+  const openFace = (area: number): FaceAbs => {
+    let f = openSides.get(area);
+    if (!f) { f = { v: [], furn: false, open: area }; openSides.set(area, f); }
+    return f;
+  };
   const fits = new Map<string, AdmittanceFit>();
   const warp = (f: number) => Math.tan(2 * Math.PI * f * dt) / (2 * Math.PI * dt);
   const fitOf = (face: FaceAbs): AdmittanceFit => {
-    const key = face.aperture !== undefined ? `A${face.aperture.toFixed(4)}` : face.v.map((v) => v.toFixed(5)).join(',') + (face.furn ? '|F' : '');
+    const key = face.open !== undefined ? `O${face.open.toFixed(4)}` : face.aperture !== undefined ? `A${face.aperture.toFixed(4)}` : face.v.map((v) => v.toFixed(5)).join(',') + (face.furn ? '|F' : '');
     let fit = fits.get(key);
+    if (!fit && face.open !== undefined) {
+      const area = face.open;
+      fit = fitAdmittanceC((f) => openEndAdmittance(area, f, c), 20, Math.min(300, 1.3 * fMax), warp);
+      fits.set(key, fit);
+    }
     if (!fit) {
       // целевая β(f) = (β(α(f)) + обстановка/8)·подстройка, у проёма — его проводимость; подбор ведётся по α — отдаём α этой β
       const betaAt = (f: number) => face.aperture !== undefined
@@ -271,7 +286,7 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000, op
     }
     return fit;
   };
-  const faces: (FaceAbs | null)[] = [];
+  const faces: FaceAbs[] = [];
   const fdB = { bca: [] as number[], bcb: [] as number[], bcd: [] as number[], off: [0], ia: [] as number[], b: [] as number[], iC: [] as number[], cw: [] as number[], cpsi: [] as number[] };
 
   // Σ β·dS по поверхностям основной комнаты — для оценки затухания осевых мод
@@ -337,18 +352,16 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000, op
         const far = { right: 3, left: 2, front: 0, back: 1 }[e.wall];
         const startDir = e.wall === 'front' || e.wall === 'back' ? 2 : 0;
         const endDir = startDir + 1;
+        const open = (d === far && e.openFar) || (d === startDir && e.openStart) || (d === endDir && e.openEnd);
+        // открытая сторона: торец — сечение помещения, дальняя сторона — его длина вдоль стены × высота
+        const openArea = open ? (d === far ? e.a1 - e.a0 : e.depth) * e.height : 0;
         // пол, потолок и стена в сторону комнаты — материал комнаты, но без обстановки
         if (d === 4) beta = betaBare.floor;
         else if (d === 5) beta = betaBare.ceiling;
         else if (d === toRoom) beta = betaBare[e.wall];
-        else if (d === far) beta = e.openFar ? BETA_OPEN : plasterBeta;
-        else if (d === startDir) beta = e.openStart ? BETA_OPEN : plasterBeta;
-        else if (d === endDir) beta = e.openEnd ? BETA_OPEN : plasterBeta;
+        else if (open) beta = openBand(openArea);
         else beta = plasterBeta;
-        if (fd) {
-          const open = (d === far && e.openFar) || (d === startDir && e.openStart) || (d === endDir && e.openEnd);
-          faces.push(d === 4 ? bareFace.floor : d === 5 ? bareFace.ceiling : d === toRoom ? bareFace[e.wall] : open ? null : plasterFace);
-        }
+        if (fd) faces.push(d === 4 ? bareFace.floor : d === 5 ? bareFace.ceiling : d === toRoom ? bareFace[e.wall] : open ? openFace(openArea) : plasterFace);
       }
       betaSum += beta;
     }
@@ -361,24 +374,25 @@ export function buildGrid(room: Room, fMaxWanted: number, maxNodes = 300_000, op
     if (fd && K < 6) {
       // одинаковые грани узла — одна ветвь с проводимостью × число граней
       let sInf = 0;
+      let mass = 0;
       const groups = new Map<FaceAbs, number>();
-      for (const v of faces) {
-        if (!v) { sInf += BETA_OPEN; continue; }
-        groups.set(v, (groups.get(v) ?? 0) + 1);
-      }
-      // у всех подборов одни и те же центры и добротность: ветви с одним центром на разных гранях
+      for (const v of faces) groups.set(v, (groups.get(v) ?? 0) + 1);
+      // у подборов общие центры и добротность (у открытой стороны — ещё один центр): ветви с одним центром на разных гранях
       // складываются в одну (параллельные RLC с общим резонансом = один RLC с суммой проводимостей)
       const byCenter = new Map<number, Branch>();
       for (const [v, cnt] of groups) {
         const fit = fitOf(v);
         sInf += fit.binf * cnt;
+        mass += (fit.mass ?? 0) * cnt;
         for (const br of fit.branches) {
           const prev = byCenter.get(br.f0);
           byCenter.set(br.f0, prev ? { ...prev, g: prev.g + br.g * cnt } : { ...br, g: br.g * cnt });
         }
       }
       const brs = [...byCenter.values()].map((br) => branchCoeffs(br, dt));
-      let s4a = 0;
+      // масса воздуха (ветвь L, branchCoeffs с R = 0 и C = ∞: a = −b = 1/(2k·mass)) входит только в 1/(4a):
+      // её cw и cpsi равны нулю, состояние ветви схеме не нужно
+      let s4a = (dt * mass) / 2;
       for (const q of brs) s4a += 1 / (4 * q.a);
       const D = 1 + (LAMBDA * sInf) / 2 + LAMBDA * s4a;
       fdB.bca.push((2 - K * l2) / D);

@@ -1,6 +1,7 @@
 // Частотно-зависимые границы волновой модели: подбор β(f) и затухание мод по частоте.
 import { describe, expect, it } from 'vitest';
-import { admittanceAt, alphaStatC, branchCoeffs, fitAdmittance, nnls } from '../../src/core/admittance';
+import { admittanceAt, alphaStatC, branchCoeffs, fitAdmittance, fitAdmittanceC, nnls } from '../../src/core/admittance';
+import { openEndAdmittance } from '../../src/core/paris';
 import { alphaStat, betaFromAlpha, buildGrid, nearestNode, simulate, type BoundaryModel } from '../../src/core/fdtd';
 import { MATERIALS, alphaAt } from '../../src/core/materials';
 import { computeModes } from '../../src/core/modes';
@@ -33,6 +34,31 @@ describe('проводимость границы', () => {
         expect(Math.abs(alphaStatC(re, im) - t), `${id} @ ${f}`).toBeLessThan(0.008 + 0.08 * t);
       }
       if (id === 'concrete-painted' || id === 'plaster') expect(fit.branches.length).toBe(0);
+    }
+  });
+
+  it('041: проводимость открытой стороны подобрана с |Δr| ≤ 0,03 до верха полосы, ветви пассивны, масса — концевая поправка 0,85a', () => {
+    const refl = ([re, im]: [number, number]) => { const d = (1 + re) ** 2 + im * im; return [(1 - re * re - im * im) / d, (-2 * im) / d]; };
+    for (const fMax of [130, 200, 320]) {
+      // шаг по времени и предыскажение — как в buildGrid при этой верхней частоте
+      const dt = (0.577 * 343) / (10 * fMax) / 343;
+      const warp = (f: number) => Math.tan(2 * Math.PI * f * dt) / (2 * Math.PI * dt);
+      const fHi = Math.min(300, 1.3 * fMax);
+      for (const area of [0.3, 1.2, 2.88, 12, 40]) {
+        const fit = fitAdmittanceC((f) => openEndAdmittance(area, f), 20, fHi, warp);
+        expect(fit.maxErr, `${area} м², fMax ${fMax}`).toBeLessThan(0.03);
+        for (let f = 20; f <= fHi; f *= 1.02) {
+          const [tr, ti] = refl(openEndAdmittance(area, f));
+          const [gr, gi] = refl(admittanceAt(fit, warp(f)));
+          expect(Math.hypot(tr - gr, ti - gi), `${area} м², ${f.toFixed(0)} Гц`).toBeLessThan(0.03);
+        }
+        expect(fit.binf).toBeGreaterThanOrEqual(0);
+        for (const b of fit.branches) expect(b.g).toBeGreaterThan(0);
+        // Y = mass/(jω) = c/(jωδ): δ = c/mass
+        const a = Math.sqrt(area / Math.PI);
+        expect(343 / fit.mass! / a).toBeGreaterThan(0.8);
+        expect(343 / fit.mass! / a).toBeLessThan(0.9);
+      }
     }
   });
 

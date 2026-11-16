@@ -120,4 +120,17 @@ describe('подстройка модели при обновлении', () => 
     const cur = parseProjectFile(serializeProject({ ...p, room: { ...p.room, calibration: { dampingScale: 1.3, model: DAMPING_MODEL } } }));
     expect(cur.room.calibration?.dampingScale).toBe(1.3);
   });
+
+  it('041: подстройка модели 3 сбрасывается только у комнаты с открытой стороной смежного помещения', () => {
+    const p = newProject();
+    const ext = { id: 'e', name: 'Коридор', wall: 'right' as const, a0: 0, a1: 4, depth: 1.2, height: 2.4, arch: { a0: 1, a1: 2.2, height: 2.1 }, openStart: false, openEnd: false, openFar: false };
+    const open = (extensions: (typeof ext)[], model: number) =>
+      parseProjectFile(serializeProject({ ...p, room: { ...p.room, extensions, calibration: { dampingScale: 1.3, model, source: 'rew.txt' } } })).room.calibration;
+    expect(open([], 3)).toEqual({ dampingScale: 1.3, model: DAMPING_MODEL, source: 'rew.txt' });
+    expect(open([ext], 3)).toEqual({ dampingScale: 1.3, model: DAMPING_MODEL, source: 'rew.txt' });
+    for (const side of ['openStart', 'openEnd', 'openFar'] as const) expect(open([ext, { ...ext, id: 'f', [side]: true }], 3), side).toBeNull();
+    // подобранная уже для модели 4 — сохраняется и с открытой стороной; модель 2 — сбрасывается всегда
+    expect(open([{ ...ext, openEnd: true }], DAMPING_MODEL)?.dampingScale).toBe(1.3);
+    expect(open([], 2)).toBeNull();
+  });
 });

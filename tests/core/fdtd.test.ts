@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { alphaStat, betaFromAlpha, buildGrid, nearestNode, simulate, nodeSpectrum, systemModes } from '../../src/core/fdtd';
 import { computeModes } from '../../src/core/modes';
+import { openEndAdmittance } from '../../src/core/paris';
 import { defaultRoom } from '../../src/state/project';
 import type { Extension, Room } from '../../src/core/types';
 
@@ -98,5 +99,71 @@ describe('симуляция', () => {
       const m2 = Math.hypot(s2.re[i], s2.im[i]);
       expect(Math.abs(20 * Math.log10(m1 / m2))).toBeLessThan(0.5);
     });
+  });
+});
+
+describe('041: открытая сторона смежного помещения', () => {
+  // труба 1 × 1,2 м: комната 3 м и её продолжение на 1 м за задней стеной, открытое в дальней стороне
+  const tube = (): Room => ({
+    ...hard(), depth: 3, width: 1, height: 1.2,
+    extensions: [corridor({ wall: 'back', a0: 0, a1: 1, depth: 1, height: 1.2, arch: { a0: 0, a1: 1, height: 1.2 }, openFar: true })],
+  });
+
+  /** Пики средней по длине энергии в трубе «жёсткий конец — проводимость β(f) на другом» (одномерно, источник у жёсткого конца). */
+  function tubePeaks(L: number, c: number, beta: (f: number) => [number, number]): number[] {
+    const fs: number[] = [], e: number[] = [];
+    for (let f = 15; f <= 130; f += 0.05) {
+      const [br, bi] = beta(f);
+      const d = (1 + br) ** 2 + bi * bi;
+      const r = { re: (1 - br * br - bi * bi) / d, im: (-2 * bi) / d };
+      const k = (2 * Math.PI * f) / c;
+      // p(x) = (e^{−jkx} + r·e^{−jk(2L−x)}) / (1 − r·e^{−2jkL})
+      const mul = (a: { re: number; im: number }, ph: number) => ({ re: a.re * Math.cos(ph) - a.im * Math.sin(ph), im: a.re * Math.sin(ph) + a.im * Math.cos(ph) });
+      const q = mul(r, -2 * k * L);
+      const den = { re: 1 - q.re, im: -q.im };
+      const dd = den.re ** 2 + den.im ** 2;
+      let s = 0;
+      for (let i = 0; i < 40; i++) {
+        const x = ((i + 0.5) / 40) * L;
+        const w = mul(r, -k * (2 * L - x));
+        s += ((Math.cos(k * x) + w.re) ** 2 + (-Math.sin(k * x) + w.im) ** 2) / dd;
+      }
+      fs.push(f); e.push(s);
+    }
+    return fs.filter((_, i) => i > 0 && i < e.length - 1 && e[i] > e[i - 1] && e[i] >= e[i + 1]);
+  }
+
+  it('труба «закрыто — открыто»: резонансы четверти волны с концевой поправкой, как в одномерной теории (≤ 3 %)', () => {
+    const room = tube();
+    const g = buildGrid(room, 160);
+    let xMax = -Infinity;
+    for (let n = 0; n < g.N; n++) xMax = Math.max(xMax, g.x0 + (g.nodeCell[n] % g.nx) * g.h);
+    const L = xMax + g.h / 2;
+    const theory = tubePeaks(L, g.c, (f) => openEndAdmittance(1.2, f, g.c));
+    // ниже первой поперечной моды (c/2,4 м ≈ 143 Гц): 19, 58 и 98 Гц
+    expect(theory.length).toBe(3);
+    // граница ρc (как до 041) резонансов не даёт
+    expect(tubePeaks(L, g.c, () => [1, 0])).toEqual([]);
+    const { modes } = systemModes(room, 160, { duration: 3 });
+    for (const f of theory) {
+      const near = modes.reduce((best, m) => (Math.abs(m.f - f) < Math.abs(best.f - f) ? m : best), modes[0]);
+      expect(Math.abs(near.f - f) / f, `${f.toFixed(1)} Гц`).toBeLessThan(0.03);
+    }
+  });
+
+  it('открытые стороны устойчивы: отклик конечен и затухает, с подстройкой и без', () => {
+    for (const calibration of [null, { dampingScale: 0.4 }, { dampingScale: 2.5 }]) {
+      const room: Room = { ...hard(), calibration, extensions: [corridor({ a0: -0.5, depth: 0.4, openStart: true, openEnd: true, openFar: true })] };
+      const g = buildGrid(room, 140);
+      const sim = simulate(g, { x: 0.3, y: 0.3, z: 0.3 }, { extra: [nearestNode(g, { x: 3, y: 2, z: 1.2 }), nearestNode(g, { x: 2, y: 4.2, z: 1 })], duration: 4 });
+      const perSec = Math.floor(1 / sim.dtd);
+      const E = [0, 1, 2, 3].map((s) => {
+        let e = 0;
+        for (let r = 0; r < sim.rec.length; r++) for (let t = s * perSec; t < (s + 1) * perSec; t++) e += sim.series[r * sim.T + t] ** 2;
+        return e;
+      });
+      expect(E.every(Number.isFinite)).toBe(true);
+      for (let s = 1; s < 4; s++) expect(E[s], `${calibration?.dampingScale ?? 1}: секунда ${s + 1}`).toBeLessThan(E[s - 1]);
+    }
   });
 });
