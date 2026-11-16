@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { activeTreatments, shownTreatments } from '../../core/treatments';
-import { clearedRoom, rotateRoom, rotateSetup } from '../../state/project';
+import { rotateRoom, rotateSetup } from '../../state/project';
 import type { Room, ReverbResult, WallId } from '../../core/types';
 import { FURNISHING_LABEL, getMaterial } from '../../core/materials';
 import { Panel, Details, Note } from '../design-system';
@@ -9,12 +9,12 @@ import { PlanView } from '../components/PlanView';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { ScanPanel } from './room/ScanPanel';
-import { deleteScan } from '../../state/storage';
 import { ClearIcon, FileIcon, RotateIcon } from './room/icons';
 import { ConfirmSheet } from '../design-system';
 import type { Destination } from '../navigation';
-import { dropRoomDraft, loadRoomDraft } from '../roomDraft';
+import { loadRoomDraft } from '../roomDraft';
 import { requestScanFix } from '../scanFix';
+import { clearRoom } from '../roomSetup';
 
 interface Props {
   project: Project;
@@ -41,11 +41,7 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
   const [scanGen, setScanGen] = useState(0);
   const clear = () => {
     setAskClear(false);
-    // скан проекта на устройстве тоже удаляется: после «Очистить» можно выбрать новый скан
-    void deleteScan(project.id).catch(() => undefined);
-    dropRoomDraft(project.id);
-    const c = clearedRoom(project);
-    onRoom(c.room, c);
+    clearRoom(project, onRoom);
     setScanGen((g) => g + 1);
     // после закрытия шторки (она возвращает прежнюю прокрутку) — наверх, к карточке «С чего начать»
     setTimeout(() => scrollTo({ top: 0, behavior: 'smooth' }), 60);
