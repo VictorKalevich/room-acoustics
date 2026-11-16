@@ -19,27 +19,27 @@ const prepare = (page: Page) => page.addInitScript(() => {
       current: { placed: true, listener: { x: 2.3, y: 1.6, z: 1.1 }, positions: {} },
     }));
   }
-  const w = window as unknown as { __log: Entry[]; __worker: Worker };
-  w.__log = [];
+  const w = window as unknown as { workerLog: Entry[]; computeWorker: Worker };
+  w.workerLog = [];
   const W = window.Worker;
   window.Worker = class extends W {
     constructor(url: string | URL, opts?: WorkerOptions) {
       super(url, opts);
-      w.__worker = this;
+      w.computeWorker = this;
       this.addEventListener('message', (e: MessageEvent<{ id: number; kind: string }>) => {
-        if (e.data.kind !== 'progress') w.__log.push({ ev: 'done', id: e.data.id });
+        if (e.data.kind !== 'progress') w.workerLog.push({ ev: 'done', id: e.data.id });
       });
     }
     postMessage(m: unknown, t?: Transferable[] | StructuredSerializeOptions) {
       const job = m as { id?: number; type?: string; cancel?: number };
-      if (job && job.type) w.__log.push({ ev: 'job', id: job.id!, type: job.type });
-      else if (job && job.cancel !== undefined) w.__log.push({ ev: 'cancel', id: job.cancel });
+      if (job && job.type) w.workerLog.push({ ev: 'job', id: job.id!, type: job.type });
+      else if (job && job.cancel !== undefined) w.workerLog.push({ ev: 'cancel', id: job.cancel });
       return super.postMessage(m, t as Transferable[]);
     }
   };
 });
 
-const log = (page: Page) => page.evaluate(() => (window as unknown as { __log: Entry[] }).__log);
+const log = (page: Page) => page.evaluate(() => (window as unknown as { workerLog: Entry[] }).workerLog);
 const go = (page: Page, hash: string) => page.evaluate((h) => { location.hash = h; }, hash);
 
 /** Все отправленные задачи получили ответ (снятые не ждём: ответа у них нет), и за секунду не ушло новых. */
@@ -60,7 +60,7 @@ async function busy(page: Page) {
   let project!: Project;
   await draftSaved(page, 'проект с волновой комнатой', (d) => { project = d; return d.id === 'prio'; });
   await page.evaluate(([id, p]) => {
-    (window as unknown as { __worker: Worker }).__worker.postMessage({ id, type: 'listenerMap', payload: { room: p.room, sources: p.sources, constraints: p.constraints, setup: p.current, ppo: 48 } });
+    (window as unknown as { computeWorker: Worker }).computeWorker.postMessage({ id, type: 'listenerMap', payload: { room: p.room, sources: p.sources, constraints: p.constraints, setup: p.current, ppo: 48 } });
   }, [BUSY, project] as const);
 }
 

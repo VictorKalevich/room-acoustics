@@ -62,7 +62,7 @@ describe('порядок задач и кэш волновой модели', ()
     const cold = tasks.map((t) => { clearWaveCache(); return run(t); });
     const ids = tasks.map((_, i) => i);
     // вперемешку: после карты слушателя (расчёты из источников) — подбор и оценка с одним слушателем (расчёт из него)
-    const orders = [[...ids].reverse(), [1, 8, 0, 5, 7, 2, 4, 6, 3]];
+    const orders = [ids.toReversed(), [1, 8, 0, 5, 7, 2, 4, 6, 3]];
     for (const order of orders) {
       const got = inOrder(order);
       tasks.forEach((t, i) => expect(got[i], `${t.name}, порядок ${order.join(',')}`).toEqual(cold[i]));

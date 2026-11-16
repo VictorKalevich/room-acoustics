@@ -91,7 +91,7 @@ export function useComputeAction(opts: { progress?: boolean; cancelOnUnmount?: b
   return {
     busy: state.busy,
     progress: state.progress,
-    run: (type, payload, h) => action.run((p: typeof payload, onProgress?: (v: number) => void, hidden?: boolean) => compute(type, p, onProgress, hidden), payload, {
+    run: (type, payload, h) => action.run((p: typeof payload, onProgress?: (v: number) => void, isHidden?: boolean) => compute(type, p, onProgress, isHidden), payload, {
       done: h.done,
       failed: h.failed,
       local: h.local && inMainThread(h.local.room) ? h.local.compute : undefined,
