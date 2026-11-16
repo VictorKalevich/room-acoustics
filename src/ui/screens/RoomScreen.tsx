@@ -1,7 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { activeTreatments, shownTreatments } from '../../core/treatments';
-import { rotateRoom, rotateSetup } from '../../state/project';
 import type { Room, ReverbResult, WallId } from '../../core/types';
 import { FURNISHING_LABEL, getMaterial } from '../../core/materials';
 import { Panel, Details, Note } from '../design-system';
@@ -14,7 +13,7 @@ import { ConfirmSheet } from '../design-system';
 import type { Destination } from '../navigation';
 import { loadRoomDraft } from '../roomDraft';
 import { requestScanFix } from '../scanFix';
-import { clearRoom } from '../roomSetup';
+import { clearRoom, turnRoom } from '../roomSetup';
 
 interface Props {
   project: Project;
@@ -33,6 +32,7 @@ const dimsOf = (r: Room) => `${fmt(r.depth, 2)} × ${fmt(r.width, 2)} × ${fmt(r
  * 021: пока комната не создана (нет скана и ручная настройка не сохранена), на экране только «С чего начать».
  * 022: скан до «Сохранить» — карточка «Скан распознан» с переходом к проверке по шагам; у созданной комнаты
  * сверху план и «Что учтено в расчётах», затем «Что дальше» и группа «Изменить комнату».
+ * 037: «Очистить» и поворот — операции roomSetup.
  */
 export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
   const room = project.room;
@@ -134,16 +134,7 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
         <p class="muted small">{S.editor.openHint}</p>
         <div class="btn-row">
           {info && <button type="button" class="btn btn--ghost" onClick={requestScanFix}>{S.scan.fix}</button>}
-          <button
-            type="button"
-            class="btn btn--ghost"
-            onClick={() => onRoom(rotateRoom(room), {
-              current: rotateSetup(room, project.current),
-              setups: project.setups.map((x) => rotateSetup(room, x)),
-              // для «Поправить границы комнаты»: сколько раз комнату повернули относительно скана
-              ...(info ? { scanInfo: { ...info, rotation: ((info.rotation ?? 0) + 1) % 4 } } : {}),
-            })}
-          >
+          <button type="button" class="btn btn--ghost" onClick={() => turnRoom(project, onRoom)}>
             <RotateIcon /> {S.room.rotate}
           </button>
           <button type="button" class="btn btn--ghost" onClick={() => setAskClear(true)}>
