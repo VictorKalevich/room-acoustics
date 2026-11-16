@@ -130,7 +130,8 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
   };
   const reset = () => {
     setAskReset(false);
-    forget();
+    discardRoomDraft(project);
+    clearLocal();
     setSaved(false);
     if (wizard) onStep('size');
   };
