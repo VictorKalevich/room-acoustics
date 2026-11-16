@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
-import { newProject } from '../../state/project';
-import { deleteProject, deleteScan, listProjects, parseProjectFile, saveProject, storageAvailable } from '../../state/storage';
+import { deleteProject, listProjects, parseProjectFile, saveProject, storageAvailable } from '../../state/storage';
 import { exportProject, readLastExport } from '../projectExport';
 import { ConfirmSheet, Panel, Note } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { dropRoomDraft, loadRoomDraft } from '../roomDraft';
 import type { Destination } from '../navigation';
+import { switchProject, type Replace } from '../roomSetup';
 
 interface Props {
   project: Project;
@@ -16,8 +16,6 @@ interface Props {
   onGo: (t: Destination) => void;
 }
 
-/** Что заменит текущий проект (023): новый, сохранённый из списка или открытый из файла. */
-type Replace = { kind: 'new' } | { kind: 'open'; p: Project } | { kind: 'import'; p: Project };
 type Msg = { text: string; tone: 'good' | 'warn'; at: 'project' | 'file' };
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
@@ -47,11 +45,7 @@ export function ProjectsScreen({ project, onReplace, onRename, onGo }: Props) {
   const toRoom = () => onGo(draft ? `room/${draft.reached}` : 'room/overview');
   const replaceNow = (r: Replace) => {
     setAsk(null);
-    const next = r.kind === 'new' ? newProject() : r.p;
-    // незаконченная настройка текущего проекта больше не нужна; скан проекта, которого нет в списке, — тоже
-    dropRoomDraft(project.id);
-    if (!savedCopy && next.id !== project.id) void deleteScan(project.id).catch(() => undefined);
-    onReplace(next);
+    switchProject(project, r, !!savedCopy, onReplace);
     if (r.kind === 'import') setMsg({ text: S.projects.imported, tone: 'good', at: 'file' });
   };
   // спросить, только если введённое пропадёт: комната задана частично или созданная комната не сохранена
