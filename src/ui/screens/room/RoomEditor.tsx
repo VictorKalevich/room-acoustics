@@ -5,7 +5,7 @@
 // переходами между шагами, «Сохранить» внизу каждого шага и вопросом при уходе с несохранёнными изменениями.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Project } from '../../../state/project';
-import { makeId, rotateRoom } from '../../../state/project';
+import { makeId } from '../../../state/project';
 import type { AcousticModel, Covering, FurnitureType, Leakage, ReverbResult, Room, WallId, Zone } from '../../../core/types';
 import { SURFACES } from '../../../core/types';
 import { FURNISHING_LABEL, MATERIALS } from '../../../core/materials';
@@ -26,7 +26,7 @@ import { ROOM_STEPS, setLeaveGuard, type RoomStep } from '../../navigation';
 import { useViewState } from '../../useViewState';
 import { DIMS, draftDiffers, dropRoomDraft, loadRoomDraft, saveRoomDraft, withOutside, type DimKey, type RoomDraft } from '../../roomDraft';
 import { requestScanFix } from '../../scanFix';
-import { discardRoomDraft, saveRoom } from '../../roomSetup';
+import { discardRoomDraft, saveRoom, turnInSteps } from '../../roomSetup';
 import { RotateIcon } from './icons';
 import { S } from '../../strings';
 import { fmt } from '../../format';
@@ -145,14 +145,8 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
     persist(r, { reached: far });
     onStep(to);
   };
-  /** Скан при ручной проверке: колонки у другой стены — поворот сразу в проекте (комната ещё не создана). */
-  const rotate = () => {
-    const r = rotateRoom(room);
-    const info = project.scanInfo;
-    onRoom(r, info ? { scanInfo: { ...info, rotation: ((info.rotation ?? 0) + 1) % 4 } } : {});
-    setDraft(r);
-    persist(r);
-  };
+  /** «Колонки у другой стены» при проверке скана: поворот сразу в проекте и в черновике (037, строка 7). */
+  const rotate = () => setDraft(turnInSteps(project, room, { reached, entered, touched }, onRoom).room);
   /** Поправить границы: введённое на шагах уходит в комнату проекта, блок поправки — на экране «Комната». */
   const fixBounds = () => {
     onRoom(room);
