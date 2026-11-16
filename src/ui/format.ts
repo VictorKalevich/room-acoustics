@@ -9,5 +9,11 @@ export function fmt(v: number, digits = 1): string {
   return f.format(v);
 }
 
-export const fmtHz = (f: number) => (f >= 1000 ? `${fmt(f / 1000, f % 1000 ? 1 : 0)} к` : fmt(f, f < 100 ? 1 : 0));
+/** Со знаком «+» или «−»; знак — после округления до `digits`, чтобы не было «−0,0». */
+export function fmtSigned(v: number, digits = 1): string {
+  const r = Math.round(v * 10 ** digits) / 10 ** digits;
+  return `${r > 0 ? '+' : r < 0 ? '−' : ''}${fmt(Math.abs(r), digits)}`;
+}
+
+export const fmtHz =(f: number) => (f >= 1000 ? `${fmt(f / 1000, f % 1000 ? 1 : 0)} к` : fmt(f, f < 100 ? 1 : 0));
 export const fmtInt = (n: number) => new Intl.NumberFormat('ru-RU').format(Math.round(n));

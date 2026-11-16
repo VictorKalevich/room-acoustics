@@ -6,10 +6,9 @@ import { houseDb } from '../../core/houseCurve';
 import { ResponseChart } from './Charts';
 import { Note, SelectField } from '../design-system';
 import { S } from '../strings';
-import { fmt } from '../format';
+import { fmt, fmtSigned } from '../format';
 
 const NONE: Measurement[] = [];
-const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt(Math.abs(v), 1)}`;
 
 export function MeasureCompare({ setup, onSetup, rise }: { setup: Setup; onSetup: (s: Setup) => void; rise?: number }) {
   const m = setup.measurement;
@@ -72,8 +71,8 @@ export function MeasureCompare({ setup, onSetup, rise }: { setup: Setup; onSetup
             <thead><tr><th /><th scope="col">{S.compare.before}</th><th scope="col">{S.compare.after}</th></tr></thead>
             <tbody>
               {row(S.compare.rms, (s) => [`${fmt(s.rms, 1)} дБ`], res)}
-              {row(S.compare.peak, (s) => [`${signed(s.peak.db)} дБ`, `${fmt(s.peak.f, 0)} Гц`], res)}
-              {row(S.compare.dip, (s) => [`${signed(s.dip.db)} дБ`, `${fmt(s.dip.f, 0)} Гц`], res)}
+              {row(S.compare.peak, (s) => [`${fmtSigned(s.peak.db)} дБ`, `${fmt(s.peak.f, 0)} Гц`], res)}
+              {row(S.compare.dip, (s) => [`${fmtSigned(s.dip.db)} дБ`, `${fmt(s.dip.f, 0)} Гц`], res)}
             </tbody>
           </table>
           {verdict && <Note tone={verdict.tone}>{verdict.text}</Note>}

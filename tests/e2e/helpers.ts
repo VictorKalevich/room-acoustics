@@ -30,8 +30,8 @@ export async function startManualRoom(page: Page) {
 }
 
 /**
- * Боковое меню открыто и закрывается по Escape: обработчик подключается эффектом после отрисовки вместе с фокусом на
- * первом пункте (`src/ui/components/Drawer.tsx`); Escape, нажатый раньше, меню не закрывает (033).
+ * Боковое меню открыто: фокус на первом пункте. Обработчик Escape подключается вместе с фокусом, с 046 — до отрисовки
+ * кадра (`src/ui/components/Drawer.tsx`), поэтому Escape закрывает меню и без этого ожидания (033).
  */
 export const menuReady = (page: Page) => expect(page.locator('.drawer__item').first()).toBeFocused();
 

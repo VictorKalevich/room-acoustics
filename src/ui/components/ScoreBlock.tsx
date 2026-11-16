@@ -6,7 +6,7 @@ import type { ComponentChildren } from 'preact';
 import type { BassObjective, LowReach } from '../../core/types';
 import { isFlat } from '../../core/objective';
 import { S } from '../strings';
-import { fmt } from '../format';
+import { fmt, fmtSigned } from '../format';
 
 type Grade = 'good' | 'mid' | 'bad';
 
@@ -36,8 +36,6 @@ interface Props {
   children?: ComponentChildren;
 }
 
-const signed = (v: number) => { const r = Math.round(v * 10) / 10; return `${r > 0 ? '+' : r < 0 ? '−' : ''}${fmt(Math.abs(r), 1)}`; };
-
 export function ScoreBlock({ objective, objScore, flatScore, context, delta, flatDetail, low, children }: Props) {
   const flat = isFlat(objective);
   const id = objective?.id ?? 'flat';
@@ -64,7 +62,7 @@ export function ScoreBlock({ objective, objScore, flatScore, context, delta, fla
       </div>
       {id === 'deep' && low && (
         <div class="score__second">
-          <span>{S.deep.lowRow} <strong>{S.deep.at(signed(low.atT), fmt(low.fT, 0))}</strong></span>
+          <span>{S.deep.lowRow} <strong>{S.deep.at(fmtSigned(low.atT), fmt(low.fT, 0))}</strong></span>
           <span class="muted small">
             {S.deep.allowed(low.drop)}
             {low.reach != null ? ` ${S.deep.reach(low.drop, fmt(low.reach, 1))}` : ''}

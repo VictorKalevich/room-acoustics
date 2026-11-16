@@ -1,5 +1,5 @@
 // Выдвижное меню слева: новые и редкие разделы. Открывается кнопкой ☰, закрывается касанием мимо или свайпом влево.
-import { useEffect, useRef } from 'preact/hooks';
+import { useLayoutEffect, useRef } from 'preact/hooks';
 import { useSheetLock } from '../sheetLock';
 import { S } from '../strings';
 
@@ -35,8 +35,9 @@ export function Drawer({ open, current, roomReady = true, start, onClose, onPick
   useSheetLock(root, panel, open);
   // свежий обработчик без перезапуска эффекта (иначе фокус прыгал бы на первый пункт при каждой перерисовке)
   const close = useRef(onClose);
-  useEffect(() => { close.current = onClose; });
-  useEffect(() => {
+  useLayoutEffect(() => { close.current = onClose; });
+  // до отрисовки кадра: Escape сразу после открытия уже закрывает меню
+  useLayoutEffect(() => {
     if (!open) return;
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current(); };
     addEventListener('keydown', k);

@@ -50,6 +50,7 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
   useEffect(() => { roomRef.current = room; }, [room]);
   const runCal = () => {
     if (!m) return;
+    setError(null);
     calibrate.run('calibrate', { room, sources, constraints: c, setup: current, measurement: m }, {
       done: (r) => {
         setCal(r);

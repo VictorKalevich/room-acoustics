@@ -434,6 +434,39 @@ test('009: карта звука в автоподборе обновляетс�
   await expect.poll(() => page.locator('svg.plan .plan__heat rect').count(), { timeout: 20_000 }).toBeGreaterThan(100);
 });
 
+test('046: в режиме «Вручную» карта варианта автоподбора не считается — на правку одна задача карты', async ({ page }) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as { jobs: string[] };
+    w.jobs = [];
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message: unknown, options?: StructuredSerializeOptions | Transferable[]) {
+      const type = (message as { type?: string } | null)?.type;
+      if (type) w.jobs.push(type);
+      return Reflect.apply(post, this, [message, options]);
+    };
+  });
+  const jobs = () => page.evaluate(() => (window as unknown as { jobs: string[] }).jobs.slice());
+  await page.goto('/#placement');
+  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await expect(page.locator('.score__value').first()).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => page.locator('.panel--hero .plan__heat rect').count(), { timeout: 20_000 }).toBeGreaterThan(100);
+  await page.getByRole('radio', { name: 'Вручную' }).click();
+  await expect.poll(() => page.locator('svg.plan .plan__heat rect').count(), { timeout: 20_000 }).toBeGreaterThan(100);
+  const from = (await jobs()).length;
+  const speakers = page.getByRole('radiogroup', { name: 'Фронтальные колонки' });
+  const other = (await speakers.getByRole('radio', { name: 'Одна' }).getAttribute('aria-checked')) === 'true' ? 'Пара' : 'Одна';
+  await speakers.getByRole('radio', { name: other }).click();
+  // задачи карт уходят после паузы (120 мс и больше): ждём, пока за секунду не уйдёт новых
+  let last = -1;
+  await expect.poll(async () => {
+    const n = (await jobs()).length;
+    const quiet = n === last && n > from;
+    last = n;
+    return quiet;
+  }, { intervals: [1000], timeout: 20_000 }).toBe(true);
+  expect((await jobs()).slice(from).filter((t) => t === 'listenerMap')).toEqual(['listenerMap']);
+});
+
 test('009: цель подбора — меньше провалов внизу и провалы на своих модах', async ({ page }) => {
   await page.goto('/#placement');
   await page.getByRole('combobox', { name: 'Что искать' }).selectOption('lowDips');

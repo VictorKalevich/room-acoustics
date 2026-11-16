@@ -127,3 +127,20 @@ test('leaving EQ stops its audio while preserving calculated filters', async ({ 
   await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Комната' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-audio-stopped', 'true');
 });
+
+test('046: Escape сразу после открытия бокового меню закрывает его', async ({ page }) => {
+  // кадры приходят через 500 мс: эффект после отрисовки (Preact ждёт кадра не дольше 100 мс) запаздывает, и Escape
+  // нажимается раньше него, как на медленном телефоне (033)
+  await page.addInitScript(() => {
+    window.requestAnimationFrame = (cb) => window.setTimeout(() => cb(performance.now()), 500);
+    window.cancelAnimationFrame = (id) => window.clearTimeout(id);
+  });
+  await page.goto('/#room');
+  const drawer = page.locator('.drawer');
+  await page.getByRole('button', { name: 'Открыть меню' }).click();
+  await page.keyboard.press('Escape');
+  await expect(drawer).not.toHaveClass(/is-open/);
+  await page.getByRole('button', { name: 'Открыть меню' }).click();
+  await expect(drawer).toHaveClass(/is-open/);
+  await expect(page.locator('.drawer__item').first()).toBeFocused();
+});

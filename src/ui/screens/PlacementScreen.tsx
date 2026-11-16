@@ -100,11 +100,12 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
   const effSub = subs.some((s) => s.id === mapSub) ? mapSub : subs[0]?.id ?? '';
   const heatCache = useRef<{ owner: unknown; map: Map<string, Heatmap> }>({ owner: null, map: new Map() });
   // прежний расчёт (другой вариант или входы) больше не нужен: его карта не должна появиться под новым ключом,
-  // поэтому задача снимается сразу, а карта скрыта, пока не посчитана новая; ошибка карты не показывается
-  const heatJob = useComputed(effKind === 'sub' ? 'subMap' : 'listenerMap', layers.map && current ? {
+  // поэтому задача снимается сразу, а карта скрыта, пока не посчитана новая; ошибка карты не показывается.
+  // Хук вызывается и в режиме «Вручную» (экран выбирается ниже): там карта варианта не нужна
+  const heatJob = useComputed(effKind === 'sub' ? 'subMap' : 'listenerMap', mode === 'auto' && layers.map && current ? {
     room, sources, constraints: c, setup: { ...placementLayout(current), subSettings: current.subSettings ?? {}, crossoverHz: null }, subId: effSub, ppo: gridPpo(precision, c.objective),
   } : null, {
-    deps: [layers.map, current, sel, effKind, effSub, result, room, sources, c, precision],
+    deps: [mode, layers.map, current, sel, effKind, effSub, result, room, sources, c, precision],
     delay: 120,
     previous: 'clear',
     // выключенная карта хранится: при включении с теми же входами видна с первого кадра

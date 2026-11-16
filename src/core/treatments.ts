@@ -1,5 +1,5 @@
 // Акустическая обработка: басовые ловушки, панели, потолочные облака — поглощение по октавам и площадь.
-import type { OctaveValues, Room, SurfaceId, Treatment, WallId } from './types';
+import type { OctaveValues, Room, Treatment } from './types';
 
 /** Пористый поглотитель (минвата 40–60 кг/м³ или войлок) на жёсткой стене: α по октавам 63…4000 Гц. */
 const POROUS: Record<string, OctaveValues> = {
@@ -35,14 +35,6 @@ export function treatmentAlpha(t: Treatment): OctaveValues {
 
 export function treatmentArea(t: Treatment): number {
   return t.width * t.height;
-}
-
-/** Поверхности, на которые приходится элемент, с долями площади. */
-export function treatmentSurfaces(t: Treatment): { s: SurfaceId; share: number }[] {
-  if (t.kind === 'cloud') return [{ s: 'ceiling', share: 1 }];
-  if (t.kind === 'panel') return [{ s: t.wall as WallId, share: 1 }];
-  const [fb, lr] = (t.corner ?? 'front-left').split('-') as [WallId, WallId];
-  return [{ s: fb, share: 0.5 }, { s: lr, share: 0.5 }];
 }
 
 /**

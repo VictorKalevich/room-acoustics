@@ -12,7 +12,7 @@ export default defineConfig({
   },
   // на сервере GitHub — повтор упавшего теста и отчёт с видео/трассой только для упавших
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }], ['github']] : 'list',
   projects: [
     // 021/022: расчёты открываются, когда комната создана и места выбраны; проверки начинают с готовой комнаты
     // и выбранных мест из room.setup.ts. Сценарии первого запуска сбрасывают состояние сами

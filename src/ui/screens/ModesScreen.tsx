@@ -115,12 +115,12 @@ function likeLabel(m: SystemMode): string {
 }
 
 function SystemModesPanel({ room, fMax }: { room: Room; fMax: number }) {
-  // прежний список остаётся, пока считается новый; ход между запусками не сбрасывается
+  // прежний список остаётся, пока считается новый; ход — с 0 при каждом запуске
   const { value: modes, busy, progress, error } = useComputed('modes', { room, fMax }, {
     deps: [room, fMax],
     delay: 400,
     previous: 'keep',
-    progress: 'carry',
+    progress: 'reset',
   });
   const shown = (modes ?? []).filter((m) => m.f <= fMax);
   return (
