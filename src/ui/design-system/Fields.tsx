@@ -14,6 +14,8 @@ interface NumberFieldProps {
   compact?: boolean;
   /** Необязательное значение (044): пустой ввод — «не указано», onChange(NaN) без ошибки; NaN показывается пустым полем. */
   optional?: boolean;
+  /** 048: значение не подходит по внешней причине (объект за стеной) — текст с допустимыми значениями. Ошибка ввода важнее. */
+  error?: string;
 }
 
 /** Числовое поле: принимает запятую и точку, проверяет диапазон, не мешает вводу. */
@@ -49,8 +51,9 @@ export function NumberField(p: NumberFieldProps) {
   };
 
   const id = p.id ?? `field-${uniqueId}`;
+  const problem = error ?? p.error;
   return (
-    <div class={`field${p.compact ? ' field--compact' : ''}${error ? ' field--error' : ''}`}>
+    <div class={`field${p.compact ? ' field--compact' : ''}${problem ? ' field--error' : ''}`}>
       <label for={id}>{p.label}</label>
       <div class="field__box">
         <input
@@ -58,8 +61,8 @@ export function NumberField(p: NumberFieldProps) {
           inputMode="decimal"
           autocomplete="off"
           value={text}
-          aria-invalid={!!error}
-          aria-describedby={error ? `${id}-err` : p.hint ? `${id}-hint` : undefined}
+          aria-invalid={!!problem}
+          aria-describedby={problem ? `${id}-err` : p.hint ? `${id}-hint` : undefined}
           onFocus={(e) => { setFocused(true); (e.target as HTMLInputElement).select(); }}
           onInput={(e) => {
             const s = (e.target as HTMLInputElement).value;
@@ -72,6 +75,8 @@ export function NumberField(p: NumberFieldProps) {
       </div>
       {error ? (
         <p class="field__error" id={`${id}-err`} role="alert">{error}</p>
+      ) : p.error ? (
+        <p class="field__error" id={`${id}-err`}>{p.error}</p>
       ) : p.hint ? (
         <p class="field__hint" id={`${id}-hint`}>{p.hint}</p>
       ) : null}

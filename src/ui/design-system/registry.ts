@@ -3,7 +3,7 @@
 export const componentFamilies = [
   ['Каркас', '.screen · .content · .topbar · .tabbar (вкладки по числу пунктов) · .app--start (без нижней панели) · .drawer · .drawer__item--start (пункт «Начать»)'],
   ['Панели', 'Panel · .panel · .panel--hero · .panel--collapsible'],
-  ['Поля', 'NumberField (пустое — NaN; optional — пустой ввод очищает) · SelectField (hint) · .field · .field--compact · .field--error'],
+  ['Поля', 'NumberField (пустое — NaN; optional — пустой ввод очищает; error — внешняя ошибка с допустимым значением) · SelectField (hint) · .field · .field--compact · .field--error'],
   ['Переключатели', 'Segmented · .segmented · .tabs · .segmented--wrap'],
   ['Навигация разделов', 'SectionNav · .section-nav'],
   ['Кнопки', '.btn · --primary · --tonal · --ghost · --danger · --small · --wide'],
@@ -13,7 +13,7 @@ export const componentFamilies = [
   ['Сообщения', 'Note · CalculationStatus · RoomFirst/PlacementFirst (закрытый экран) · FailurePanel (сбой раздела или приложения) · DraftFailure (рабочий проект не открылся при запуске) · .note · .progress · .spinner'],
   ['Раскрытие', 'Details · .details · .setup-card'],
   ['Шторки', 'ConfirmSheet (danger/primary, cancel, extra, список .plain-list) · .sheet · .sheet-backdrop · .sheet__close'],
-  ['Карточки объектов', '.zone-card · .zone-card.is-selected · .wall-items · .found-opening · .problem'],
+  ['Карточки объектов', '.zone-card · .zone-card.is-selected · .zone-card.is-error (не помещается в комнату) · .wall-items · .found-opening · .problem'],
   ['Метки состояния', '.tag · .model-tag · .sev · .robust-tag · .score__grade'],
   ['Показатели', '.stat · .score · .voice-metric · .score-ring · .meter'],
   ['Таблицы', '.table-scroll · .rt-table · .pos-table · .report-table'],

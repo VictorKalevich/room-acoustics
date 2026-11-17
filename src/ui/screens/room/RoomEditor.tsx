@@ -18,6 +18,7 @@ import { speedOfSound } from '../../../core/physics';
 import { shownTreatments } from '../../../core/treatments';
 import { computeReverb } from '../../../core/reverb';
 import { fitRoomObjects, type FitItem } from '../../../core/fitRoom';
+import { FitIssuesProvider, fitCardId, fitDetails, fitKey, fitName, fitPlace, fitText, useFitIssues, type FitIssue } from './fitIssues';
 import { ActionMenu, ConfirmSheet, Details, Note, NumberField, Panel, SectionNav, Segmented, SelectField } from '../../design-system';
 import { PlanView } from '../../components/PlanView';
 import { WallView } from '../../components/WallView';
@@ -67,7 +68,16 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
   // поля, которые меняются вне конструктора (обработка, подстройка), всегда берутся из проекта
   const room = useMemo(() => (draft ? withOutside(draft, project.room) : project.room), [draft, project.room]);
   const reverb = useMemo(() => computeReverb(room), [room]);
-  const outside = useMemo(() => { const f = fitRoomObjects(room); return f.removed.length + f.trimmed.length; }, [room]);
+  // 048: что за стенами — в списке под шагами, на карточках и в полях объектов
+  const issues = useMemo(() => {
+    const f = fitRoomObjects(room);
+    return [...f.removed.map((x) => ({ f: x, removed: true })), ...f.trimmed.map((x) => ({ f: x, removed: false }))];
+  }, [room]);
+  const fitContext = useMemo(() => ({ room, issues: new Map(issues.map((i): [string, FitIssue] => [fitKey(i.f), i])) }), [room, issues]);
+  const [wall, setWall] = useViewState<WallId>(project.id, 'room.wall', 'front');
+  const [furn, setFurn] = useViewState<string | null>(project.id, 'room.furniture', null);
+  /** Карточка, к которой перейти, когда откроется её шаг. */
+  const [target, setTarget] = useState<{ step: RoomStep; id: string } | null>(null);
   const dirty = draft !== null && draftDiffers(draft, project.room);
   const dimsOk = !manualNew || DIMS.every((k) => entered.includes(k));
   /** Пометка «по умолчанию» у нетронутых материалов и обстановки — только в ручной настройке. */
@@ -122,8 +132,28 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
   const save = (after?: () => void) => {
     const fit = fitRoomObjects(room);
     if (fit.removed.length || fit.trimmed.length) setFitAsk({ fit, after });
-    else commit(room, after);
+    // 048: заход за стену меньше сантиметра подравнивается без вопроса
+    else commit(fit.room, after);
   };
+  /** 048: к объекту за стенами — его шаг, стена или предмет, карточка на виду. */
+  const show = (f: FitItem) => {
+    const place = fitPlace(f);
+    if (place.wall) setWall(place.wall);
+    if (place.furniture) setFurn(place.furniture);
+    setTarget({ step: place.step, id: fitCardId(f) });
+    if (place.step !== shown) onStep(place.step);
+  };
+  useEffect(() => {
+    if (!target || target.step !== shown) return;
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(target.id);
+      // карточка может быть в свёрнутом блоке
+      for (let d = el?.closest('details'); d; d = d.parentElement?.closest('details')) d.open = true;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTarget(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [target, shown]);
   const reset = () => {
     setAskReset(false);
     discardRoomDraft(project);
@@ -166,9 +196,9 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
   const steps = (
     <>
       {shown === 'size' && <SizeStep room={room} onRoom={edit} entered={manualNew ? entered : null} onDim={enterDim} />}
-      {shown === 'walls' && <WallsStep pid={project.id} room={room} onRoom={edit} isDefault={isDefault} />}
+      {shown === 'walls' && <WallsStep wall={wall} onWall={setWall} room={room} onRoom={edit} isDefault={isDefault} />}
       {shown === 'floor' && <FloorStep room={room} onRoom={edit} isDefault={isDefault} />}
-      {shown === 'furniture' && <FurnitureStep pid={project.id} room={room} reverb={reverb} onRoom={edit} isDefault={isDefault} />}
+      {shown === 'furniture' && <FurnitureStep selected={furn} onSelect={setFurn} room={room} reverb={reverb} onRoom={edit} isDefault={isDefault} />}
     </>
   );
   const i = ROOM_STEPS.indexOf(shown);
@@ -197,9 +227,27 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
           {dirty && <Note>{S.editor.unsaved}</Note>}
         </>
       )}
-      {steps}
+      <FitIssuesProvider value={fitContext}>{steps}</FitIssuesProvider>
       <Panel>
-        {outside > 0 && <Note tone="warn">{S.editor.outside(outside)}</Note>}
+        {issues.length > 0 && (
+          <>
+            <Note tone="warn">{S.editor.outside(issues.length)}</Note>
+            <ul class="problems">
+              {issues.map((it) => (
+                <li key={fitKey(it.f)} class="problem is-high">
+                  <div class="problem__head">
+                    <strong>{fitName(room, it.f)}</strong>
+                    {/* при ручной настройке на ещё не пройденный шаг не перейти */}
+                    {(!wizard || ROOM_STEPS.indexOf(fitPlace(it.f).step) <= reachedIndex) && (
+                      <button type="button" class="btn btn--small btn--ghost" onClick={() => show(it.f)}>{S.fit.show}</button>
+                    )}
+                  </div>
+                  <p class="small muted">{fitText(it)}</p>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
         {!dimsOk && shown === 'size' && <Note>{S.editor.dimsNeeded}</Note>}
         {saved && !dirty && <p class="small" role="status">{S.editor.saved}</p>}
         {wizard ? (
@@ -237,37 +285,26 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
         <ConfirmSheet title={S.editor.fitTitle} text={S.editor.fitText} confirm={S.editor.save} cancel={S.editor.fitBack}
           tone={fitAsk.fit.removed.length ? 'danger' : 'primary'}
           onCancel={() => setFitAsk(null)} onConfirm={() => commit(fitAsk.fit.room, fitAsk.after)}>
-          <FitList title={S.editor.fitRemoved} items={fitAsk.fit.removed} />
-          <FitList title={S.editor.fitTrimmed} items={fitAsk.fit.trimmed} />
+          <FitList room={room} title={S.editor.fitRemoved} items={fitAsk.fit.removed} />
+          <FitList room={room} title={S.editor.fitTrimmed} items={fitAsk.fit.trimmed} />
         </ConfirmSheet>
       )}
     </div>
   );
 }
 
-/** Подпись объекта в списке удаляемого и обрезаемого. */
-function fitLabel(f: FitItem): string {
-  const wall = (w: WallId) => S.editor.neighbour[w];
-  switch (f.kind) {
-    case 'zone': return f.item.name || S.zones.kinds[f.item.kind];
-    case 'opening': return `${S.editor.fitOpening}, ${wall(f.item.wall)}`;
-    case 'feature': return `${S.layout.kinds[f.item.kind]}, ${wall(f.item.wall)}`;
-    case 'covering': {
-      const c = f.item;
-      if (c.surface === 'floor') return `${S.coverings.carpet} ${S.editor.fitFloor}`;
-      return `${c.kind === 'curtain' ? S.coverings.curtain : S.coverings.wallCarpet}, ${wall(c.surface)}`;
-    }
-    case 'extension': return `${f.item.name || S.openings.corridor}, ${wall(f.item.wall)}`;
-    case 'slope': return S.shape.slopeTitle;
-  }
-}
-
-function FitList({ title, items }: { title: string; items: FitItem[] }) {
+/** Список удаляемого или обрезаемого перед сохранением: подписи как у карточек, где и на сколько за стенами (048). */
+function FitList({ room, title, items }: { room: Room; title: string; items: FitItem[] }) {
   if (!items.length) return null;
   return (
     <>
       <p class="small"><strong>{title}</strong></p>
-      <ul class="plain-list small">{items.map((f, ki) => <li key={ki}>{fitLabel(f)}</li>)}</ul>
+      <ul class="plain-list small">
+        {items.map((f) => {
+          const d = fitDetails(f.over);
+          return <li key={fitKey(f)}>{fitName(room, f)}{d ? `: ${d}` : ''}</li>;
+        })}
+      </ul>
     </>
   );
 }
@@ -327,14 +364,15 @@ function useCoverings(room: Room, onRoom: (r: Room) => void) {
 }
 
 /** Шаг «Стены»: выбор стены, развёртка, материал, окна/двери/проёмы, ковры и шторы этой стены. */
-function WallsStep({ pid, room, onRoom, isDefault }: { pid: string; room: Room; onRoom: (r: Room) => void; isDefault?: (key: string) => boolean }) {
-  const [wall, setWall] = useViewState<WallId>(pid, 'room.wall', 'front');
+function WallsStep({ wall, onWall, room, onRoom, isDefault }: {
+  wall: WallId; onWall: (w: WallId) => void; room: Room; onRoom: (r: Room) => void; isDefault?: (key: string) => boolean;
+}) {
   const covers = (room.coverings ?? []).filter((c) => c.surface === wall);
   const edit = useCoverings(room, onRoom);
   return (
     <>
       <Panel class="panel--hero">
-        <Segmented label={S.editor.wall} value={wall} options={WALLS.map((w) => ({ value: w, label: S.editor.wallShort[w] }))} onChange={setWall} />
+        <Segmented label={S.editor.wall} value={wall} options={WALLS.map((w) => ({ value: w, label: S.editor.wallShort[w] }))} onChange={onWall} />
         <WallView room={room} wall={wall} />
         <p class="muted small">{S.editor.wallView}</p>
         <SelectField label={S.editor.wallMaterial} value={room.materials[wall]} options={materialOptions}
@@ -383,28 +421,31 @@ function CoveringCard({ room, c, index, onChange, onRemove }: { room: Room; c: C
   const title = c.kind === 'curtain' ? S.coverings.curtain : floor ? S.coverings.carpet : S.coverings.wallCarpet;
   const U = floor ? room.depth : c.surface === 'front' || c.surface === 'back' ? room.width : room.depth;
   const V = floor ? room.width : room.height;
+  const fit = useFitIssues()(c.id);
+  const err = fit?.hints ?? {};
   return (
-    <div class="zone-card">
+    <div id={`fit-${c.id}`} class={`zone-card${fit ? ' is-error' : ''}`}>
       <div class="zone-card__head">
         <SelectField label={`${title} ${index + 1}: ${S.coverings.grade.toLowerCase()}`} value={c.grade}
           options={grades.map((g) => ({ value: g, label: S.coverings.grades[g] }))} onChange={(v) => onChange({ grade: v as Covering['grade'] })} />
         <button type="button" class="btn btn--small btn--ghost" onClick={onRemove}>{S.coverings.remove}</button>
       </div>
+      {fit && <Note tone="warn">{fit.text}</Note>}
       {floor ? (
         <div class="grid-2">
-          <NumberField compact id={`${c.id}-u0`} label={S.coverings.fromFront} value={c.u0} unit="м" min={0} max={U} onChange={(v) => onChange({ u0: v, u1: v + (c.u1 - c.u0) })} />
-          <NumberField compact id={`${c.id}-v0`} label={S.coverings.fromLeft} value={c.v0} unit="м" min={0} max={V} onChange={(v) => onChange({ v0: v, v1: v + (c.v1 - c.v0) })} />
-          <NumberField compact id={`${c.id}-du`} label={S.coverings.lengthDeep} value={len(c.u0, c.u1)} unit="м" min={0.1} max={U} onChange={(v) => onChange({ u1: c.u0 + v })} />
-          <NumberField compact id={`${c.id}-dv`} label={S.coverings.widthAlong} value={len(c.v0, c.v1)} unit="м" min={0.1} max={V} onChange={(v) => onChange({ v1: c.v0 + v })} />
+          <NumberField compact id={`${c.id}-u0`} label={S.coverings.fromFront} value={c.u0} unit="м" min={0} max={U} error={err.u0} onChange={(v) => onChange({ u0: v, u1: v + (c.u1 - c.u0) })} />
+          <NumberField compact id={`${c.id}-v0`} label={S.coverings.fromLeft} value={c.v0} unit="м" min={0} max={V} error={err.v0} onChange={(v) => onChange({ v0: v, v1: v + (c.v1 - c.v0) })} />
+          <NumberField compact id={`${c.id}-du`} label={S.coverings.lengthDeep} value={len(c.u0, c.u1)} unit="м" min={0.1} max={U} error={err.du} onChange={(v) => onChange({ u1: c.u0 + v })} />
+          <NumberField compact id={`${c.id}-dv`} label={S.coverings.widthAlong} value={len(c.v0, c.v1)} unit="м" min={0.1} max={V} error={err.dv} onChange={(v) => onChange({ v1: c.v0 + v })} />
         </div>
       ) : (
         <>
           <p class="muted small">{S.openings.offsetLine(c.surface, c.kind === 'curtain' ? 'штор' : 'ковра')}</p>
           <div class="grid-2">
-            <NumberField compact id={`${c.id}-u0`} label={S.openings.offset} value={c.u0} unit="м" min={0} max={U} onChange={(v) => onChange({ u0: v, u1: v + (c.u1 - c.u0) })} />
-            <NumberField compact id={`${c.id}-du`} label={S.openings.widthAlong} value={len(c.u0, c.u1)} unit="м" min={0.1} max={U} onChange={(v) => onChange({ u1: c.u0 + v })} />
-            <NumberField compact id={`${c.id}-v0`} label={S.coverings.bottom} value={c.v0} unit="м" min={0} max={V} onChange={(v) => onChange({ v0: v })} />
-            <NumberField compact id={`${c.id}-v1`} label={S.coverings.top} value={c.v1} unit="м" min={0.1} max={V} onChange={(v) => onChange({ v1: v })} />
+            <NumberField compact id={`${c.id}-u0`} label={S.openings.offset} value={c.u0} unit="м" min={0} max={U} error={err.u0} onChange={(v) => onChange({ u0: v, u1: v + (c.u1 - c.u0) })} />
+            <NumberField compact id={`${c.id}-du`} label={S.openings.widthAlong} value={len(c.u0, c.u1)} unit="м" min={0.1} max={U} error={err.du} onChange={(v) => onChange({ u1: c.u0 + v })} />
+            <NumberField compact id={`${c.id}-v0`} label={S.coverings.bottom} value={c.v0} unit="м" min={0} max={V} error={err.v0} onChange={(v) => onChange({ v0: v })} />
+            <NumberField compact id={`${c.id}-v1`} label={S.coverings.top} value={c.v1} unit="м" min={0.1} max={V} error={err.v1} onChange={(v) => onChange({ v1: v })} />
           </div>
         </>
       )}
@@ -444,10 +485,12 @@ function FloorStep({ room, onRoom, isDefault }: { room: Room; onRoom: (r: Room) 
 }
 
 /** Шаг «Мебель»: план сверху, обстановка (общая оценка и список), предметы, прочие зоны. */
-function FurnitureStep({ pid, room, reverb, onRoom, isDefault }: { pid: string; room: Room; reverb: ReverbResult; onRoom: (r: Room) => void; isDefault?: (key: string) => boolean }) {
+function FurnitureStep({ selected, onSelect: setSelected, room, reverb, onRoom, isDefault }: {
+  selected: string | null; onSelect: (id: string | null) => void; room: Room; reverb: ReverbResult; onRoom: (r: Room) => void; isDefault?: (key: string) => boolean;
+}) {
   const zones = room.zones ?? [];
   const items = zones.filter((z) => z.kind === 'furniture');
-  const [selected, setSelected] = useViewState<string | null>(pid, 'room.furniture', null);
+  const issueOf = useFitIssues();
   const setItem = (id: string, patch: Partial<Zone>) => onRoom({ ...room, zones: zones.map((z) => (z.id === id ? { ...z, ...patch } : z)) });
   /** Положение и размеры: предмет остаётся в комнате, размер по возможности сохраняется. */
   const place = (z: Zone, x0: number, y0: number, dx: number, dy: number) => setItem(z.id, fitRect(room, x0 + dx / 2, y0 + dy / 2, dx, dy));
@@ -472,12 +515,14 @@ function FurnitureStep({ pid, room, reverb, onRoom, isDefault }: { pid: string; 
         <div class="wall-items">
           {items.map((z, i) => {
             const t = furnitureType(z) ?? 'other';
+            const fit = issueOf(z.id);
+            const err = fit?.hints ?? {};
             const dx = z.x1 - z.x0, dy = z.y1 - z.y0;
             const effect = !isAcoustic(t)
               ? S.furniture.effect.none
               : list ? S.furniture.effect[contribution(furnitureAbsorption(z), reverb.absorptionArea)] : S.furniture.listOff;
             return (
-              <div key={z.id} id={`furn-${z.id}`} class={`zone-card${selected === z.id ? ' is-selected' : ''}`}>
+              <div key={z.id} id={`furn-${z.id}`} class={`zone-card${selected === z.id ? ' is-selected' : ''}${fit ? ' is-error' : ''}`}>
                 <div class="zone-card__head">
                   <SelectField label={`${S.furniture.type} ${i + 1}`} value={t}
                     options={FURNITURE_ORDER.map((k) => ({ value: k, label: S.furniture.types[k] }))} onChange={(v) => retype(z, v as FurnitureType)} />
@@ -485,12 +530,13 @@ function FurnitureStep({ pid, room, reverb, onRoom, isDefault }: { pid: string; 
                     {S.furniture.remove}
                   </button>
                 </div>
+                {fit && <Note tone="warn">{fit.text}</Note>}
                 <div class="grid-2">
-                  <NumberField compact id={`${z.id}-x0`} label={S.furniture.fromFront} value={z.x0} unit="м" min={0} max={room.depth} onChange={(v) => place(z, v, z.y0, dx, dy)} />
-                  <NumberField compact id={`${z.id}-y0`} label={S.furniture.fromLeft} value={z.y0} unit="м" min={0} max={room.width} onChange={(v) => place(z, z.x0, v, dx, dy)} />
-                  <NumberField compact id={`${z.id}-dy`} label={S.furniture.along} value={len(z.y0, z.y1)} unit="м" min={0.1} max={room.width} onChange={(v) => place(z, z.x0, z.y0, dx, v)} />
-                  <NumberField compact id={`${z.id}-dx`} label={S.furniture.deep} value={len(z.x0, z.x1)} unit="м" min={0.1} max={room.depth} onChange={(v) => place(z, z.x0, z.y0, v, dy)} />
-                  <NumberField compact id={`${z.id}-h`} label={S.furniture.height} value={z.height ?? FURNITURE[t].height} unit="м" min={0.1} max={room.height} onChange={(v) => setItem(z.id, { height: v })} />
+                  <NumberField compact id={`${z.id}-x0`} label={S.furniture.fromFront} value={z.x0} unit="м" min={0} max={room.depth} error={err.x0} onChange={(v) => place(z, v, z.y0, dx, dy)} />
+                  <NumberField compact id={`${z.id}-y0`} label={S.furniture.fromLeft} value={z.y0} unit="м" min={0} max={room.width} error={err.y0} onChange={(v) => place(z, z.x0, v, dx, dy)} />
+                  <NumberField compact id={`${z.id}-dy`} label={S.furniture.along} value={len(z.y0, z.y1)} unit="м" min={0.1} max={room.width} error={err.dy} onChange={(v) => place(z, z.x0, z.y0, dx, v)} />
+                  <NumberField compact id={`${z.id}-dx`} label={S.furniture.deep} value={len(z.x0, z.x1)} unit="м" min={0.1} max={room.depth} error={err.dx} onChange={(v) => place(z, z.x0, z.y0, v, dy)} />
+                  <NumberField compact id={`${z.id}-h`} label={S.furniture.height} value={z.height ?? FURNITURE[t].height} unit="м" min={0.1} max={room.height} error={err.h} onChange={(v) => setItem(z.id, { height: v })} />
                 </div>
                 <div class="btn-row">
                   <button type="button" class="btn btn--small" onClick={() => onRoom({ ...room, zones: zones.map((x) => (x.id === z.id ? rotateFurniture(room, x) : x)) })}>{S.furniture.rotate}</button>

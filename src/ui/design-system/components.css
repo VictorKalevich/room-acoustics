@@ -705,3 +705,5 @@ line.chart__grid { stroke: var(--line); stroke-width: 1; }
 .plan__zone-rect.is-selected .plan__zone-outline { stroke: var(--accent); stroke-width: 2.4; stroke-dasharray: none; }
 .plan__zone-rect.is-selected text { fill: var(--accent); }
 .zone-card.is-selected { box-shadow: inset 0 0 0 2px var(--accent); }
+/* 048: объект не помещается в комнату; важнее выбора на плане */
+.zone-card.is-error { box-shadow: inset 0 0 0 2px var(--warn); }

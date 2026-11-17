@@ -7,6 +7,7 @@ import { openingAsItem, toRoomItem, type WallItem, type WallItemKind } from '../
 import { NumberField, Panel, SelectField, Note } from '../../design-system';
 import { ActionMenu } from '../../design-system';
 import { S } from '../../strings';
+import { useFitIssues } from './fitIssues';
 
 const WALLS: WallId[] = ['front', 'back', 'left', 'right'];
 
@@ -116,13 +117,16 @@ function useRoomItems(room: Room, onRoom: (r: Room) => void) {
 /** Шаг «Размеры»: коридоры за аркой, ниши и модель расчёта. */
 export function ShapePanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
   const { exts, setExt, addNiche, addCorridor, span } = useRoomItems(room, onRoom);
+  const issueOf = useFitIssues();
   return (
     <Panel title={S.editor.shape}>
       <p class="small">{S.editor.shapeIntro}</p>
       {exts.map((e, i) => {
         const err = validateExtension(room, e);
+        const fit = issueOf(e.id);
+        const hint = fit?.hints ?? {};
         return (
-          <div key={e.id} class="zone-card">
+          <div key={e.id} id={`fit-${e.id}`} class={`zone-card${fit ? ' is-error' : ''}`}>
             <div class="zone-card__head">
               <SelectField
                 label={`${S.openings.corridor} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
@@ -134,6 +138,7 @@ export function ShapePanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
                 {S.openings.remove}
               </button>
             </div>
+            {fit && <Note tone="warn">{fit.text}</Note>}
             <p class="muted small">{S.openings.extLine(e.wall)}</p>
             <div class="grid-2">
               <NumberField compact id={`${e.id}-a0`} label={S.openings.extStart} value={e.a0} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { a0: v, a1: v + (e.a1 - e.a0) })} />
@@ -143,9 +148,9 @@ export function ShapePanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
             </div>
             <span class="range-row__label">{S.openings.arch}</span>
             <div class="grid-3">
-              <NumberField compact id={`${e.id}-aa0`} label={S.openings.archOffset} value={e.arch.a0} unit="м" min={-20} max={50} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a0: v, a1: v + (e.arch.a1 - e.arch.a0) } })} />
-              <NumberField compact id={`${e.id}-aa1`} label={S.openings.archWidth} value={span(e.arch.a0, e.arch.a1)} unit="м" min={0.1} max={50} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a1: e.arch.a0 + v } })} />
-              <NumberField compact id={`${e.id}-ah`} label={S.openings.archHeight} value={e.arch.height} unit="м" min={0.5} max={20} onChange={(v) => setExt(e.id, { arch: { ...e.arch, height: v } })} />
+              <NumberField compact id={`${e.id}-aa0`} label={S.openings.archOffset} value={e.arch.a0} unit="м" min={-20} max={50} error={hint.aa0} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a0: v, a1: v + (e.arch.a1 - e.arch.a0) } })} />
+              <NumberField compact id={`${e.id}-aa1`} label={S.openings.archWidth} value={span(e.arch.a0, e.arch.a1)} unit="м" min={0.1} max={50} error={hint.aa1} onChange={(v) => setExt(e.id, { arch: { ...e.arch, a1: e.arch.a0 + v } })} />
+              <NumberField compact id={`${e.id}-ah`} label={S.openings.archHeight} value={e.arch.height} unit="м" min={0.5} max={20} error={hint.ah} onChange={(v) => setExt(e.id, { arch: { ...e.arch, height: v } })} />
             </div>
             <label class="check"><input type="checkbox" checked={e.openStart} onChange={(ev) => setExt(e.id, { openStart: (ev.target as HTMLInputElement).checked })} /><span>{S.openings.openStart}</span></label>
             <label class="check"><input type="checkbox" checked={e.openEnd} onChange={(ev) => setExt(e.id, { openEnd: (ev.target as HTMLInputElement).checked })} /><span>{S.openings.openEnd}</span></label>
@@ -165,6 +170,8 @@ export function ShapePanel({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
 
 /** Шаг «Пол и потолок»: скос потолка (прежний блок без изменений). */
 export function SlopeBlock({ room, onRoom }: { room: Room; onRoom: (r: Room) => void }) {
+  const fit = useFitIssues()('slope');
+  const hint = fit?.hints ?? {};
   return (
     <>
       <h3 class="subhead">{S.shape.slopeTitle}</h3>
@@ -173,10 +180,11 @@ export function SlopeBlock({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
         <span>{S.shape.slopeOn}</span>
       </label>
       {room.slope && (
-        <div class="zone-card">
+        <div id="fit-slope" class={`zone-card${fit ? ' is-error' : ''}`}>
+          {fit && <Note tone="warn">{fit.text}</Note>}
           <SelectField label={S.shape.slopeWall} value={room.slope.wall} options={WALLS.map((w) => ({ value: w, label: S.openings.walls[w] }))} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, wall: v as WallId } })} />
-          <NumberField compact id="slope-low" label={S.shape.slopeLow} value={room.slope.low} unit="м" min={0.5} max={room.height} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, low: v } })} />
-          <NumberField compact id="slope-run" label={S.shape.slopeRun} value={room.slope.run} unit="м" min={0.2} max={50} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, run: v } })} />
+          <NumberField compact id="slope-low" label={S.shape.slopeLow} value={room.slope.low} unit="м" min={0.5} max={room.height} error={hint.low} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, low: v } })} />
+          <NumberField compact id="slope-run" label={S.shape.slopeRun} value={room.slope.run} unit="м" min={0.2} max={50} error={hint.run} onChange={(v) => onRoom({ ...room, slope: { ...room.slope!, run: v } })} />
           {validateSlope(room) && <Note tone="warn">{validateSlope(room)}</Note>}
           <p class="muted small">{S.shape.slopeHint}</p>
         </div>
@@ -190,13 +198,17 @@ export function SlopeBlock({ room, onRoom }: { room: Room; onRoom: (r: Room) => 
 export function WallItemsPanel({ room, onRoom, wall }: { room: Room; onRoom: (r: Room) => void; wall: WallId }) {
   const { openings, feats, setOpening, setFeature, addOpening, addFeature, kindSelect, span } = useRoomItems(room, onRoom);
   const count = openings.filter((o) => o.wall === wall).length + feats.filter((f) => f.wall === wall).length;
+  const issueOf = useFitIssues();
   return (
     <Panel title={S.editor.wallItems}>
       <p class="muted small">{S.openings.featuresIntro}</p>
       {count === 0 && <p class="muted small">{S.editor.wallNone}</p>}
       <div class="wall-items">
-        {openings.filter((o) => o.wall === wall).map((o, i) => (
-          <div key={o.id} class="zone-card">
+        {openings.filter((o) => o.wall === wall).map((o, i) => {
+          const fit = issueOf(o.id);
+          const hint = fit?.hints ?? {};
+          return (
+          <div key={o.id} id={`fit-${o.id}`} class={`zone-card${fit ? ' is-error' : ''}`}>
             <div class="zone-card__head">
               <SelectField
                 label={`${S.openings.opening} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
@@ -208,17 +220,22 @@ export function WallItemsPanel({ room, onRoom, wall }: { room: Room; onRoom: (r:
                 {S.openings.remove}
               </button>
             </div>
+            {fit && <Note tone="warn">{fit.text}</Note>}
             <p class="muted small">{S.openings.offsetLine(o.wall, S.openings.what.opening)}</p>
             <div class="grid-3">
-              <NumberField compact id={`${o.id}-a0`} label={S.openings.offset} value={o.a0} unit="м" min={0} max={50} onChange={(v) => setOpening(o.id, { a0: v, a1: v + (o.a1 - o.a0) })} />
-              <NumberField compact id={`${o.id}-a1`} label={S.openings.widthAlong} value={span(o.a0, o.a1)} unit="м" min={0.1} max={50} onChange={(v) => setOpening(o.id, { a1: o.a0 + v })} />
-              <NumberField compact id={`${o.id}-h`} label={S.openings.height} value={o.height} unit="м" min={0.3} max={20} onChange={(v) => setOpening(o.id, { height: v })} />
+              <NumberField compact id={`${o.id}-a0`} label={S.openings.offset} value={o.a0} unit="м" min={0} max={50} error={hint.a0} onChange={(v) => setOpening(o.id, { a0: v, a1: v + (o.a1 - o.a0) })} />
+              <NumberField compact id={`${o.id}-a1`} label={S.openings.widthAlong} value={span(o.a0, o.a1)} unit="м" min={0.1} max={50} error={hint.a1} onChange={(v) => setOpening(o.id, { a1: o.a0 + v })} />
+              <NumberField compact id={`${o.id}-h`} label={S.openings.height} value={o.height} unit="м" min={0.3} max={20} error={hint.h} onChange={(v) => setOpening(o.id, { height: v })} />
             </div>
             {kindSelect(o.id, openingAsItem(o), 'arch')}
           </div>
-        ))}
-        {feats.filter((f) => f.wall === wall).map((f, i) => (
-          <div key={f.id} class="zone-card">
+          );
+        })}
+        {feats.filter((f) => f.wall === wall).map((f, i) => {
+          const fit = issueOf(f.id);
+          const hint = fit?.hints ?? {};
+          return (
+          <div key={f.id} id={`fit-${f.id}`} class={`zone-card${fit ? ' is-error' : ''}`}>
             <div class="zone-card__head">
               <SelectField
                 label={`${f.kind === 'window' ? S.openings.window : S.openings.door} ${i + 1}: ${S.openings.wall.toLowerCase()}`}
@@ -230,16 +247,18 @@ export function WallItemsPanel({ room, onRoom, wall }: { room: Room; onRoom: (r:
                 {S.openings.remove}
               </button>
             </div>
+            {fit && <Note tone="warn">{fit.text}</Note>}
             <p class="muted small">{S.openings.offsetLine(f.wall, S.openings.what[f.kind])}</p>
             <div class="grid-2">
-              <NumberField compact id={`${f.id}-a0`} label={S.openings.offset} value={f.a0} unit="м" min={0} max={50} onChange={(v) => setFeature(f.id, { a0: v, a1: v + (f.a1 - f.a0) })} />
-              <NumberField compact id={`${f.id}-a1`} label={S.openings.widthAlong} value={span(f.a0, f.a1)} unit="м" min={0.1} max={50} onChange={(v) => setFeature(f.id, { a1: f.a0 + v })} />
-              {f.kind === 'window' && <NumberField compact id={`${f.id}-b`} label={S.openings.bottom} value={f.bottom} unit="м" min={0} max={10} onChange={(v) => setFeature(f.id, { bottom: v })} />}
-              <NumberField compact id={`${f.id}-t`} label={f.kind === 'window' ? S.openings.top : S.openings.height} value={f.top} unit="м" min={0.3} max={20} onChange={(v) => setFeature(f.id, { top: v })} />
+              <NumberField compact id={`${f.id}-a0`} label={S.openings.offset} value={f.a0} unit="м" min={0} max={50} error={hint.a0} onChange={(v) => setFeature(f.id, { a0: v, a1: v + (f.a1 - f.a0) })} />
+              <NumberField compact id={`${f.id}-a1`} label={S.openings.widthAlong} value={span(f.a0, f.a1)} unit="м" min={0.1} max={50} error={hint.a1} onChange={(v) => setFeature(f.id, { a1: f.a0 + v })} />
+              {f.kind === 'window' && <NumberField compact id={`${f.id}-b`} label={S.openings.bottom} value={f.bottom} unit="м" min={0} max={10} error={hint.b} onChange={(v) => setFeature(f.id, { bottom: v })} />}
+              <NumberField compact id={`${f.id}-t`} label={f.kind === 'window' ? S.openings.top : S.openings.height} value={f.top} unit="м" min={0.3} max={20} error={hint.t} onChange={(v) => setFeature(f.id, { top: v })} />
             </div>
             {kindSelect(f.id, f, f.kind)}
           </div>
-        ))}
+          );
+        })}
       </div>
       <ActionMenu label={S.openings.addOpening} actions={[
         { label: S.openings.window, onSelect: () => addFeature('window', wall) },

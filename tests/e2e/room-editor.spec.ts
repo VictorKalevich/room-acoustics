@@ -164,11 +164,11 @@ test('021: уменьшение комнаты — список удаляемо
   await steps(page).getByRole('button', { name: /Размеры/ }).click();
   await page.getByLabel('Глубина', { exact: true }).fill('3');
   await page.getByLabel('Глубина', { exact: true }).blur();
-  await expect(page.getByText(/Объекты за стенами комнаты: 1\./)).toBeVisible();
+  await expect(page.getByText(/Не помещаются в комнату: 1\./)).toBeVisible();
   const dialog = page.getByRole('alertdialog');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect(dialog).toContainText('Часть объектов не помещается в комнату');
-  await expect(dialog.locator('li')).toHaveText(['Диван сложенный']);
+  await expect(dialog.locator('li')).toHaveText(['Диван сложенный (Что это 1): за задней стеной на 1,7 м']);
   await dialog.getByRole('button', { name: 'Вернуться' }).click();
   await expect(page.locator('.topbar__room')).toContainText('5,00 × 4,00');
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
@@ -179,6 +179,76 @@ test('021: уменьшение комнаты — список удаляемо
   await expect(page.locator('.topbar__room')).toContainText('3,00 × 4,00');
   await steps(page).getByRole('button', { name: /Мебель/ }).click();
   await expect(page.locator('.zone-card select').filter({ has: page.locator('option:checked', { hasText: 'Диван' }) })).toHaveCount(0);
+});
+
+test('048: что не помещается — объект, сторона и на сколько; «Показать» ведёт к карточке, поля подсказывают допустимое', async ({ page }) => {
+  await page.goto('/#room/furniture');
+  await page.getByRole('button', { name: 'Добавить мебель', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Стол', exact: true }).click();
+  const table = page.locator('.zone-card').filter({ has: page.getByLabel('Что это 1', { exact: true }) });
+  await table.getByLabel('От передней стены', { exact: true }).fill('4');
+  await table.getByLabel('От передней стены', { exact: true }).blur();
+  // блок с мебелью свёрнут — «Показать» его раскроет
+  const block = page.locator('details.panel--collapsible').filter({ hasText: 'Где нельзя ставить колонки' });
+  await block.locator('summary').click();
+  await expect(block).not.toHaveAttribute('open', '');
+  await steps(page).getByRole('button', { name: /Стены/ }).click();
+  await page.getByRole('radio', { name: 'Правая' }).click();
+  await page.getByRole('button', { name: 'Добавить проём', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Окно', exact: true }).click();
+  const win = page.locator('.zone-card').filter({ has: page.getByLabel('Окно 1: стена', { exact: true }) });
+  await win.getByLabel('Отступ', { exact: true }).fill('3,5');
+  await win.getByLabel('Отступ', { exact: true }).blur();
+  await page.getByRole('radio', { name: 'Передняя' }).click();
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+  await steps(page).getByRole('button', { name: /Размеры/ }).click();
+  await page.getByLabel('Глубина', { exact: true }).fill('4,5');
+  await page.getByLabel('Глубина', { exact: true }).blur();
+  await expect(page.getByText(/Не помещаются в комнату: 2\./)).toBeVisible();
+  const issues = page.locator('.problem');
+  await expect(issues.locator('strong')).toHaveText(['Стол (Что это 1)', 'Окно 1, правая стена']);
+  await expect(issues.locator('p')).toHaveText([
+    'За задней стеной на 30 см. При сохранении лишнее обрежется по стенам.',
+    'За задней стеной на 30 см. При сохранении лишнее обрежется по стенам.',
+  ]);
+
+  // окно: шаг «Стены», выбрана его стена, карточка выделена, у отступа и ширины — допустимые значения
+  await issues.nth(1).getByRole('button', { name: 'Показать' }).click();
+  await expect(page).toHaveURL(/#room\/walls$/);
+  await expect(page.getByRole('radio', { name: 'Правая' })).toBeChecked();
+  await expect(win).toHaveClass(/is-error/);
+  await expect(win).toBeInViewport();
+  await expect(win.locator('.note')).toHaveText('За задней стеной на 30 см. При сохранении лишнее обрежется по стенам.');
+  await expect(win.getByLabel('Отступ', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+  await expect(win.locator('.field__error')).toHaveText(['Допустимо до 3,2 м при ширине 1,3 м', 'Допустимо до 1 м при отступе 3,5 м']);
+  await win.getByLabel('Отступ', { exact: true }).fill('3,2');
+  await win.getByLabel('Отступ', { exact: true }).blur();
+  await expect(win).not.toHaveClass(/is-error/);
+  await expect(win.locator('.field__error')).toHaveCount(0);
+  await expect(issues).toHaveCount(1);
+
+  // стол: шаг «Мебель», свёрнутый блок раскрыт, предмет выбран и выделен как не помещающийся
+  await issues.first().getByRole('button', { name: 'Показать' }).click();
+  await expect(page).toHaveURL(/#room\/furniture$/);
+  await expect(block).toHaveAttribute('open', '');
+  await expect(table).toHaveClass(/is-selected/);
+  await expect(table).toHaveClass(/is-error/);
+  await expect(table).toBeInViewport();
+  await expect(table.locator('.field__error')).toHaveText(['Допустимо до 3,7 м при глубине 0,8 м', 'Допустимо до 0,5 м при отступе 4 м']);
+
+  // перед сохранением — тот же список с подписями карточек
+  const dialog = page.getByRole('alertdialog');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(dialog.locator('li')).toHaveText(['Стол (Что это 1): за задней стеной на 30 см']);
+  await dialog.getByRole('button', { name: 'Вернуться' }).click();
+  await table.getByLabel('Глубина', { exact: true }).fill('0,5');
+  await table.getByLabel('Глубина', { exact: true }).blur();
+  await expect(table).not.toHaveClass(/is-error/);
+  await expect(issues).toHaveCount(0);
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.topbar__room')).toContainText('4,50 × 4,00');
 });
 
 test('027: шаг «Мебель» — при «Общей оценкой» один блок «Где нельзя ставить колонки», при «Списком предметов» — список мебели и оценка только для баса', async ({ page }) => {

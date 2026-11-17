@@ -38,6 +38,9 @@ interface Loaded extends ScanFile {
   preview: Object3D | null;
 }
 
+/** 048: размеры границ — как у комнаты при применении (scanRoom), иначе разметка выходит за её стены на доли миллиметра. */
+const mm = (v: number) => Math.round(v * 1000) / 1000;
+
 export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom: (room: Room, extra?: Partial<Project>) => void; onGo?: (t: Destination) => void }) {
   const [state, setState] = useState<ScanState>({ phase: 'idle' });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -136,7 +139,7 @@ export function ScanPanel({ project, onRoom, onGo }: { project: Project; onRoom:
     const seq = ++relaySeq.current;
     setRelaying(true);
     try {
-      const r = await runWorker({ type: 'layout', labels: scan.labels, transform: t, dims: { depth: rc.x1 - rc.x0, width: rc.y1 - rc.y0, height: found0.height } }, scan.triangles);
+      const r = await runWorker({ type: 'layout', labels: scan.labels, transform: t, dims: { depth: mm(rc.x1 - rc.x0), width: mm(rc.y1 - rc.y0), height: found0.height } }, scan.triangles);
       if (seq !== relaySeq.current) return;
       const next = { ...base, openings: r.layout.openings, windows: r.layout.windows, furniture: r.layout.furniture, extension: r.layout.extension };
       setLayout(next);

@@ -2,14 +2,16 @@
 // на шаге «Мебель» конструктора; здесь — остальные зоны. Герметичность с 022 — на шаге «Стены».
 import { makeId } from '../../../state/project';
 import type { Room, Zone, ZoneKind } from '../../../core/types';
-import { NumberField, Panel, SelectField } from '../../design-system';
+import { Note, NumberField, Panel, SelectField } from '../../design-system';
 import { S } from '../../strings';
+import { useFitIssues } from './fitIssues';
 
 const KINDS: ZoneKind[] = ['door', 'window', 'other'];
 
 export function ZonesPanel({ room, onRoom, bare }: { room: Room; onRoom: (r: Room) => void; bare?: boolean }) {
   const all = room.zones ?? [];
   const zones = all.filter((z) => z.kind !== 'furniture');
+  const issueOf = useFitIssues();
   const setZone = (id: string, patch: Partial<Zone>) => {
     const next = all.map((z) => {
       if (z.id !== id) return z;
@@ -32,8 +34,11 @@ export function ZonesPanel({ room, onRoom, bare }: { room: Room; onRoom: (r: Roo
     <>
       {!bare && <p class="small">{S.zones.intro}</p>}
       {zones.length === 0 && <p class="muted small">{S.zones.none}</p>}
-      {zones.map((z, i) => (
-        <div key={z.id} class="zone-card">
+      {zones.map((z, i) => {
+        const fit = issueOf(z.id);
+        const err = fit?.hints ?? {};
+        return (
+        <div key={z.id} id={`fit-${z.id}`} class={`zone-card${fit ? ' is-error' : ''}`}>
           <div class="zone-card__head">
             <SelectField
               label={`${S.zones.kind} ${i + 1}`}
@@ -45,18 +50,20 @@ export function ZonesPanel({ room, onRoom, bare }: { room: Room; onRoom: (r: Roo
               {S.zones.remove}
             </button>
           </div>
+          {fit && <Note tone="warn">{fit.text}</Note>}
           <div class="grid-2">
-            <NumberField compact id={`${z.id}-x0`} label={S.zones.x0} value={z.x0} unit="м" min={0} max={room.depth} onChange={(v) => setZone(z.id, { x0: v })} />
-            <NumberField compact id={`${z.id}-x1`} label={S.zones.x1} value={z.x1} unit="м" min={0} max={room.depth} onChange={(v) => setZone(z.id, { x1: v })} />
-            <NumberField compact id={`${z.id}-y0`} label={S.zones.y0} value={z.y0} unit="м" min={0} max={room.width} onChange={(v) => setZone(z.id, { y0: v })} />
-            <NumberField compact id={`${z.id}-y1`} label={S.zones.y1} value={z.y1} unit="м" min={0} max={room.width} onChange={(v) => setZone(z.id, { y1: v })} />
+            <NumberField compact id={`${z.id}-x0`} label={S.zones.x0} value={z.x0} unit="м" min={0} max={room.depth} error={err.x0} onChange={(v) => setZone(z.id, { x0: v })} />
+            <NumberField compact id={`${z.id}-x1`} label={S.zones.x1} value={z.x1} unit="м" min={0} max={room.depth} error={err.x1} onChange={(v) => setZone(z.id, { x1: v })} />
+            <NumberField compact id={`${z.id}-y0`} label={S.zones.y0} value={z.y0} unit="м" min={0} max={room.width} error={err.y0} onChange={(v) => setZone(z.id, { y0: v })} />
+            <NumberField compact id={`${z.id}-y1`} label={S.zones.y1} value={z.y1} unit="м" min={0} max={room.width} error={err.y1} onChange={(v) => setZone(z.id, { y1: v })} />
           </div>
           <label class="check">
             <input type="checkbox" checked={z.canSit} onChange={(e) => setZone(z.id, { canSit: (e.target as HTMLInputElement).checked })} />
             <span>{S.zones.canSit}</span>
           </label>
         </div>
-      ))}
+        );
+      })}
       <button type="button" class="btn" onClick={add}>{S.zones.add}</button>
     </>
   );

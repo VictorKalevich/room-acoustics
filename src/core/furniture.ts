@@ -163,7 +163,8 @@ export function fitRect(room: Room, cx: number, cy: number, dx: number, dy: numb
   const w = Math.min(dx, room.depth), h = Math.min(dy, room.width);
   const x0 = clamp(cx - w / 2, 0, room.depth - w);
   const y0 = clamp(cy - h / 2, 0, room.width - h);
-  return { x0, x1: x0 + w, y0, y1: y0 + h };
+  // 048: x0 + w у дальней стены может выйти за неё на ошибку сложения
+  return { x0, x1: Math.min(room.depth, x0 + w), y0, y1: Math.min(room.width, y0 + h) };
 }
 
 /** Новый предмет по заготовке типа — в центре комнаты, вписанный в неё. */

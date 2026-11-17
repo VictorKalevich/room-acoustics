@@ -92,35 +92,117 @@ function fitShape(room: Room): Room {
   return room.slope ? { ...room, slope, extensions } : { ...room, extensions };
 }
 
-export type FitItem =
+/** 048: выход за стены меньше сантиметра — неточность округления (скан, размеры в миллиметрах), подравнивается молча. */
+export const FIT_TOLERANCE = 0.01;
+/** Не меньше допуска: 5,01 − 5 в двоичной записи чуть меньше 0,01. */
+const notSmall = (v: number) => v > FIT_TOLERANCE - 1e-9;
+
+/** Куда объект выходит за комнату. */
+export type FitSide = WallId | 'ceiling' | 'floor';
+/** На сколько метров объект заходит за стену, потолок или пол. */
+export interface FitOver { side: FitSide; by: number }
+
+type FitTarget =
   | { kind: 'zone'; item: Zone }
   | { kind: 'opening'; item: Opening }
   | { kind: 'feature'; item: WallFeature }
   | { kind: 'covering'; item: Covering }
   | { kind: 'extension'; item: Extension }
   | { kind: 'slope'; item: Slope };
+/** Объект, который при сохранении обрежется или удалится; over пуст, если дело не в стенах (скос уже 0,2 м и т. п.). */
+export type FitItem = FitTarget & { over: FitOver[] };
 export type FitKind = FitItem['kind'];
 
-/** Вписать объекты в стены комнаты: итог и что удалено или обрезано (по сравнению с исходными объектами). */
+/** Стены у начала и конца участка вдоль стены: у передней и задней отступ — от левой, у боковых — от передней. */
+const ENDS: Record<WallId, [WallId, WallId]> = { front: ['left', 'right'], back: ['left', 'right'], left: ['front', 'back'], right: ['front', 'back'] };
+const OPPOSITE: Record<WallId, WallId> = { front: 'back', back: 'front', left: 'right', right: 'left' };
+
+/** За какими стенами, потолком или полом объект и на сколько (только то, что не меньше допуска). */
+function overOf(room: Room, t: FitTarget): FitOver[] {
+  const out: FitOver[] = [];
+  const H = room.height;
+  const past = (side: FitSide, by: number) => { if (notSmall(by)) out.push({ side, by: mm(by) }); };
+  const span = (a: number, b: number, L: number, [s, e]: [FitSide, FitSide]) => {
+    past(s, -Math.min(a, b));
+    past(e, Math.max(a, b) - L);
+  };
+  switch (t.kind) {
+    case 'zone':
+      span(t.item.x0, t.item.x1, room.depth, ['front', 'back']);
+      span(t.item.y0, t.item.y1, room.width, ['left', 'right']);
+      if (t.item.height !== undefined) past('ceiling', t.item.height - H);
+      break;
+    case 'opening':
+      span(t.item.a0, t.item.a1, len(room, t.item.wall), ENDS[t.item.wall]);
+      past('ceiling', t.item.height - H);
+      break;
+    case 'feature':
+      span(t.item.a0, t.item.a1, len(room, t.item.wall), ENDS[t.item.wall]);
+      past('floor', -Math.min(t.item.bottom, t.item.top));
+      past('ceiling', Math.max(t.item.bottom, t.item.top) - H);
+      break;
+    case 'covering': {
+      const c = t.item;
+      if (c.surface === 'floor') {
+        span(c.u0, c.u1, room.depth, ['front', 'back']);
+        span(c.v0, c.v1, room.width, ['left', 'right']);
+      } else {
+        span(c.u0, c.u1, len(room, c.surface), ENDS[c.surface]);
+        span(c.v0, c.v1, H, ['floor', 'ceiling']);
+      }
+      break;
+    }
+    case 'extension':
+      span(t.item.arch.a0, t.item.arch.a1, len(room, t.item.wall), ENDS[t.item.wall]);
+      past('ceiling', t.item.arch.height - H);
+      break;
+    case 'slope': {
+      const s = t.item;
+      past(OPPOSITE[s.wall], s.run - (s.wall === 'front' || s.wall === 'back' ? room.depth : room.width));
+      // низ скоса должен быть ниже потолка: и «вровень» — тоже не помещается
+      if (s.low >= H) out.push({ side: 'ceiling', by: mm(s.low - H) });
+      break;
+    }
+  }
+  return out;
+}
+
+/** Наибольшее расхождение чисел двух объектов, включая вложенные (арка коридора); другое нечисловое — бесконечность. */
+function maxShift(a: unknown, b: unknown): number {
+  if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b);
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const x = a as Record<string, unknown>, y = b as Record<string, unknown>;
+    let m = 0;
+    for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) m = Math.max(m, maxShift(x[k], y[k]));
+    return m;
+  }
+  return a === b ? 0 : Infinity;
+}
+
+/**
+ * Вписать объекты в стены комнаты: итог и что удалено или обрезано (по сравнению с исходными объектами).
+ * 048: обрезанное меньше чем на FIT_TOLERANCE в итог входит, но в списки не попадает.
+ */
 export function fitRoomObjects(room: Room): { room: Room; removed: FitItem[]; trimmed: FitItem[] } {
   const fitted = shiftRoom(room, 0, 0, room.depth, room.width);
   const removed: FitItem[] = [], trimmed: FitItem[] = [];
+  let changed = false;
+  const check = (t: FitTarget, after: unknown) => {
+    const shift = after === undefined ? Infinity : maxShift(t.item, after);
+    if (shift === 0) return;
+    changed = true;
+    if (notSmall(shift)) (after === undefined ? removed : trimmed).push({ ...t, over: overOf(room, t) });
+  };
   const diff = <T extends { id: string }>(kind: FitKind, before: T[] | undefined, after: T[] | undefined) => {
     const next = new Map((after ?? []).map((x) => [x.id, x]));
-    for (const b of before ?? []) {
-      const a = next.get(b.id);
-      const item = { kind, item: b } as unknown as FitItem;
-      if (!a) removed.push(item);
-      else if (JSON.stringify(a) !== JSON.stringify(b)) trimmed.push(item);
-    }
+    for (const b of before ?? []) check({ kind, item: b } as unknown as FitTarget, next.get(b.id));
   };
   diff('zone', room.zones, fitted.zones);
   diff('opening', room.openings, fitted.openings);
   diff('feature', room.features, fitted.features);
   diff('covering', room.coverings, fitted.coverings);
   diff('extension', room.extensions, fitted.extensions);
-  if (room.slope && !fitted.slope) removed.push({ kind: 'slope', item: room.slope });
-  else if (room.slope && JSON.stringify(room.slope) !== JSON.stringify(fitted.slope)) trimmed.push({ kind: 'slope', item: room.slope });
+  if (room.slope) check({ kind: 'slope', item: room.slope }, fitted.slope ?? undefined);
   // без изменений — исходный объект, чтобы не плодить лишних обновлений
-  return removed.length || trimmed.length ? { room: fitted, removed, trimmed } : { room, removed, trimmed };
+  return { room: changed ? fitted : room, removed, trimmed };
 }

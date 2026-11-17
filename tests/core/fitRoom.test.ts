@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitRoomObjects } from '../../src/core/fitRoom';
+import { FIT_TOLERANCE, fitRoomObjects } from '../../src/core/fitRoom';
 import { defaultRoom, emptyRoom, legacyRoomReady, newProject, clearedRoom } from '../../src/state/project';
 import { normalizeProject, serializeProject } from '../../src/state/storage';
 import type { Covering, Extension, Room, Zone } from '../../src/core/types';
@@ -58,6 +58,46 @@ describe('объекты внутри стен (021)', () => {
     const p = newProject();
     p.room = r;
     expect(() => normalizeProject(JSON.parse(serializeProject(p)).project)).not.toThrow();
+  });
+});
+
+describe('048: допуск и где объект за стенами', () => {
+  const ids = (xs: { kind: string; item: unknown }[]) => xs.map((x) => (x.item as { id?: string }).id ?? x.kind);
+
+  it('заход за стену меньше сантиметра подравнивается молча: в списках нет, в итоге — по стене', () => {
+    const table: Zone = { id: 't', kind: 'furniture', furniture: 'table', name: 'Стол', x0: 4.2, x1: 5.004, y0: 1, y1: 2.2, height: 0.75, canSit: false };
+    const ext: Extension = { id: 'cor', name: 'Коридор', wall: 'right', a0: 0, a1: 5, depth: 1.2, height: 2.5, openStart: false, openEnd: false, openFar: false, arch: { a0: 4, a1: 5.006, height: 2.1 } };
+    const r = room({ zones: [table], coverings: [], features: [], extensions: [ext] });
+    const f = fitRoomObjects(r);
+    expect(f.removed).toEqual([]);
+    expect(f.trimmed).toEqual([]);
+    expect(f.room).not.toBe(r);
+    expect(f.room.zones[0]).toMatchObject({ x0: 4.2, x1: 5 });
+    expect(f.room.extensions[0].arch).toMatchObject({ a0: 4, a1: 5 });
+    // ровно на допуск — уже в списке
+    const g = fitRoomObjects(room({ zones: [{ ...table, x1: 5 + FIT_TOLERANCE }], coverings: [], features: [] }));
+    expect(ids(g.trimmed)).toEqual(['t']);
+  });
+
+  it('у каждого объекта — за какой стеной, потолком или полом и на сколько', () => {
+    const f = fitRoomObjects(room({ depth: 3.5, height: 2.2 }));
+    const over = Object.fromEntries([...f.removed, ...f.trimmed].map((x) => [(x.item as { id: string }).id, x.over]));
+    expect(over.sofa).toEqual([{ side: 'back', by: 1.3 }]);
+    expect(over.bed).toEqual([{ side: 'back', by: 0.5 }]);
+    // окно на задней стене: отступ вдоль неё — от левой, верх выше нового потолка
+    expect(over.win).toEqual([{ side: 'ceiling', by: 0.1 }]);
+    // шторы на левой стене: отступ — от передней, за задней стеной и выше потолка
+    expect(over.cur).toEqual([{ side: 'back', by: 1.4 }, { side: 'ceiling', by: 0.2 }]);
+    const g = fitRoomObjects(room({
+      width: 3, zones: [], coverings: [{ ...rug, v0: 2, v1: 3.4 }],
+      features: [{ id: 'door', kind: 'door', wall: 'front', a0: 2.5, a1: 3.3, bottom: 0, top: 2 }],
+    }));
+    expect(g.trimmed.map((x) => x.over)).toEqual([[{ side: 'right', by: 0.3 }], [{ side: 'right', by: 0.4 }]]);
+  });
+
+  it('скос: шире комнаты — за противоположной стеной; низ вровень с потолком — тоже не помещается', () => {
+    const f = fitRoomObjects(room({ zones: [], coverings: [], features: [], slope: { wall: 'left', low: 2.5, run: 4.5 } }));
+    expect(f.trimmed).toEqual([{ kind: 'slope', item: { wall: 'left', low: 2.5, run: 4.5 }, over: [{ side: 'right', by: 0.5 }, { side: 'ceiling', by: 0 }] }]);
   });
 });
 

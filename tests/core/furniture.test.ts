@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  FURNITURE, contribution, coveringArea, furnishingOctaves, furnitureAbsorption, furnitureAtWall, listOctaves,
+  FURNITURE, contribution, coveringArea, fitRect, furnishingOctaves, furnitureAbsorption, furnitureAtWall, listOctaves,
   newCurtain, newFurniture, newRug, newWallCarpet, rotateFurniture, scanFurnitureType,
 } from '../../src/core/furniture';
 import { FURNISHING } from '../../src/core/materials';
@@ -96,6 +96,20 @@ describe('обстановка по списку (019)', () => {
   it('площадь покрытия считается в пределах поверхности после уменьшения комнаты', () => {
     expect(coveringArea(room(), rug)).toBeCloseTo(6, 9);
     expect(coveringArea(room({ depth: 2 }), rug)).toBeCloseTo(2, 9);
+  });
+});
+
+describe('048: вписанный прямоугольник не выходит за стены', () => {
+  it('у дальних стен край ровно по стене, а не на ошибку сложения дальше', () => {
+    let over = 0, total = 0;
+    for (let D = 3000; D <= 6000; D += 37) for (let w = 40; w <= 210; w += 9) {
+      const r = room({ depth: D / 1000, width: D / 1000 - 0.4 });
+      const p = fitRect(r, r.depth, r.width, w / 100, (w + 13) / 100);
+      total++;
+      if (p.x1 > r.depth || p.y1 > r.width || p.x0 < 0 || p.y0 < 0) over++;
+    }
+    expect(total).toBeGreaterThan(1000);
+    expect(over).toBe(0);
   });
 });
 

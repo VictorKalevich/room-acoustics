@@ -105,6 +105,22 @@ function Catalog() {
       <p class="small">Между секциями — 14 px, внутри панели — 12 px, поля панели — 16 px, между подписью и вводом — 4 px.</p>
       <div class="wall-items"><div class="zone-card"><strong>Первая карточка</strong><p class="small">Единый фон, радиус и отступы</p></div><div class="zone-card"><strong>Вторая карточка</strong><p class="small">Интервал 12 px сохраняется</p></div></div>
     </Panel>
+    <Panel title="Объект не помещается в комнату">
+      <ul class="problems">
+        <li class="problem is-high">
+          <div class="problem__head"><strong>Стол (Что это 2)</strong><button type="button" class="btn btn--small btn--ghost" onClick={() => setMessage('Показать')}>Показать</button></div>
+          <p class="small muted">За задней стеной на 12 см. При сохранении лишнее обрежется по стенам.</p>
+        </li>
+      </ul>
+      <div class="zone-card is-error">
+        <strong>Что это 2</strong>
+        <Note tone="warn">За задней стеной на 12 см. При сохранении лишнее обрежется по стенам.</Note>
+        <div class="grid-2">
+          <NumberField compact label="От передней стены" value={3.4} unit="м" min={0} max={4.13} error="Допустимо до 3,28 м при глубине 0,85 м" onChange={() => undefined} />
+          <NumberField compact label="Глубина" value={0.85} unit="м" min={0.1} max={4.13} error="Допустимо до 0,73 м при отступе 3,4 м" onChange={() => undefined} />
+        </div>
+      </div>
+    </Panel>
     <Panel title="Развёртка стены">
       <WallView room={sampleRoom} wall="front" />
       <p class="small muted">Вид изнутри комнаты: окно, плотные шторы, ковёр на стене и шкаф у стены.</p>

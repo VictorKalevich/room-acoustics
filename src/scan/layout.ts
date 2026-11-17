@@ -151,12 +151,12 @@ function labeledOpenings(T: Tris, d: Dims): { openings: LayoutOpening[]; windows
     }
     if (!best) continue;
     const L = best.w.axis === 0 ? d.width : d.depth;
-    const a0 = Math.max(0, best.w.axis === 0 ? b.y0 : b.x0);
-    const a1 = Math.min(L, best.w.axis === 0 ? b.y1 : b.x1);
+    const a0 = inside(best.w.axis === 0 ? b.y0 : b.x0, L);
+    const a1 = inside(best.w.axis === 0 ? b.y1 : b.x1, L);
     if (a1 - a0 < 0.3) continue;
-    const top = round(Math.min(d.height, b.z1));
-    if (isWindow) windows.push({ wall: best.w.wall, a0: round(a0), a1: round(a1), bottom: round(Math.max(0, b.z0)), top });
-    else out.push({ wall: best.w.wall, a0: round(a0), a1: round(a1), height: top, kind: b.kind === 'door' ? 'door' : 'opening' });
+    const top = inside(b.z1, d.height);
+    if (isWindow) windows.push({ wall: best.w.wall, a0, a1, bottom: inside(b.z0, d.height), top });
+    else out.push({ wall: best.w.wall, a0, a1, height: top, kind: b.kind === 'door' ? 'door' : 'opening' });
   }
   return { openings: out, windows };
 }
@@ -201,9 +201,9 @@ export function analyzeLayout(raw: Float32Array, transform: number[], d: Dims, l
     labeled: T.objects.length > 0,
     furniture: T.objects
       .filter((b) => b.kind === 'furniture')
-      .map((b) => ({ name: b.name, x0: Math.max(0, b.x0), x1: Math.min(d.depth, b.x1), y0: Math.max(0, b.y0), y1: Math.min(d.width, b.y1), top: round(b.z1) }))
-      .filter((b) => b.x1 - b.x0 > 0.1 && b.y1 - b.y0 > 0.1)
-      .map((b) => ({ ...b, x0: round(b.x0), x1: round(b.x1), y0: round(b.y0), y1: round(b.y1) })),
+      // 048: сначала округление, потом стены — иначе край, округлённый вверх, выходит за стену на 1–5 мм
+      .map((b) => ({ name: b.name, x0: inside(b.x0, d.depth), x1: inside(b.x1, d.depth), y0: inside(b.y0, d.width), y1: inside(b.y1, d.width), top: inside(b.z1, d.height) }))
+      .filter((b) => b.x1 - b.x0 > 0.1 && b.y1 - b.y0 > 0.1),
     openings: openings.filter((o) => !extension || o.wall !== extension.wall || Math.abs(o.a0 - extension.arch.a0) > 0.05),
     extension,
   };
@@ -265,7 +265,7 @@ export function findOpenings(T: Tris, vertical: number[], d: Dims, coverage?: Pa
             for (let j = s0; j < s1; j++) s += byZ[j][zb];
             if (s / ((s1 - s0) * bin * 0.1) > 0.4) { height = zb * 0.1; break; }
           }
-          out.push({ wall: w.wall, a0: round(a0), a1: round(a1), height: round(height), kind: 'gap' });
+          out.push({ wall: w.wall, a0: round(a0), a1: round(a1), height: inside(height, d.height), kind: 'gap' });
         }
         start = -1;
         b = Math.max(b, s1 - 1);
@@ -340,3 +340,5 @@ export function findExtension(T: Tris, vertical: number[], d: Dims, o: LayoutOpe
 }
 
 const round = (v: number) => Math.round(v * 100) / 100;
+/** Округлённое до сантиметра значение в пределах [0, hi]: hi (размер комнаты) — в миллиметрах и не округляется. */
+const inside = (v: number, hi: number) => Math.min(hi, Math.max(0, round(v)));
