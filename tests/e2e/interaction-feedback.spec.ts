@@ -112,3 +112,20 @@ test('050: кнопки дают отклик мышью и клавиатуро
   await page.mouse.up();
   await expect(page.locator('.drawer')).toHaveClass(/is-open/);
 });
+
+test('050: лучшие места слушателя и сабвуфера подтверждаются тем же временным уведомлением', async ({ page }) => {
+  await page.goto('/#manual');
+  for (const sub of [false, true]) {
+    if (sub) {
+      await closeDetails(page);
+      await page.locator('.panel--hero').getByRole('radio').filter({ hasText: 'Место сабвуфера' }).click();
+    }
+    await showDetail(page, 'Лучшие места');
+    const dialog = page.getByRole('dialog', { name: 'Лучшие места', exact: true });
+    const action = dialog.getByRole('button', { name: sub ? 'Поставить сюда' : 'Сесть сюда', exact: true }).first();
+    await action.click({ timeout: 20000 });
+    await expect(dialog.locator('.toast__message')).toHaveText(sub ? 'Позиция сабвуфера на плане обновлена' : 'Позиция слушателя на плане обновлена');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.toast__message')).toHaveCount(0, { timeout: 5000 });
+  }
+});

@@ -16,7 +16,7 @@ import { useComputed } from '../useCompute';
 import { PlanView, HeatLegend, type PlanItem, type PlanMark } from '../components/PlanView';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { chartCurve } from '../components/Charts';
-import { DetailPanel, NumberField, Panel, Segmented, Note, Details } from '../design-system';
+import { DetailPanel, NumberField, Panel, Segmented, Note, Details, Toast } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
@@ -85,6 +85,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
     onSetup({ ...current, positions });
   };
 
+  const [placeNotice, setPlaceNotice] = useState({ trigger: 0, message: '' });
   const placeSearched = (pos: { x: number; y: number }) => move(effMode === 'sub' ? effSub : 'listener', pos);
 
   const probeSetup = useMemo(() => {
@@ -240,6 +241,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
           <span class="model-tag">{wave ? S.model.waveTag : S.model.modalTag}</span>
         </ScoreBlock>
         <DetailPanel title="Лучшие места">
+        <Toast message={placeNotice.message} trigger={placeNotice.trigger} />
         {heat && heat.best.length === 0 && <Note tone="warn">{S.manual.noBest}</Note>}
         <ul class="best-list">
           {(heat?.best ?? []).map((b, i) => {
@@ -254,7 +256,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
                     {d > 0.05 ? (flatGoal ? `, на ${fmt(d, 1)} дБ ровнее` : S.objective.betterHere(fmt(d, 1))) : ''}
                   </span>
                 </span>
-                <button type="button" class="btn btn--small" onClick={() => placeSearched(b.pos)}>
+                <button type="button" class="btn btn--small" onClick={() => { placeSearched(b.pos); setPlaceNotice((n) => ({ trigger: n.trigger + 1, message: effMode === 'sub' ? 'Позиция сабвуфера на плане обновлена' : 'Позиция слушателя на плане обновлена' })); }}>
                   {effMode === 'sub' ? S.manual.putHere : S.manual.sitHere}
                 </button>
               </li>
