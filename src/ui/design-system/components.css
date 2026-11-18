@@ -712,7 +712,7 @@ body:has(.detail-page:not([hidden])) .action-bar, body:has(.sheet-backdrop) .act
 .setting-link { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); width: 100%; min-height: var(--touch-min); border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); color: var(--ink); font: var(--font-body); text-align: left; padding: var(--space-12) var(--space-16); cursor: pointer; }
 .setting-link > span:first-child { display: grid; gap: var(--space-4); min-width: 0; }
 .detail-page { position: fixed; inset: 0; z-index: 30; background: var(--paper); display: flex; flex-direction: column; height: 100dvh; }
-.detail-page__header { display: flex; align-items: center; gap: var(--space-12); padding: calc(env(safe-area-inset-top) + var(--space-8)) var(--gutter) var(--space-8); background: var(--surface); border-bottom: 1px solid var(--line); }
+.detail-page__header { flex-shrink: 0; display: flex; align-items: center; gap: var(--space-12); padding: calc(env(safe-area-inset-top) + var(--space-8)) var(--gutter) var(--space-8); background: var(--surface); border-bottom: 1px solid var(--line); }
 .detail-page__header h2 { font-size: var(--text-heading); margin: 0; }
 .detail-page__body { overflow: auto; overscroll-behavior: contain; min-height: 0; flex: 1; padding: var(--space-16) var(--gutter) calc(env(safe-area-inset-bottom) + var(--space-24)); }
 .detail-page__body > .screen { max-width: 608px; margin: 0 auto; }

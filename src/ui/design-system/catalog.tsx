@@ -52,6 +52,9 @@ function Catalog() {
     <h1 class="text-title">Дизайн-система</h1>
     <DetailPanel title="Рабочий экран: настройки" summary="Возврат сохраняет состояние">
       <Panel title="Настройки"><NumberField label="Высота" value={number} onChange={setNumber} unit="см" min={10} max={250} /></Panel>
+      <DetailPanel title="Вложенная страница" summary="Независимая прокрутка длинного содержимого">
+        {Array.from({ length: 20 }, (_, i) => <Note key={i}>Строка {i + 1}: прокрутите до конца и вернитесь назад.</Note>)}
+      </DetailPanel>
       <Note>Изменения применяются сразу. «Назад» возвращает к рабочему экрану.</Note>
     </DetailPanel>
     <Panel title="Основное действие">

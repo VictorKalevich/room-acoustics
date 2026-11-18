@@ -43,6 +43,9 @@ export function useSheetLock(backdrop: RefObject<HTMLElement | null>, sheet: Ref
     let startY = 0;
     const onStart = (e: TouchEvent) => { startY = e.touches[0]?.clientY ?? 0; };
     const onMove = (e: TouchEvent) => {
+      // The innermost surface owns this gesture. An ancestor may have no overflow
+      // and would otherwise cancel scrolling inside a nested DetailPanel/sheet.
+      e.stopPropagation();
       const s = sheet.current;
       if (!s || !s.contains(e.target as Node)) { e.preventDefault(); return; }
       const dy = (e.touches[0]?.clientY ?? 0) - startY;

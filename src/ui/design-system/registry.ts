@@ -1,7 +1,7 @@
 /** Inventory of visual families. A CSS class is also a public design-system API.
  * Domain views compose these styles; they do not need a wrapper for every span. */
 export const componentFamilies = [
-  ['Рабочие экраны', 'ActionBar — основное действие; DetailPanel — подэкран с возвратом и сводкой; workspace-plan — компактный план'],
+  ['Рабочие экраны', 'ActionBar — основное действие; DetailPanel — подэкран с возвратом, сводкой и независимой вложенной прокруткой; workspace-plan — компактный план'],
   ['Каркас', '.screen · .content · .topbar · .tabbar (вкладки по числу пунктов) · .app--start (без нижней панели) · .drawer · .drawer__item--start (пункт «Начать»)'],
   ['Панели', 'Panel · .panel · .panel--hero · .panel--collapsible'],
   ['Поля', 'NumberField (пустое — NaN; optional — пустой ввод очищает; error — внешняя ошибка с допустимым значением) · SelectField (hint) · .field · .field--compact · .field--error'],
