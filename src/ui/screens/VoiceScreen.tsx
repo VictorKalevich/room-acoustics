@@ -10,7 +10,7 @@ import {
   VOICE_BAND, VOICE_DEFAULTS, FACINGS, type MicPattern, type VoiceSettings, type VoiceSpot, type VoiceGoal,
 } from '../../core/voice';
 import { useComputed } from '../useCompute';
-import { DetailPanel, Details, Note, NumberField, Panel, Segmented } from '../design-system';
+import { DetailPanel, Details, Note, NumberField, Panel, Segmented, Toast } from '../design-system';
 import { HeatLegend, PlanView, type PlanMark, type WallMark } from '../components/PlanView';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { S } from '../strings';
@@ -82,17 +82,19 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
     return i < 0 ? null : { facing: facingAngle(i), score: dirs[i], spread: Math.max(...fin) - Math.min(...fin) };
   }, [dirs]);
   const [cant, setCant] = useState(false);
+  const [positionNotice, setPositionNotice] = useState(0);
 
   /** Встать в точку: направление — лучшее для неё. */
   const standAt = (x: number, y: number, facing?: number) => {
-    if (!ctx) return;
-    if (facing != null && spotAllowed(room, x, y, facing, v)) { setCant(false); set({ spot: { x, y, facing } }); return; }
+    if (!ctx) return false;
+    if (facing != null && spotAllowed(room, x, y, facing, v)) { setCant(false); set({ spot: { x, y, facing } }); return true; }
     const sc = facingScores(ctx, x, y, goal);
     let i = -1;
     sc.forEach((s, k) => { if (Number.isFinite(s) && (i < 0 || s < sc[i])) i = k; });
-    if (i < 0) { setCant(true); return; }
+    if (i < 0) { setCant(true); return false; }
     setCant(false);
     set({ spot: { x, y, facing: facingAngle(i) } });
+    return true;
   };
   const rotate = (d: number) => {
     if (!spot) return;
@@ -206,7 +208,7 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
       </Panel>
 
       <div class="workspace-status" aria-label="Показатели выбранного места"><span>Спектр: {ev ? fmt(ev.score, 1) : "…"} дБ</span><span>Комната: {ev ? fmt(ev.roomDb, 1) : "…"} дБ</span><span>RT60: {fmt(reverb.tMid, 2)} с</span></div>
-      <DetailPanel title="Лучшие места">        <h3 class="subhead">{roomGoal ? 'Места с меньшим вкладом комнаты' : 'Места с более ровным спектром'}</h3>
+      <DetailPanel title="Лучшие места"><Toast message="Позиция на плане обновлена" trigger={positionNotice} />        <h3 class="subhead">{roomGoal ? 'Места с меньшим вкладом комнаты' : 'Места с более ровным спектром'}</h3>
         {map && map.best.length > 0 && <p class="small" data-testid="voice-map-best">{t.bestScore(fmt(map.min, 1))} · {roomGoal ? 'вклад комнаты' : 'неровность спектра'}</p>}
         {flatRoom && <p class="muted small">{t.flat}</p>}
         <ul class="best-list">
@@ -217,7 +219,7 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
                 <strong>{fmt(b.score, 1)} дБ</strong>
                 <span class="muted small">{t.bestRow(fmt(b.x, 2), fmt(b.y, 2), facingName(b.facing))}</span>
               </span>
-              <button type="button" class="btn btn--small" onClick={() => standAt(b.x, b.y, b.facing)}>{t.standHere}</button>
+              <button type="button" class="btn btn--small" onClick={() => { if (standAt(b.x, b.y, b.facing)) setPositionNotice((n) => n + 1); }}>{t.standHere}</button>
             </li>
           ))}
         </ul>

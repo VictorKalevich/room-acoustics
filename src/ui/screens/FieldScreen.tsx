@@ -9,7 +9,7 @@ import { computeReverb } from '../../core/reverb';
 import { useComputed } from '../useCompute';
 import { PlanKey, PlanView, keysFor, type PlanItem, type PlanProps } from '../components/PlanView';
 import { HeightRange } from '../components/HeightRange';
-import { DetailPanel, Details, NumberField, Note, Panel, Segmented } from '../design-system';
+import { DetailPanel, Details, NumberField, Note, Panel, Segmented, SelectField } from '../design-system';
 import { SPAN } from '../fieldColors';
 import { S } from '../strings';
 import { PlayButton } from '../components/MiniPlayer';
@@ -111,6 +111,16 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   // одна частота: кнопка моды или ползунок (только для «Ваша система»)
   // у слившихся мод одна частота: выбранной считается та, чьи номера совпадают
   const isPicked = (p: Pick) => !!pick && Math.abs(pick.f - p.f) < 0.05 && (!pick.n || !p.n || pick.n.join() === p.n.join());
+  // The two visible entry points share the existing pick and request; no separate slice state.
+  const pickedIndex = quick.findIndex(isPicked);
+  const modeValue = view === 'band' ? 'band' : pickedIndex >= 0 ? String(pickedIndex) : 'custom';
+  const modeOptions = quick.map((p, i) => ({ value: String(i), label: `${fmt(p.f, 1)} Гц${p.n ? ' · ' + modeWhere(p.n, true) : ''}` }));
+  if (view === 'band') modeOptions.unshift({ value: 'band', label: `Полоса ${fmt(Math.min(...band), 0)}–${fmt(Math.max(...band), 0)} Гц` });
+  else if (pickedIndex < 0) modeOptions.unshift({ value: 'custom', label: pick ? `${fmt(pick.f, 1)} Гц · выбранная частота` : 'Моды рассчитываются…' });
+  const modePicker = () => <SelectField label="Мода / частота" value={modeValue} options={modeOptions} onChange={(value) => {
+    const next = quick[Number(value)];
+    if (next) { setPick(next); setView('single'); }
+  }} />;
   const fLo = 15, fHi = fTop;
   const onSlider = (v: number) => {
     const f = fromSlider(v, fLo, fHi);
@@ -206,6 +216,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
   return (
     <div class="screen">
       <Panel class="panel--hero">
+        {modePicker()}
         <p class="small">{S.field.intro}</p>
         <div class="field3d-wrap">
           {View3D ? <View3D room={room} field={field} energy={energy} threshold={threshold} items={items3d} sliceZ={sliceZ} /> : <div class="field3d field3d--loading" />}
@@ -306,6 +317,8 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
       </Panel>
 
       <DetailPanel title={S.field.sliceTitle}><Panel title={S.field.sliceTitle} class="workspace-plan">
+        {modePicker()}
+        {shown && <p class="small" role="status">{shown}{busy ? ` · ${S.field.computingNew}` : ''}</p>}
         <p class="small">{S.field.sliceIntro}</p>
         <div class="slice-row">
           <div class="slice-row__plan">

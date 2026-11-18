@@ -8,7 +8,7 @@ import '@fontsource/golos-text/latin-400.css';
 import '@fontsource/golos-text/latin-500.css';
 import '@fontsource/golos-text/latin-600.css';
 import '../../styles.css';
-import { ActionBar, DetailPanel, ActionMenu, CalculationStatus, ConfirmSheet, Details, FailurePanel, Note, NumberField, Panel, SectionNav, Segmented, SelectField } from './index';
+import { ActionBar, DetailPanel, ActionMenu, CalculationStatus, ConfirmSheet, Details, FailurePanel, Note, NumberField, Panel, SectionNav, Segmented, SelectField, Toast } from './index';
 import { componentFamilies } from './registry';
 import { WallView } from '../components/WallView';
 import { ResponseChart } from '../components/Charts';
@@ -46,6 +46,7 @@ function Catalog() {
   const [dock, setDock] = useState(false);
   const [actionState, setActionState] = useState('stale');
   const [message, setMessage] = useState('Выберите действие');
+  const [notice, setNotice] = useState(0);
   const options = [{ value: 'first', label: 'Первый' }, { value: 'second', label: 'Второй' }];
   return <main class="content screen">
     <h1 class="text-title">Дизайн-система</h1>
@@ -73,6 +74,11 @@ function Catalog() {
       <p class="text-label">Подпись поля — 14 px, medium</p>
       <p class="text-caption muted">Вспомогательная подпись — 12 px</p>
       <p class="text-metric">30,0 <span class="text-small">дБ</span></p>
+    </Panel>
+    <Panel title="Отклик и уведомление">
+      <p class="small">Все кнопки реагируют на нажатие. При уменьшенном движении остаётся изменение яркости.</p>
+      <button type="button" class="btn" onClick={() => setNotice((n) => n + 1)}>Показать уведомление</button>
+      <Toast message="Позиция на плане обновлена" trigger={notice} />
     </Panel>
     <Panel title="Кнопки и состояния">
       <div class="btn-row"><button type="button" class="btn btn--primary">Основная</button><button type="button" class="btn">Обычная</button></div>

@@ -7,3 +7,4 @@ export { ConfirmSheet } from './ConfirmSheet';
 export { FailurePanel } from './FailurePanel';
 export { ActionBar } from './ActionBar';
 export { DetailPanel } from './DetailPanel';
+export { Toast } from './Toast';

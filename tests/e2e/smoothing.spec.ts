@@ -7,6 +7,7 @@ test('smoothing preferences are independent for voice, manual and auto and survi
   await showDetail(page, 'Показатели и спектр');
   const voice = page.locator('.smoothed-chart[data-screen="voice"]');
   await expect(voice.getByRole('slider')).toHaveValue('0', { timeout: 20000 });
+  await expect(voice.getByRole('button', { name: 'Исходная кривая 1/6 октавы', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await voice.getByRole('button', { name: 'Сглаживание 1/2', exact: true }).click();
   await voice.getByRole('radio', { name: 'Психоакустическое', exact: true }).click();
   await expect(voice.getByRole('slider')).toHaveCount(0);

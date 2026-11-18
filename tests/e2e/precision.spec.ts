@@ -33,6 +33,7 @@ test('точность расчёта открывает сглаживание 
   const voice = page.locator('.smoothed-chart[data-screen="voice"]');
   await expect(voice.getByRole('button', { name: 'Исходная кривая 1/48 октавы', exact: true })).toBeVisible({ timeout: 20000 });
   await expect(voice.getByRole('slider')).toHaveValue('3');
+  await expect(voice.getByRole('button', { name: 'Сглаживание 1/6', exact: true })).toHaveAttribute('aria-pressed', 'true');
 
   // стандартная точность: узких точек нет, действует прежняя базовая точка; настройка переживает перезагрузку
   await showDetail(page, 'Микрофон и голос');

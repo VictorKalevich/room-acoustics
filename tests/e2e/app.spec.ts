@@ -573,7 +573,9 @@ await page.getByRole('button', { name: 'Пересчитать' }).click();
     await expect(page.getByText('Цель — подъём низа +6 дБ (меняется в «Расстановка → Система и цель подбора»).').locator('visible=true')).toBeVisible();
   }
   await page.reload();
-  await page.goto('/#placement');
+  // After loading the saved project, use the same navigation as the user.
+  // An immediate hash change can precede bootstrap's listener (known 033 limitation).
+  await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Расстановка', exact: true }).click();
   await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await expect(page.getByRole('radiogroup', { name: 'Подъём низа' }).getByRole('radio', { name: '+6 дБ' })).toBeChecked();
   await page.getByRole('radiogroup', { name: 'Подъём низа' }).getByRole('radio', { name: 'Ровно' }).click();

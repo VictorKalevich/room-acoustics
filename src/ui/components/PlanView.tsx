@@ -534,18 +534,10 @@ function KeyIcon({ id }: { id: KeyId }) {
   );
 }
 
-const KEY_OPEN = 'ra-plankey-open';
-
-/** Пояснение «Что на плане»: только те обозначения, что есть на этом плане. Состояние (открыто/закрыто) запоминается. */
+/** Каждый план начинает со свёрнутого пояснения; открытие действует только для этого экземпляра. */
 export function PlanKey({ keys, notes }: { keys: KeyId[]; notes?: Partial<Record<KeyId, string>> }) {
-  let open = false;
-  try { open = localStorage.getItem(KEY_OPEN) === '1'; } catch { /* без хранилища — свёрнуто */ }
   return (
-    <details
-      class="details plan-key"
-      open={open}
-      onToggle={(e) => { try { localStorage.setItem(KEY_OPEN, (e.currentTarget as HTMLDetailsElement).open ? '1' : '0'); } catch { /* нет хранилища */ } }}
-    >
+    <details class="details plan-key">
       <summary>{S.plan.keyTitle}</summary>
       <ul class="plan-key__list">
         {keys.map((k, ki) => (
