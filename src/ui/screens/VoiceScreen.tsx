@@ -10,7 +10,7 @@ import {
   VOICE_BAND, VOICE_DEFAULTS, FACINGS, type MicPattern, type VoiceSettings, type VoiceSpot, type VoiceGoal,
 } from '../../core/voice';
 import { useComputed } from '../useCompute';
-import { Details, Note, NumberField, Panel, Segmented } from '../design-system';
+import { DetailPanel, Details, Note, NumberField, Panel, Segmented } from '../design-system';
 import { HeatLegend, PlanView, type PlanMark, type WallMark } from '../components/PlanView';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { S } from '../strings';
@@ -130,7 +130,7 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
 
   return (
     <div class="screen">
-      <Panel title={t.setup}>
+      <DetailPanel title={t.setup} summary={t.mics[v.mic] + " · " + fmt(v.mouthZ * 100, 0) + " см · дистанция " + fmt(v.distance * 100, 0) + " см"}><Panel title={t.setup}>
         <p class="small">{t.intro}</p>
         <Segmented label={t.mic} value={v.mic} options={(['cardioid', 'supercardioid'] as MicPattern[]).map((m) => ({ value: m, label: t.mics[m] }))} onChange={(mic) => set({ mic })} />
         <p class="muted small">{t.micHint[v.mic]}</p>
@@ -150,14 +150,14 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
           <button type="button" class="btn btn--small btn--ghost" onClick={() => set({ fLo: VOICE_BAND[0], fHi: VOICE_BAND[1] })}>{t.bandReset}</button>
         )}
         <PrecisionPicker value={project.precision} onChange={onPrecision} where="voice" />
-      </Panel>
+      </Panel></DetailPanel>
 
-      <Panel title={t.mapTitle}>
+      <Panel title={t.mapTitle} class="workspace-plan">
         <Segmented label="Цель карты" value={goal} onChange={setGoal} options={[
           { value: 'flatness', label: 'Ровнее спектр' }, { value: 'room', label: 'Меньше комнаты' },
         ]} />
-        <h3 class="subhead">{roomGoal ? 'Вклад комнаты в микрофоне' : 'Ровность спектра в микрофоне'}</h3>
-        <p class="map-help__line small">{roomGoal ? t.roomMapLine : t.mapLine}</p>
+
+        <Details summary="Что показывает карта"><p class="map-help__line small">{roomGoal ? t.roomMapLine : t.mapLine}</p></Details>
         <PlanView
           depth={room.depth}
           width={room.width}
@@ -205,6 +205,24 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
         )}
       </Panel>
 
+      <div class="workspace-status" aria-label="Показатели выбранного места"><span>Спектр: {ev ? fmt(ev.score, 1) : "…"} дБ</span><span>Комната: {ev ? fmt(ev.roomDb, 1) : "…"} дБ</span><span>RT60: {fmt(reverb.tMid, 2)} с</span></div>
+      <DetailPanel title="Лучшие места">        <h3 class="subhead">{roomGoal ? 'Места с меньшим вкладом комнаты' : 'Места с более ровным спектром'}</h3>
+        {map && map.best.length > 0 && <p class="small" data-testid="voice-map-best">{t.bestScore(fmt(map.min, 1))} · {roomGoal ? 'вклад комнаты' : 'неровность спектра'}</p>}
+        {flatRoom && <p class="muted small">{t.flat}</p>}
+        <ul class="best-list">
+          {(map?.best ?? []).map((b, i) => (
+            <li key={i}>
+              <span class="best-list__n">{i + 1}</span>
+              <span class="best-list__text">
+                <strong>{fmt(b.score, 1)} дБ</strong>
+                <span class="muted small">{t.bestRow(fmt(b.x, 2), fmt(b.y, 2), facingName(b.facing))}</span>
+              </span>
+              <button type="button" class="btn btn--small" onClick={() => standAt(b.x, b.y, b.facing)}>{t.standHere}</button>
+            </li>
+          ))}
+        </ul>
+</DetailPanel>
+      <DetailPanel title="Показатели и спектр">
       <Panel title={t.scorePanel}>
         <div class="score score--key score-block" data-testid="voice-flatness">
           <div class="score__main">
@@ -236,21 +254,6 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
             </Details>
           </section>
         </div>
-        <h3 class="subhead">{roomGoal ? 'Места с меньшим вкладом комнаты' : 'Места с более ровным спектром'}</h3>
-        {map && map.best.length > 0 && <p class="small" data-testid="voice-map-best">{t.bestScore(fmt(map.min, 1))} · {roomGoal ? 'вклад комнаты' : 'неровность спектра'}</p>}
-        {flatRoom && <p class="muted small">{t.flat}</p>}
-        <ul class="best-list">
-          {(map?.best ?? []).map((b, i) => (
-            <li key={i}>
-              <span class="best-list__n">{i + 1}</span>
-              <span class="best-list__text">
-                <strong>{fmt(b.score, 1)} дБ</strong>
-                <span class="muted small">{t.bestRow(fmt(b.x, 2), fmt(b.y, 2), facingName(b.facing))}</span>
-              </span>
-              <button type="button" class="btn btn--small" onClick={() => standAt(b.x, b.y, b.facing)}>{t.standHere}</button>
-            </li>
-          ))}
-        </ul>
         {ev && (
           <>
             <h3 class="subhead">{t.response}</h3>
@@ -260,8 +263,9 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
         )}
       </Panel>
 
+      </DetailPanel>
       {ev && spot && (
-        <Panel title={t.reflTitle}>
+        <DetailPanel title={t.reflTitle}><Panel title={t.reflTitle}>
           <p class="small">{t.reflIntro}</p>
           <ul class="plain-list small voice-refl">
             {shown.map((r, ki) => (
@@ -276,7 +280,7 @@ export function VoiceScreen({ project, onVoice, onPrecision }: Props) {
             <p class="small">{t.howText}</p>
             <p class="small">Цель «Ровнее спектр» сравнивает неровность АЧХ. Цель «Меньше комнаты» сравнивает среднюю энергию отражений и позднего хвоста относительно прямого голоса по тем же полосам. Это разные критерии; ровный спектр может сочетаться с заметной реверберацией.</p>
           </Details>
-        </Panel>
+        </Panel></DetailPanel>
       )}
     </div>
   );

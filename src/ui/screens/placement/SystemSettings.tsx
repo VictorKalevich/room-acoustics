@@ -3,8 +3,7 @@ import type { Project } from '../../../state/project';
 import { defaultSources, validateSources } from '../../../state/project';
 import type { BassObjective, Constraints, Passport, SourceSpec, SubZone, PhaseMode } from '../../../core/types';
 import { evalBand } from '../../../core/system';
-import { NumberField, Segmented, Note, Details, SelectField } from '../../design-system';
-import { SetupCard } from '../../components/SetupCard';
+import { DetailPanel, NumberField, Segmented, Note, Details, SelectField } from '../../design-system';
 import { ObjectivePicker } from '../../components/ObjectivePicker';
 import { DeepBassOptions } from '../../components/DeepBassOptions';
 import { PassportFields } from '../../components/PassportFields';
@@ -12,7 +11,7 @@ import { PrecisionPicker } from '../../components/PrecisionPicker';
 import { normalizePrecision, type Precision } from '../../../core/precision';
 import { HOUSE_RISES, normalizeHouseRise } from '../../../core/houseCurve';
 import { S } from '../../strings';
-import { fmtInt } from '../../format';
+import { fmt, fmtInt } from '../../format';
 
 export function SystemSettings({ project, onSources, onConstraints, onPrecision }: {
   project: Project; onSources: (sources: SourceSpec[]) => void; onConstraints: (constraints: Constraints) => void;
@@ -53,6 +52,7 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
   // общие настройки обоих режимов: система, места и высота ушей, где может стоять сабвуфер, цель подбора
   const sharedBody = (
     <>
+      <DetailPanel title="Оборудование" summary={spk.length + " колонки · " + subs.length + " сабвуфер"}>
       <h3 class="subhead">{S.placement.system}</h3>
         <Segmented
           label={S.placement.speakers}
@@ -185,6 +185,8 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
             )}
           </div>
         </Details>
+      </DetailPanel>
+      <DetailPanel title={S.setup.places} summary={`${c.seats.count} мест · высота ушей ${fmt(c.earHeight, 2)} м`}>
       <h3 class="subhead">{S.setup.places}</h3>
         {subs.length > 0 && (
           <Segmented
@@ -207,6 +209,8 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
         <Details summary={S.placement.earHeight}>
           <NumberField label={S.placement.earHeight} value={c.earHeight} unit="м" min={0.5} max={2} onChange={(v) => setC({ earHeight: v })} />
         </Details>
+      </DetailPanel>
+      <DetailPanel title="Цель и точность" summary={S.objective.names[c.objective?.id ?? "flat"]}>
       <h3 class="subhead">{S.objective.title}</h3>
       <p class="muted small">{S.objective.intro}</p>
       <ObjectivePicker room={room} value={c.objective} onChange={(o: BassObjective) => setC({ objective: o })} band={band} />
@@ -222,6 +226,7 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
       <p class="muted small">{S.house.hint}</p>
       <h3 class="subhead">{S.precision.title}</h3>
       <PrecisionPicker value={project.precision} onChange={onPrecision} where="bass" />
+      </DetailPanel>
     </>
   );
   const precision = normalizePrecision(project.precision);
@@ -230,7 +235,7 @@ export function SystemSettings({ project, onSources, onConstraints, onPrecision 
     subs.length, subs[0] ? `${fmtInt(subs[0].fLow)}–${fmtInt(subs[0].fHigh)}` : '',
     c.seats.count, S.objective.names[c.objective?.id ?? 'flat'].toLowerCase() + (c.houseCurve ? `, ${S.house.summary(c.houseCurve)}` : ''),
   ) + (precision === 'standard' ? '' : ` · ${S.precision.summary(S.precision.names[precision].toLowerCase())}`);
-  const sharedCard = <SetupCard title={S.setup.title} summary={summary}>{sharedBody}</SetupCard>;
+  const sharedCard = <DetailPanel title={S.setup.title} summary={summary}>{sharedBody}</DetailPanel>;
   return sharedCard;
 }
 

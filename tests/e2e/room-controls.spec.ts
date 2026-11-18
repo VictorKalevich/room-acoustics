@@ -1,3 +1,4 @@
+import { openDetail } from './helpers';
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { fitsWidth, roomDraft } from './helpers';
 
@@ -14,6 +15,7 @@ async function aligned(a: Locator, b: Locator) {
 
 test('adjacent fields stay aligned with wrapping labels and validation feedback', async ({ page }) => {
   await page.goto('/#voice');
+  await openDetail(page, 'Микрофон и голос');
   const height = page.getByLabel('Высота микрофона', { exact: true });
   const distance = page.getByLabel('От рта до микрофона', { exact: true });
   for (const width of [320, 393, 768]) {

@@ -112,3 +112,24 @@ export async function fits(page: Page, what: string) {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.setViewportSize({ width: 393, height: 852 });
 }
+
+/** 049: follow the same detail-page buttons and Back actions as a user. */
+export async function openDetail(page: Page, title: string) {
+  await page.locator('.setting-link:visible').filter({ has: page.getByText(title, { exact: true }) }).click();
+  const dialog = page.getByRole('dialog', { name: title, exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator(':scope > header button')).toBeFocused();
+  return dialog;
+}
+export async function closeDetails(page: Page) {
+  while (await page.locator('.detail-page:visible').count()) {
+    const id = await page.locator('.detail-page:visible').last().getAttribute('id');
+    const dialog = page.locator('[id=' + JSON.stringify(id) + ']');
+    await dialog.locator(':scope > header button').click();
+    await expect(dialog).toBeHidden();
+  }
+}
+export async function showDetail(page: Page, ...path: string[]) {
+  await closeDetails(page);
+  for (const title of path) await openDetail(page, title);
+}

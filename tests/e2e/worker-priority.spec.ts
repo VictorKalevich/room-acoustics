@@ -1,3 +1,4 @@
+import { openDetail, closeDetails } from './helpers';
 // 035: расчёт видимого раздела не ждёт задачи скрытых (шаг 8 плана рефакторинга). Комната волновая — расчёты идут в
 // воркере. Воркер занят чужой долгой задачей (подробная карта слушателя, отправлена ему напрямую), пока интерфейс ставит задачи
 // видимого и скрытого разделов; порядок ответов показывает, какую задачу воркер взял раньше. Начатую задачу видимый
@@ -55,12 +56,12 @@ async function idle(page: Page) {
   }, { intervals: [1000], timeout: 40_000 }).toBe(true);
 }
 
-/** Занять воркер на несколько секунд: подробная карта слушателя рабочего проекта; интерфейс этого ответа не ждёт. */
+/** Занять воркер на несколько секунд: карта слушателя с 192 точками/октаву (хватает и на возврат из настроек); интерфейс этого ответа не ждёт. */
 async function busy(page: Page) {
   let project!: Project;
   await draftSaved(page, 'проект с волновой комнатой', (d) => { project = d; return d.id === 'prio'; });
   await page.evaluate(([id, p]) => {
-    (window as unknown as { computeWorker: Worker }).computeWorker.postMessage({ id, type: 'listenerMap', payload: { room: p.room, sources: p.sources, constraints: p.constraints, setup: p.current, ppo: 48 } });
+    (window as unknown as { computeWorker: Worker }).computeWorker.postMessage({ id, type: 'listenerMap', payload: { room: p.room, sources: p.sources, constraints: p.constraints, setup: p.current, ppo: 192 } });
   }, [BUSY, project] as const);
 }
 
@@ -85,7 +86,7 @@ async function openSubSettings(page: Page) {
   await page.goto('/#manual');
   await expect(page.locator('[data-id="listener"]').first()).toBeVisible();
   await go(page, 'tuning/sub');
-  await page.getByText('Настройки вручную').click();
+  await openDetail(page, 'Настройки вручную');
   await idle(page);
 }
 
@@ -97,6 +98,7 @@ test('пока воркер занят, «Подобрать настройки�
   await busy(page);
   await page.locator('#sub1-g').fill('2');
   await expect.poll(async () => (await order(page, from)).posted).toContain('listenerMap');
+  await closeDetails(page);
   await page.getByRole('button', { name: 'Подобрать настройки' }).click();
   await expect(page.locator('.tuning-result')).toBeVisible({ timeout: 30_000 });
   await idle(page);
@@ -108,11 +110,14 @@ test('пока воркер занят, «Подобрать настройки�
 
 test('при возврате на «Расстановку» её карта считается раньше задачи ставшей скрытой «Настройки»', async ({ page }) => {
   await openSubSettings(page);
+  await closeDetails(page);
   const from = (await log(page)).length;
   await busy(page);
-  await page.locator('#sub1-g').fill('2');
   await page.getByRole('button', { name: 'Подобрать настройки' }).click();
   await expect.poll(async () => (await order(page, from)).posted).toContain('integrate');
+  await openDetail(page, 'Настройки вручную');
+  await page.locator('#sub1-g').fill('2');
+  await closeDetails(page);
   await go(page, 'manual');
   await expect.poll(async () => (await order(page, from)).posted).toContain('listenerMap');
   await idle(page);

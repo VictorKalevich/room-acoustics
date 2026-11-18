@@ -1,3 +1,4 @@
+import { showDetail, closeDetails } from './helpers';
 import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
 import { errlog, fits } from './helpers';
@@ -64,16 +65,17 @@ test('028: результат настоящего подбора после с�
   await page.goto('/#placement');
   await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
   const hero = page.locator('.panel--hero');
-  await expect(hero.locator('.pos-table')).toBeVisible({ timeout: 30_000 });
-  const shown = async () => [
-    await hero.locator('.tabs').innerText(),
-    await hero.locator('.score').first().innerText(),
-    await hero.locator('.pos-table').innerText(),
-    await hero.getByText(/^Проверено/).innerText(),
-  ];
+  const shown = async () => {
+    await showDetail(page, 'Оценка варианта');
+    const score = await hero.locator('.score').first().innerText();
+    await showDetail(page, 'Координаты');
+    const positions = await hero.locator('.pos-table').innerText();
+    await closeDetails(page);
+    await page.getByText('Подробности подбора', { exact: true }).click();
+    return [await hero.locator('.tabs').innerText(), score, positions, await hero.getByText(/^Проверено/).innerText()];
+  };
   const before = await shown();
   await page.reload();
-  await expect(hero.locator('.pos-table')).toBeVisible();
   expect(await shown()).toEqual(before);
 });
 

@@ -12,7 +12,7 @@ import { getTone, onTone } from '../audio/tone';
 import { useSetupEval } from '../useEval';
 import { ResponseChart } from '../components/Charts';
 import { PlanView, type PlanItem } from '../components/PlanView';
-import { Note, Panel } from '../design-system';
+import { ActionBar, Note, Panel } from '../design-system';
 import { Term } from '../components/Term';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -197,7 +197,7 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
           {S.measure.download}
         </button>
       )}
-      <div class="btn-row">
+      <ActionBar label="Запись свипа">
         {state !== 'rec' ? (
           <button type="button" class="btn btn--primary" disabled={state === 'busy'} onClick={record}>
             {state === 'busy' ? S.measure.analyzing : S.measure.recordPoint(takes.length + 1)}
@@ -207,7 +207,7 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
             <span class="rec-dot" aria-hidden="true" /> {playHere ? S.measure.playing : S.measure.stop}
           </button>
         )}
-      </div>
+      </ActionBar>
       {state === 'rec' && !playHere && <p class="small">{S.measure.startNow}</p>}
       {msg && <Note tone={msg.tone}>{msg.t}</Note>}
       {takes.length > 0 && (
@@ -285,9 +285,9 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
   return (
     <Panel title={S.measure.clapTitle}>
       <p class="small">{S.measure.clapIntro} <Term id="rt60">RT60</Term>.</p>
-      <button type="button" class="btn btn--primary" disabled={state !== 'idle'} onClick={go}>
+      <ActionBar label="Замер хлопком"><button type="button" class="btn btn--primary" disabled={state !== 'idle'} onClick={go}>
         {state === 'rec' ? S.measure.clapNow : state === 'busy' ? S.measure.analyzing : S.measure.clapStart}
-      </button>
+      </button></ActionBar>
       {msg && <Note tone="warn">{msg}</Note>}
       {res.length > 0 && (
         <>
@@ -401,11 +401,11 @@ function RtaTool({ project, applyCal, active }: { project: Project; applyCal: (f
   return (
     <Panel title={S.measure.rtaTitle}>
       <p class="small">{S.measure.rtaIntro} <Term id="crawl">{S.measure.crawl}</Term>.</p>
-      <div class="btn-row">
+      <ActionBar label="Живой анализатор"><div class="btn-row">
         <button type="button" class={`btn btn--primary${on ? ' is-rec' : ''}`} onClick={() => setOn(!on)}>{on ? S.measure.rtaStop : S.measure.rtaStart}</button>
         {curve && <button type="button" class="btn btn--ghost" onClick={() => setSnaps((s) => [...s.slice(-3), { name: S.measure.point(s.length + 1), db: curve }])}>{S.measure.remember}</button>}
         {snaps.length > 0 && <button type="button" class="btn btn--ghost" onClick={() => setSnaps([])}>{S.measure.clear}</button>}
-      </div>
+      </div></ActionBar>
       {msg && <Note tone="warn">{msg}</Note>}
       {atTone != null && <p class="rta-big"><strong>{fmt(atTone, 1)}</strong> дБ <span class="muted small">{S.measure.atTone(fmt(tone.f, 1))}</span></p>}
       {curve && <ResponseChart fLo={15} fHi={250} lines={lines} />}

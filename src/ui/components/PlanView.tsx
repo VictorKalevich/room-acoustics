@@ -538,8 +538,8 @@ const KEY_OPEN = 'ra-plankey-open';
 
 /** Пояснение «Что на плане»: только те обозначения, что есть на этом плане. Состояние (открыто/закрыто) запоминается. */
 export function PlanKey({ keys, notes }: { keys: KeyId[]; notes?: Partial<Record<KeyId, string>> }) {
-  let open = true;
-  try { open = localStorage.getItem(KEY_OPEN) !== '0'; } catch { /* без хранилища — открыто */ }
+  let open = false;
+  try { open = localStorage.getItem(KEY_OPEN) === '1'; } catch { /* без хранилища — свёрнуто */ }
   return (
     <details
       class="details plan-key"

@@ -1,3 +1,4 @@
+import { showDetail, closeDetails } from './helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { EMPTY_STATE, draftSaved, menuReady, roomOnlyState } from './helpers';
 
@@ -92,7 +93,8 @@ test.describe('комнаты ещё нет', () => {
     await expect(page.locator('.topbar__room')).toContainText('5,50 × 4,00 × 2,50');
     // после создания комнаты — нижняя панель из пяти вкладок, «Что учтено» и «Что дальше»
     await expect(tabs(page).getByRole('button')).toHaveText(['Комната', 'Расстановка', 'Анализ', 'Настройка', 'Голос']);
-    await expect(page.locator('.report-table:visible')).toContainText('введена вручную, 5,50 × 4,00 × 2,50 м');
+    await page.locator('summary').filter({ hasText: 'Что учтено в расчётах' }).click();
+  await expect(page.locator('.report-table:visible')).toContainText('введена вручную, 5,50 × 4,00 × 2,50 м');
     await expect(page.locator('.report-table:visible')).toContainText('ещё не выбраны');
     await expect(heading(page, 'Что дальше')).toBeVisible();
     // комната, настроенная вручную, — «3D-модель» без упоминаний скана
@@ -117,11 +119,15 @@ test.describe('места колонок ещё не выбраны', () => {
       await expect(heading(page, 'Сначала выберите расстановку')).toBeVisible();
     }
     await page.goto('/#modes');
+    await showDetail(page, 'Все моды');
     await expect(page.locator('.modes-table').first()).toBeVisible();
+    await closeDetails(page);
+    await closeDetails(page);
     await page.goto('/#measure/clap');
     await expect(heading(page, 'Сначала выберите расстановку')).toHaveCount(0);
     await page.goto('/#voice');
     await expect(heading(page, 'Сначала выберите расстановку')).toHaveCount(0);
+    await showDetail(page, 'Лучшие места');
     await expect(page.getByTestId('voice-map-best')).toBeVisible({ timeout: 20_000 });
     // отчёт: комната — есть, разделы о колонках — после выбора мест
     await page.goto('/#report');

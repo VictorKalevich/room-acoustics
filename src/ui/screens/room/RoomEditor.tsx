@@ -19,7 +19,7 @@ import { shownTreatments } from '../../../core/treatments';
 import { computeReverb } from '../../../core/reverb';
 import { fitRoomObjects, type FitItem } from '../../../core/fitRoom';
 import { FitIssuesProvider, fitCardId, fitDetails, fitKey, fitName, fitPlace, fitText, useFitIssues, type FitIssue } from './fitIssues';
-import { ActionMenu, ConfirmSheet, Details, Note, NumberField, Panel, SectionNav, Segmented, SelectField } from '../../design-system';
+import { ActionBar, ActionMenu, ConfirmSheet, Details, Note, NumberField, Panel, SectionNav, Segmented, SelectField } from '../../design-system';
 import { PlanView } from '../../components/PlanView';
 import { WallView } from '../../components/WallView';
 import { ShapePanel, SlopeBlock, WallItemsPanel } from './OpeningsPanel';
@@ -250,6 +250,7 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
         )}
         {!dimsOk && shown === 'size' && <Note>{S.editor.dimsNeeded}</Note>}
         {saved && !dirty && <p class="small" role="status">{S.editor.saved}</p>}
+        <ActionBar label="Действия конструктора">
         {wizard ? (
           <>
             <div class="btn-row">
@@ -268,6 +269,7 @@ export function RoomEditor({ project, step, onStep, onRoom, onBack }: Props) {
             <button type="button" class="btn btn--ghost" disabled={!dirty} onClick={() => setAskReset(true)}>{S.editor.resetDraft}</button>
           </div>
         )}
+        </ActionBar>
       </Panel>
 
       {askReset && (

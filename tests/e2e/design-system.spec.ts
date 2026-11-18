@@ -1,3 +1,4 @@
+import { openDetail } from './helpers';
 import { test, expect } from '@playwright/test';
 import { controlSkins } from '../../src/ui/design-system/registry';
 import { fitsWidth } from './helpers';
@@ -45,6 +46,7 @@ test('quick Escape returns focus to the shared action-menu trigger', async ({ pa
 
 test('canonical field spacing and text survive validation on narrow screens', async ({ page }) => {
   await page.goto('/#voice');
+  await openDetail(page, 'Микрофон и голос');
   const height = page.getByLabel('Высота микрофона', { exact: true });
   const distance = page.getByLabel('От рта до микрофона', { exact: true });
   for (const width of [320, 393, 1024]) {

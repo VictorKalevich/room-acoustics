@@ -16,7 +16,7 @@ import { useComputed } from '../useCompute';
 import { PlanView, HeatLegend, type PlanItem, type PlanMark } from '../components/PlanView';
 import { SmoothedResponseChart } from '../components/SmoothedResponseChart';
 import { chartCurve } from '../components/Charts';
-import { NumberField, Panel, Segmented, Note, Details } from '../design-system';
+import { DetailPanel, NumberField, Panel, Segmented, Note, Details } from '../design-system';
 import { S } from '../strings';
 import { fmt } from '../format';
 import { PlanLayers, usePlanLayers } from '../components/PlanLayers';
@@ -131,7 +131,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
 
   return (
     <div class="screen">
-      <Panel class="panel--hero">
+      <Panel class="panel--hero workspace-plan">
         {header}
         {!current.placed && (
           <>
@@ -153,8 +153,11 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
         {effMode === 'sub' && subs.length > 1 && (
           <Segmented label={S.manual.whichSub} value={effSub} options={subs.map((s) => ({ value: s.id, label: `С${s.id.slice(3)}` }))} onChange={setSubId} />
         )}
-        <MapModeHelp mode={effMode as MapMode} where="manual" sub={effSub ? `С${effSub.slice(3)}` : undefined} />
+        <Details summary="Отображение карты"><MapModeHelp mode={effMode as MapMode} where="manual" sub={effSub ? `С${effSub.slice(3)}` : undefined} />
         <PlanLayers {...layers} />
+        <Segmented label={S.robust.layer} value={layer} options={[{ value: 'flat' as const, label: S.robust.layers.flat }, { value: 'robust' as const, label: S.robust.layers.robust }]} onChange={setLayer} />
+        {layer === 'robust' && <p class="muted small">{S.robust.layerHint}</p>}
+        </Details>
         <PlanView
           depth={room.depth}
           width={room.width}
@@ -173,12 +176,23 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
         />
         {/* «Карта звука» прячет только окраску плана и её шкалу; выбор слоя и пояснение остаются (009) */}
         {layers.map && heat && <HeatLegend hm={layer === 'robust' ? robustHeat! : heat} />}
-        <Segmented label={S.robust.layer} value={layer} options={[{ value: 'flat' as const, label: S.robust.layers.flat }, { value: 'robust' as const, label: S.robust.layers.robust }]} onChange={setLayer} />
-        {layer === 'robust' && <p class="muted small">{S.robust.layerHint}</p>}
         <p class="progress-text small" role="status" aria-live="polite">
           {busy ? <><span class="spinner" aria-hidden="true" /> {S.manual.computing}</> : <span class="muted">{S.manual.hint}</span>}
         </p>
         {error && <Note tone="warn">{error}</Note>}
+        {probe && probeEval && (
+          <div class="probe">
+            <span>
+              <strong>{S.manual.probe}:</strong> {fmt(probe.x, 2)} × {fmt(probe.y, 2)} м — {fmt(probeEval.objScore, 1)} дБ
+            </span>
+            <span class="btn-row">
+              <button type="button" class="btn btn--small" onClick={() => { placeSearched(probe); setProbe(null); }}>
+                {effMode === 'sub' ? S.manual.putHere : S.manual.sitHere}
+              </button>
+              <button type="button" class="btn btn--small btn--ghost" onClick={() => setProbe(null)}>{S.manual.removeProbe}</button>
+            </span>
+          </div>
+        )}
         {spkPair(sources) && (
           <label class="check">
             <input type="checkbox" checked={symmetric} onChange={(e) => setSymmetric((e.target as HTMLInputElement).checked)} />
@@ -187,7 +201,34 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
         )}
       </Panel>
 
-      <Panel title={S.manual.best}>
+      {selItem && (
+        <DetailPanel title={`${S.manual.coords}: ${itemName(selItem.id)}`}><Panel title={`${S.manual.coords}: ${itemName(selItem.id)}`}>
+          <div class="grid-2">
+            <NumberField
+              id="sel-x"
+              key={`x-${selItem.id}`}
+              label={S.manual.x}
+              value={selItem.pos.x}
+              unit="м"
+              min={0.05}
+              max={room.depth - 0.05}
+              onChange={(v) => move(selItem.id, { x: v, y: selItem.pos.y })}
+            />
+            <NumberField
+              id="sel-y"
+              key={`y-${selItem.id}`}
+              label={S.manual.y}
+              value={selItem.pos.y}
+              unit="м"
+              min={0.05}
+              max={room.width - 0.05}
+              onChange={(v) => move(selItem.id, { x: selItem.pos.x, y: v })}
+            />
+          </div>
+        </Panel></DetailPanel>
+      )}
+
+      <Panel title="Текущее место">
         <ScoreBlock
           objective={c.objective}
           objScore={evalCur ? evalCur.objScore : null}
@@ -198,6 +239,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
         >
           <span class="model-tag">{wave ? S.model.waveTag : S.model.modalTag}</span>
         </ScoreBlock>
+        <DetailPanel title="Лучшие места">
         {heat && heat.best.length === 0 && <Note tone="warn">{S.manual.noBest}</Note>}
         <ul class="best-list">
           {(heat?.best ?? []).map((b, i) => {
@@ -219,19 +261,8 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
             );
           })}
         </ul>
-        {probe && probeEval && (
-          <div class="probe">
-            <span>
-              <strong>{S.manual.probe}:</strong> {fmt(probe.x, 2)} × {fmt(probe.y, 2)} м — {fmt(probeEval.objScore, 1)} дБ
-            </span>
-            <span class="btn-row">
-              <button type="button" class="btn btn--small" onClick={() => { placeSearched(probe); setProbe(null); }}>
-                {effMode === 'sub' ? S.manual.putHere : S.manual.sitHere}
-              </button>
-              <button type="button" class="btn btn--small btn--ghost" onClick={() => setProbe(null)}>{S.manual.removeProbe}</button>
-            </span>
-          </div>
-        )}
+        </DetailPanel>
+        <DetailPanel title="АЧХ и сравнение">
         <h3 class="subhead">{S.manual.responseHere}</h3>
         {evalCur && curve ? (
           <>
@@ -261,36 +292,12 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
         ) : (
           <p class="progress-text small">{evalBusy && <span class="spinner" aria-hidden="true" />} {S.model.computing}</p>
         )}
+        </DetailPanel>
       </Panel>
 
-      {selItem && (
-        <Panel title={`${S.manual.coords}: ${itemName(selItem.id)}`}>
-          <div class="grid-2">
-            <NumberField
-              id="sel-x"
-              key={`x-${selItem.id}`}
-              label={S.manual.x}
-              value={selItem.pos.x}
-              unit="м"
-              min={0.05}
-              max={room.depth - 0.05}
-              onChange={(v) => move(selItem.id, { x: v, y: selItem.pos.y })}
-            />
-            <NumberField
-              id="sel-y"
-              key={`y-${selItem.id}`}
-              label={S.manual.y}
-              value={selItem.pos.y}
-              unit="м"
-              min={0.05}
-              max={room.width - 0.05}
-              onChange={(v) => move(selItem.id, { x: selItem.pos.x, y: v })}
-            />
-          </div>
-        </Panel>
-      )}
 
-      <Panel title={S.manual.variants}>
+
+      <DetailPanel title={S.manual.variants}><Panel title={S.manual.variants}>
         <div class="inline-form">
           <div class="field">
             <label for="variant-name">{S.manual.variantName}</label>
@@ -322,7 +329,7 @@ export function ManualScreen({ project, onSetup, onSetups, header }: Props) {
             {S.manual.compared(compareSetup.name)}: {fmt(compareEval.objScore, 1)} дБ против {fmt(evalCur.objScore, 1)} дБ у текущей.
           </Note>
         )}
-      </Panel>
+      </Panel></DetailPanel>
 
       <Details summary="Как считается карта">
         <p class="small">

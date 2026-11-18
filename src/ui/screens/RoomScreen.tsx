@@ -1,9 +1,9 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { Project } from '../../state/project';
 import { activeTreatments, shownTreatments } from '../../core/treatments';
 import type { Room, ReverbResult, WallId } from '../../core/types';
 import { FURNISHING_LABEL, getMaterial } from '../../core/materials';
-import { Panel, Details, Note } from '../design-system';
+import { DetailPanel, Panel, Details, Note } from '../design-system';
 import { PlanView } from '../components/PlanView';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -12,7 +12,7 @@ import { ClearIcon, FileIcon, RotateIcon } from './room/icons';
 import { ConfirmSheet } from '../design-system';
 import type { Destination } from '../navigation';
 import { loadRoomDraft } from '../roomDraft';
-import { requestScanFix } from '../scanFix';
+import { onScanFixRequest, requestScanFix } from '../scanFix';
 import { clearRoom, turnRoom } from '../roomSetup';
 
 interface Props {
@@ -37,6 +37,9 @@ const dimsOf = (r: Room) => `${fmt(r.depth, 2)} × ${fmt(r.width, 2)} × ${fmt(r
 export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
   const room = project.room;
   const [askClear, setAskClear] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  useEffect(() => onScanFixRequest(() => { if (project.roomReady) setScanOpen(true); }), [project.roomReady]);
+  useEffect(() => { if (!project.roomReady) setScanOpen(false); }, [project.roomReady]);
   // после очистки панель скана начинает заново (без прежнего файла и найденного в нём)
   const [scanGen, setScanGen] = useState(0);
   const clear = () => {
@@ -115,19 +118,18 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
   );
   return (
     <div class="screen">
-      <Panel class="panel--hero">
-        <PlanView depth={room.depth} width={room.width} zones={room.zones} rugs={room.coverings} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} />
-        <UsedInCalc project={project} />
-      </Panel>
-
       {onGo && <Panel title={S.room.next}>
         <div class="quick-links">
           <button type="button" class="btn btn--primary" onClick={() => onGo('placement')}>{S.room.nextPlacement}</button>
-          <button type="button" class="btn" onClick={() => onGo('voice')}>{S.room.nextVoice}</button>
-          <button type="button" class="btn" onClick={() => onGo('analysis')}>{S.room.nextAnalysis}</button>
-          <button type="button" class="btn" onClick={() => onGo('measure')}>{S.room.nextMeasure}</button>
+          <button type="button" class="btn btn--tonal" onClick={() => onGo('voice')}>{S.room.nextVoice}</button>
         </div>
       </Panel>}
+      <Panel class="panel--hero workspace-plan">
+        <PlanView depth={room.depth} width={room.width} zones={room.zones} rugs={room.coverings} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} />
+        <Details summary="Что учтено в расчётах"><UsedInCalc project={project} /></Details>
+      </Panel>
+
+
 
       <Panel title={S.room.change}>
         <button type="button" class="btn btn--primary" onClick={() => onGo?.('room/size')}>{S.editor.open}</button>
@@ -144,9 +146,9 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
         {clearSheet}
       </Panel>
 
-      {scanPanel}
+      <DetailPanel title="Скан и 3D-модель" open={scanOpen} onOpenChange={setScanOpen}>{scanPanel}</DetailPanel>
 
-      <Panel title={S.room.reverb}>
+      <DetailPanel title={S.room.reverb}><Panel title={S.room.reverb}>
         <div class="stat-row">
           <div class="stat">
             <span class="stat__value">{fmt(reverb.tMid, 2)} <small>с</small></span>
@@ -178,7 +180,7 @@ export function RoomScreen({ project, reverb, onRoom, onGo }: Props) {
         <Details summary="Допущения">
           <p class="small">{S.room.reverbAssumptions}</p>
         </Details>
-      </Panel>
+      </Panel></DetailPanel>
     </div>
   );
 }

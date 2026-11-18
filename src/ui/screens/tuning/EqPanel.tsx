@@ -8,7 +8,7 @@ import { houseDb } from '../../../core/houseCurve';
 import { measurementAt } from '../../../core/measure';
 import { useComputeAction } from '../../useCompute';
 import { ResponseChart } from '../../components/Charts';
-import { Panel, Segmented, Note, Details } from '../../design-system';
+import { ActionBar, DetailPanel, Panel, Segmented, Note, Details } from '../../design-system';
 import { S } from '../../strings';
 import { Term } from '../../components/Term';
 import { Auralize } from '../../components/Auralize';
@@ -67,7 +67,7 @@ export function EqPanel({ project, active = true }: { project: Project; active?:
       {m && (
         <Segmented label={S.tuning.eqSource} value={source} options={[{ value: 'model', label: S.tuning.eqModel }, { value: 'measured', label: S.tuning.eqMeasured }]} onChange={(v) => { setSource(v); setRes(null); }} />
       )}
-      <button type="button" class="btn btn--primary" onClick={run} disabled={eqBusy}>{eqBusy ? S.model.computing : S.tuning.eqRun}</button>
+      <ActionBar><button type="button" class="btn btn--primary" onClick={run} disabled={eqBusy}>{eqBusy ? S.model.computing : S.tuning.eqRun}</button></ActionBar>
       <CalculationStatus busy={eqBusy} error={error} label={S.model.computing} />
       {res && res.eq.filters.length === 0 && <Note tone="good">{S.tuning.eqNone}</Note>}
       {res && res.eq.filters.length > 0 && (
@@ -95,7 +95,7 @@ export function EqPanel({ project, active = true }: { project: Project; active?:
             <span class="legend__item legend__item--baseline">{S.tuning.legendBefore}</span>
           </div>
           <Note>{S.tuning.eqWhere}</Note>
-          <h3 class="subhead">{S.tuning.eqExport}</h3>
+          <DetailPanel title={S.tuning.eqExport}><h3 class="subhead">{S.tuning.eqExport}</h3>
           {/* один формат за раз: выбирают тот, что нужен для своего плеера или DSP */}
           <Segmented label={S.tuning.exportTo} value={exportTo} options={[{ value: 'apo' as const, label: 'APO' }, { value: 'rew' as const, label: 'REW' }, { value: 'minidsp' as const, label: 'miniDSP' }, { value: 'camilla' as const, label: 'Camilla' }]} onChange={setExportTo} />
           {exportTo === 'apo' && <ExportBlock id="eq-apo" title="Equalizer APO" text={exportEqualizerAPO(res.eq.filters)} file="eq-equalizer-apo.txt" />}
@@ -121,6 +121,7 @@ export function EqPanel({ project, active = true }: { project: Project; active?:
             <button type="button" class="btn btn--small" onClick={() => shareFile(wavFloat32([firLinearPhase(res.eq.filters, fs)], fs), `eq-fir-linphase-${fs / 1000}k.wav`, 'audio/wav')}>{S.fir.lin(fs / 1000)}</button>
           </div>
           <p class="muted small">{S.fir.note(fs / 1000, fmt(linearPhaseLength(res.eq.filters, fs) / 2 / fs, 2))}</p>
+          </DetailPanel>
           <Details summary={S.aural.title}>
             {/* прослушивание — от номинального отклика системы: подъём низа, который оставил эквалайзер, слышен */}
             <Auralize active={active} response={{ f: res.f, db: res.before, target: res.target.map((t, i) => t - houseDb(c.houseCurve, res.f[i])) }} filters={res.eq.filters} />

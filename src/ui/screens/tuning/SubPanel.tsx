@@ -8,7 +8,7 @@ import { biquad } from '../../../core/eq';
 import { allpassBiquad, type SubFilterResult } from '../../../core/subfilters';
 import { useComputeAction } from '../../useCompute';
 import { ResponseChart } from '../../components/Charts';
-import { NumberField, Panel, Segmented, Note, Details } from '../../design-system';
+import { ActionBar, DetailPanel, NumberField, Panel, Segmented, Note } from '../../design-system';
 import { S } from '../../strings';
 import { Term } from '../../components/Term';
 import { fmt } from '../../format';
@@ -46,7 +46,22 @@ export function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: 
       <p class="small">{S.tuning.subIntro}</p>
       {c.houseCurve && <p class="muted small">{S.house.inTuning(c.houseCurve)}</p>}
       {!hasAdjustments(sources, c) && <Note tone="warn">{S.sub.caps}: нет ни задержки, ни фазы, ни уровня. Укажите регулировки в «Расстановка → Система».</Note>}
-      <button type="button" class="btn btn--primary" onClick={run} disabled={busy}>{busy ? S.tuning.running : S.tuning.run}</button>
+      <ActionBar><button type="button" class="btn btn--primary" onClick={run} disabled={busy}>{busy ? S.tuning.running : S.tuning.run}</button>
+{res && !busy && (          <button
+            type="button"
+            class="btn"
+            disabled={applied}
+            onClick={() => {
+              const hadFilters = Object.values(current.subSettings).some((v) => (v.peq?.length ?? 0) + (v.allpass?.length ?? 0) > 0);
+              onSetup({ ...current, subSettings: res.settings, crossoverHz: res.crossoverHz });
+              setApplied(true);
+              setFiltersReset(hadFilters && !Object.values(res.settings).some((v) => (v.peq?.length ?? 0) + (v.allpass?.length ?? 0) > 0));
+            }}
+          >
+            {applied ? S.tuning.applied : S.tuning.apply}
+          </button>
+)}
+</ActionBar>
       {error && <Note tone="warn">{error}</Note>}
       {res && (
         <div class="tuning-result">
@@ -85,23 +100,10 @@ export function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: 
             <span class="legend__item legend__item--baseline">{S.tuning.before}</span>
           </div>
           {res.notes.map((n, ki) => <Note key={ki}>{n}</Note>)}
-          <button
-            type="button"
-            class="btn"
-            disabled={applied}
-            onClick={() => {
-              const hadFilters = Object.values(current.subSettings).some((v) => (v.peq?.length ?? 0) + (v.allpass?.length ?? 0) > 0);
-              onSetup({ ...current, subSettings: res.settings, crossoverHz: res.crossoverHz });
-              setApplied(true);
-              setFiltersReset(hadFilters && !Object.values(res.settings).some((v) => (v.peq?.length ?? 0) + (v.allpass?.length ?? 0) > 0));
-            }}
-          >
-            {applied ? S.tuning.applied : S.tuning.apply}
-          </button>
           {applied && filtersReset && <Note tone="warn">{S.subf.resetNote}</Note>}
         </div>
       )}
-      <Details summary={S.tuning.manualSettings}>
+      <DetailPanel title={S.tuning.manualSettings}>
         {subs.map((s) => {
           const v = current.subSettings[s.id] ?? { delayMs: 0, phaseDeg: 0, gainDb: 0 };
           const o = optionsFor(s);
@@ -127,10 +129,10 @@ export function SubPanel({ project, onSetup }: { project: Project; onSetup: (s: 
         {xoAdj && current.crossoverHz != null && (current.crossoverHz < (c.crossover.spkLimit ?? -Infinity) || current.crossoverHz > (c.crossover.subLimit ?? Infinity)) && (
           <Note tone="warn">{S.sub.xoOutside(c.crossover.spkLimit != null ? fmt(c.crossover.spkLimit, 0) : '…', c.crossover.subLimit != null ? fmt(c.crossover.subLimit, 0) : '…')}</Note>
         )}
-      </Details>
-      <Details summary={S.subf.title}>
+      </DetailPanel>
+      <DetailPanel title={S.subf.title}>
         <SubFiltersBlock project={project} onSetup={onSetup} />
-      </Details>
+      </DetailPanel>
     </Panel>
   );
 }

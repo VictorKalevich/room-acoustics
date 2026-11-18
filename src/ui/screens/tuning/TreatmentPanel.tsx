@@ -12,7 +12,7 @@ import { bassAdvice, porousLowLimit, reflectionPoints } from '../../../core/trea
 import { porousAlpha } from '../../../core/treatments';
 import { speedOfSound } from '../../../core/physics';
 import { PlanView, type PlanMark, type WallMark } from '../../components/PlanView';
-import { NumberField, Panel, SelectField } from '../../design-system';
+import { DetailPanel, NumberField, Panel, SelectField } from '../../design-system';
 import { S } from '../../strings';
 import { fmt } from '../../format';
 import { itemsOf } from './shared';
@@ -34,11 +34,11 @@ export function TreatmentPanel({ project, modes, onRoom }: { project: Project; m
   }));
   const ceilMarks: PlanMark[] = refl.filter((r) => r.surface === 'ceiling').map((r) => ({ x: r.point.x, y: r.point.y, label: '', kind: 'trap' }));
   return (
-    <Panel title={S.tuning.treatTitle}>
+    <Panel title={S.tuning.treatTitle} class="workspace-plan">
       <h3 class="subhead">{S.tuning.reflections}</h3>
       <PlanView depth={room.depth} width={room.width} items={itemsOf(project)} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={room.treatments} slope={room.slope} wallMarks={wallMarks} marks={ceilMarks} showDims={false} />
       <p class="muted small">{S.tuning.reflectionsHint} {S.tuning.reflectionsKey}</p>
-      <ul class="plain-list small">
+      <DetailPanel title={S.tuning.reflections}><ul class="plain-list small">
         {refl.map((r, ki) => (
           <li key={ki}>
             {S.tuning.reflRow(
@@ -49,8 +49,8 @@ export function TreatmentPanel({ project, modes, onRoom }: { project: Project; m
             )}
           </li>
         ))}
-      </ul>
-      <h3 class="subhead">{S.tuning.bass}</h3>
+      </ul></DetailPanel>
+      <DetailPanel title={S.tuning.bass}>
       {advice.length === 0 ? <p class="muted small">{S.tuning.bassNone}</p> : (
         <ul class="advice-list">
           {advice.map((a, ki) => (
@@ -62,6 +62,7 @@ export function TreatmentPanel({ project, modes, onRoom }: { project: Project; m
         </ul>
       )}
       <p class="muted small">{S.tuning.porous(fmt(porousLowLimit(0.1, 0.1, speedOfSound(room.temperatureC)), 0), fmt(porousAlpha(0.1, 0.1)[1] * 100, 0), fmt(porousAlpha(0.1, 0.1)[0] * 100, 0))}</p>
+      </DetailPanel>
       <TreatmentPlan project={project} modes={modes} onRoom={onRoom} reflections={refl} />
     </Panel>
   );

@@ -8,7 +8,7 @@ import '@fontsource/golos-text/latin-400.css';
 import '@fontsource/golos-text/latin-500.css';
 import '@fontsource/golos-text/latin-600.css';
 import '../../styles.css';
-import { ActionMenu, CalculationStatus, ConfirmSheet, Details, FailurePanel, Note, NumberField, Panel, SectionNav, Segmented, SelectField } from './index';
+import { ActionBar, DetailPanel, ActionMenu, CalculationStatus, ConfirmSheet, Details, FailurePanel, Note, NumberField, Panel, SectionNav, Segmented, SelectField } from './index';
 import { componentFamilies } from './registry';
 import { WallView } from '../components/WallView';
 import { ResponseChart } from '../components/Charts';
@@ -43,10 +43,24 @@ function Catalog() {
   const [checked, setChecked] = useState(true);
   const [confirm, setConfirm] = useState(false);
   const [choice, setChoice] = useState(false);
+  const [dock, setDock] = useState(false);
+  const [actionState, setActionState] = useState('stale');
   const [message, setMessage] = useState('Выберите действие');
   const options = [{ value: 'first', label: 'Первый' }, { value: 'second', label: 'Второй' }];
   return <main class="content screen">
     <h1 class="text-title">Дизайн-система</h1>
+    <DetailPanel title="Рабочий экран: настройки" summary="Возврат сохраняет состояние">
+      <Panel title="Настройки"><NumberField label="Высота" value={number} onChange={setNumber} unit="см" min={10} max={250} /></Panel>
+      <Note>Изменения применяются сразу. «Назад» возвращает к рабочему экрану.</Note>
+    </DetailPanel>
+    <Panel title="Основное действие">
+      <p class="small">Панель над нижней навигацией. Это демонстрация состояний, без расчёта.</p>
+      <Segmented label="Состояние панели" value={actionState} onChange={setActionState} options={[
+        { value: 'idle', label: 'Первый запуск' }, { value: 'stale', label: 'Изменились данные' },
+        { value: 'busy', label: 'Считаем' }, { value: 'done', label: 'Готово' }, { value: 'error', label: 'Ошибка' },
+      ]} />
+      <button type="button" class="btn" aria-pressed={dock} onClick={() => setDock(!dock)}>{dock ? 'Скрыть панель' : 'Показать панель'}</button>
+    </Panel>
     <p class="small muted">Существующие элементы Room Acoustics. Каталог разработчика, без акустических расчётов.</p>
     <SelectField label="Тема каталога" value={theme} options={[{ value: 'light', label: 'Светлая' }, { value: 'dark', label: 'Тёмная' }]}
       onChange={value => { setTheme(value); document.documentElement.dataset.theme = value; }} />
@@ -147,6 +161,12 @@ function Catalog() {
       onCancel={() => setChoice(false)} onConfirm={() => { setChoice(false); setMessage('Сохранено'); }}>
       <ul class="plain-list small"><li>Диван</li><li>Окно, передняя стена</li></ul>
     </ConfirmSheet>}
+    {dock && <ActionBar>
+      <CalculationStatus stale={actionState === 'stale' ? 'Параметры изменились' : undefined} error={actionState === 'error' ? 'Не удалось рассчитать' : undefined} />
+      <button type="button" class="btn btn--primary" disabled={actionState === 'busy'} onClick={() => setMessage('Действие из панели')}>
+        {actionState === 'busy' ? 'Считаем…' : actionState === 'error' ? 'Повторить расчёт' : actionState === 'done' ? 'Использовать вариант' : actionState === 'stale' ? 'Пересчитать' : 'Подобрать расстановку'}
+      </button>
+    </ActionBar>}
   </main>;
 }
 render(<Catalog />, document.getElementById('catalog')!);

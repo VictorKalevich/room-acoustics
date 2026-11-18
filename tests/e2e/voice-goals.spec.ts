@@ -1,9 +1,10 @@
+import { showDetail, closeDetails } from './helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { fitsWidth } from './helpers';
 
 const value = (page: Page, metric: string) => page.getByTestId(metric).locator('.voice-metric__value');
 const ready = async (page: Page) => {
-  await expect(page.getByTestId('voice-map-best')).toBeVisible({ timeout: 20000 });
+  await expect(page.getByTestId('voice-map-best')).toContainText(/дБ/, { timeout: 20000 });
   await expect(page.getByRole('status')).not.toContainText('Считаю карту');
   // показатели выбранного места считаются отдельно от карты; пока не готовы — «…»
   await expect(page.getByTestId('voice-flatness').locator('.score__value')).not.toHaveText('…', { timeout: 20000 });
@@ -21,8 +22,10 @@ test('map goal preserves the selected position, spectrum and smoothing and survi
   const direction = await singer.innerHTML();
   const heat = await page.locator('svg.plan .plan__heat').innerHTML();
   const chart = page.locator('.smoothed-chart[data-screen="voice"]');
+  await showDetail(page, 'Показатели и спектр');
   await chart.getByRole('button', { name: 'Сглаживание 1/2', exact: true }).click();
   const curve = await chart.locator('.chart__line.is-room').getAttribute('points');
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Меньше комнаты', exact: true }).click();
   await ready(page);
   await expect(spectrum).toHaveText(metrics!);
@@ -32,13 +35,16 @@ test('map goal preserves the selected position, spectrum and smoothing and survi
   expect(await singer.innerHTML()).toBe(direction);
   expect(await page.locator('svg.plan .plan__heat').innerHTML()).not.toBe(heat);
   await expect(chart.locator('.chart__line.is-room')).toHaveAttribute('points', curve!);
+  await showDetail(page, 'Показатели и спектр');
   await expect(chart.getByRole('slider')).toHaveValue('2');
   await expect(page.getByTestId('voice-map-best')).toContainText('вклад комнаты');
   await page.reload();
   await ready(page);
   await expect(page.getByRole('radio', { name: 'Меньше комнаты', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await showDetail(page, 'Показатели и спектр');
   await expect(chart.getByRole('slider')).toHaveValue('2');
   await expect(singer).toHaveAttribute('transform', position!);
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Ровнее спектр', exact: true }).click();
   await ready(page);
   expect(await page.locator('svg.plan .plan__heat').innerHTML()).toBe(heat);
@@ -47,13 +53,17 @@ test('map goal preserves the selected position, spectrum and smoothing and survi
 test('room recommendations and best facing use the room metric, while RT60 stays fixed', async ({ page }) => {
   await page.goto('/#voice');
   await ready(page);
+  await showDetail(page, 'Микрофон и голос');
   await page.getByLabel('От рта до микрофона', { exact: true }).fill('60');
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Меньше комнаты', exact: true }).click();
   await ready(page);
+  await showDetail(page, 'Лучшие места');
   const best = page.locator('.best-list li').first();
   const score = await best.locator('strong').textContent();
   const rt = await value(page, 'voice-reverb').textContent();
   await best.getByRole('button', { name: 'Встать сюда' }).click();
+  await closeDetails(page);
   await expect(value(page, 'voice-room-level')).toHaveText(score!);
   await expect(page.getByRole('button', { name: 'Лучшее направление здесь', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Правее ↻', exact: true }).click();
@@ -65,6 +75,7 @@ test('room recommendations and best facing use the room metric, while RT60 stays
     await page.setViewportSize({ width, height: 852 });
     await expect.poll(() => fitsWidth(page)).toBe(true);
   }
+  await showDetail(page, 'Показатели и спектр');
   if (process.env.UI_SCREENSHOTS) await page.locator('.voice-metrics').screenshot({ path: `work/previews/voice-metrics-${test.info().project.name}.png` });
 });
 
@@ -80,8 +91,11 @@ test('room materials update RT60 and the final goal wins after rapid toggles', a
   await ready(page);
   await expect(value(page, 'voice-reverb')).not.toHaveText(rt!);
   const flatness = await page.getByTestId('voice-flatness').textContent();
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Меньше комнаты', exact: true }).click();
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Ровнее спектр', exact: true }).click();
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Меньше комнаты', exact: true }).click();
   await ready(page);
   await expect(page.getByTestId('voice-map-best')).toContainText('вклад комнаты');

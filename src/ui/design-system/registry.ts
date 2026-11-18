@@ -1,6 +1,7 @@
 /** Inventory of visual families. A CSS class is also a public design-system API.
  * Domain views compose these styles; they do not need a wrapper for every span. */
 export const componentFamilies = [
+  ['Рабочие экраны', 'ActionBar — основное действие; DetailPanel — подэкран с возвратом и сводкой; workspace-plan — компактный план'],
   ['Каркас', '.screen · .content · .topbar · .tabbar (вкладки по числу пунктов) · .app--start (без нижней панели) · .drawer · .drawer__item--start (пункт «Начать»)'],
   ['Панели', 'Panel · .panel · .panel--hero · .panel--collapsible'],
   ['Поля', 'NumberField (пустое — NaN; optional — пустой ввод очищает; error — внешняя ошибка с допустимым значением) · SelectField (hint) · .field · .field--compact · .field--error'],
@@ -11,7 +12,7 @@ export const componentFamilies = [
   ['Флажки и фильтры', '.check · .chip · .plan-layers · .smoothing-stops'],
   ['Ползунки', '.smoothing-slider · .freq-slider · .hrange · .miniplayer__vol'],
   ['Сообщения', 'Note · CalculationStatus · RoomFirst/PlacementFirst (закрытый экран) · FailurePanel (сбой раздела или приложения) · DraftFailure (рабочий проект не открылся при запуске) · .note · .progress · .spinner'],
-  ['Раскрытие', 'Details · .details · .setup-card'],
+  ['Раскрытие', 'Details · .details'],
   ['Шторки', 'ConfirmSheet (danger/primary, cancel, extra, список .plain-list) · .sheet · .sheet-backdrop · .sheet__close'],
   ['Карточки объектов', '.zone-card · .zone-card.is-selected · .zone-card.is-error (не помещается в комнату) · .wall-items · .found-opening · .problem'],
   ['Метки состояния', '.tag · .model-tag · .sev · .robust-tag · .score__grade'],
@@ -30,7 +31,7 @@ export const componentFamilies = [
 /** Exhaustive skins for native controls, used by the browser audit. File inputs are hidden infrastructure. */
 export const controlSkins = {
   button: [
-    '.btn', '.segmented button', '.tabs button', '.section-nav button', '.tabbar button',
+    '.btn', '.setting-link', '.segmented button', '.tabs button', '.section-nav button', '.tabbar button',
     '.topbar__menu', '.drawer__item', '.sheet__close', '.update-banner__close',
     '.term', '.chip', '.play-btn', '.hrange__thumb', '.smoothing-stops button', '.action-menu__popup > button',
   ],

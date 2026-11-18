@@ -1,3 +1,4 @@
+import { showDetail, closeDetails } from './helpers';
 import { test, expect } from '@playwright/test';
 import { EMPTY_STATE, draftSaved, errlog, finishRoomSteps, roomOnlyState, scanToSteps } from './helpers';
 
@@ -17,13 +18,17 @@ test('US1: моды по ручным размерам', async ({ page }) => {
   await expect(rows.nth(0)).toContainText('28,6');
   await expect(rows.nth(1)).toContainText('38,1');
   await expect(rows.nth(2)).toContainText('47,7');
+  await showDetail(page, 'Пропорции');
   await expect(page.getByText('Глубина ≈ 2 × высота')).toBeVisible();
 });
 
 test('US2: подбор расстановки за ≤ 10 с, лучший не хуже базового', async ({ page }) => {
   await page.goto('/#placement');
   const t0 = Date.now();
-  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(page.locator('.score__value')).toBeVisible({ timeout: 10_000 });
   expect(Date.now() - t0).toBeLessThan(10_000);
   await expect(page.getByRole('tab')).toHaveCount(4);
@@ -63,14 +68,17 @@ test.describe('скан с нового проекта', () => {
 
 test('US3: неподдерживаемый файл — понятная ошибка', async ({ page }) => {
   await page.goto('/#room');
+  await showDetail(page, 'Скан и 3D-модель');
   await page.setInputFiles('#scan-file', { name: 'scan.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
   await expect(page.locator('.note--warn')).toContainText(/OBJ|поверхност/);
 });
 
 test('US4: толстый ковёр уменьшает RT60', async ({ page }) => {
   await page.goto('/#room');
+  await showDetail(page, 'Реверберация');
   const rt = page.locator('.stat__value:visible').first();
   const before = Number((await rt.textContent())!.replace(',', '.').replace(/[^\d.]/g, ''));
+  await closeDetails(page);
   // материал пола — в конструкторе, шаг «Пол и потолок» (019)
   await page.getByRole('button', { name: 'Конструктор комнаты' }).click();
   await page.getByRole('navigation', { name: 'Шаги конструктора' }).getByRole('button', { name: /Пол и потолок/ }).click();
@@ -78,6 +86,7 @@ test('US4: толстый ковёр уменьшает RT60', async ({ page }) 
   // 021: в расчёты правка попадает после «Сохранить»
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.getByRole('button', { name: /Обзор комнаты/ }).click();
+  await showDetail(page, 'Реверберация');
   await expect(async () => {
     const after = Number((await rt.textContent())!.replace(',', '.').replace(/[^\d.]/g, ''));
     expect(after).toBeLessThan(before);
@@ -86,6 +95,7 @@ test('US4: толстый ковёр уменьшает RT60', async ({ page }) 
 
 test('002 US1: ручной режим — карта мест слушателя и «Сесть сюда»', async ({ page }) => {
   await page.goto('/#manual');
+  await showDetail(page, 'Лучшие места');
   await expect(page.locator('.best-list li')).toHaveCount(3, { timeout: 15_000 });
   const first = page.locator('.best-list li').first();
   const [x, y] = /([\d,]+) м от передней, ([\d,]+) м от левой/.exec((await first.textContent())!)!.slice(1).map((v) => Number(v.replace(',', '.')));
@@ -99,6 +109,7 @@ test('002 US1: ручной режим — карта мест слушател�
 test('002 US2: карта мест сабвуфера', async ({ page }) => {
   await page.goto('/#manual');
   await page.getByRole('radio', { name: 'Место сабвуфера' }).click();
+  await showDetail(page, 'Лучшие места');
   await expect(page.locator('.best-list li').first().getByRole('button', { name: 'Поставить сюда' })).toBeVisible({ timeout: 15_000 });
 });
 
@@ -122,6 +133,7 @@ test('002 US3/US5: настройка сабвуфера и эквалайзер
   await page.getByRole('button', { name: 'Рассчитать фильтры' }).click();
   await expect(page.locator('#eq-apo')).toHaveValue(/Filter 1: ON PK/);
   // экспорт в CamillaDSP: микшер на сабвуфер, эквалайзер, настройки сабвуфера
+  await showDetail(page, 'Экспорт');
   await page.getByRole('radio', { name: 'Camilla' }).click();
   const yml = page.locator('#eq-camilla');
   await expect(yml).toHaveValue(/mixers:\n {2}room_acoustics_2to3:/);
@@ -148,7 +160,9 @@ test('003: коридор за аркой — моды системы и вол�
   await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
   await expect(page.locator('.sysmodes-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Расстановка' }).click();
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Вручную' }).click();
+  await showDetail(page, 'Лучшие места');
   await expect(page.locator('.best-list li').first()).toBeVisible({ timeout: 40_000 });
   await expect(page.locator('.model-tag').first()).toContainText('волновая');
 });
@@ -161,6 +175,7 @@ test('версия приложения видна в «О приложении�
 test('004: экран 3D — поле, способы показа, порог и срез', async ({ page }) => {
   await page.goto('/#field');
   await expect(page.locator('.field3d')).toBeVisible();
+  await page.getByText('Частота и отображение', { exact: true }).click();
   const picks = page.locator('.freq-picks [role="radio"]');
   await expect(picks.and(page.locator('[aria-checked="true"]'))).toHaveCount(1, { timeout: 15_000 });
   // поле самой низкой моды посчитано и показано (а не просто ещё не начат расчёт)
@@ -183,7 +198,9 @@ test('004: экран 3D — поле, способы показа, порог �
   await expect(page.locator('.field-shown')).toHaveText('Показано: полоса 40–60 Гц', { timeout: 30_000 });
   // порог: при ±3 без цвета остаётся меньше клеток среза, чем при ±6 по умолчанию; шкала — до ±15 дБ вместо ±18
   const cells = page.locator('.plan__field rect');
+  await showDetail(page, 'Срез сверху');
   await expect(cells.first()).toBeVisible();
+  await closeDetails(page);
   const at6 = await cells.count();
   await expect(page.locator('.field-legend')).toContainText('+18 дБ');
   await page.getByRole('radio', { name: '±3' }).click();
@@ -192,7 +209,9 @@ test('004: экран 3D — поле, способы показа, порог �
   await expect(page.locator('.field-legend')).toContainText('+15 дБ');
   await expect.poll(() => cells.count()).toBeGreaterThan(at6);
   await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
+  await showDetail(page, 'Все моды');
   await expect(page.locator('.modes-table')).toBeVisible();
+  await closeDetails(page);
   await page.getByRole('button', { name: 'Открыть меню' }).click();
   await page.locator('.drawer__item', { hasText: 'Проекты' }).click();
   await expect(page.locator('#pname')).toBeVisible();
@@ -237,6 +256,7 @@ test('005: тон моды и мини-плеер', async ({ page }) => {
   await page.goto('/#analysis');
   test.skip(!await page.evaluate(() => typeof AudioContext !== 'undefined'), 'Web Audio unavailable in this browser build (Windows WebKit).');
   await page.getByRole('navigation', { name: 'Раздел анализа' }).getByRole('button', { name: 'Моды', exact: true }).click();
+  await showDetail(page, 'Все моды');
   await page.locator('.modes-table .play-btn').first().click();
   await expect(page.locator('.miniplayer')).toBeVisible();
   await page.locator('.miniplayer').getByRole('button', { name: 'Стоп' }).click();
@@ -259,13 +279,14 @@ test('005: план обработки, скос потолка и помощн�
 
 test('аудит: свои фильтры сабвуфера — возможности, подбор, применение', async ({ page }) => {
   await page.goto('/#placement');
+  await showDetail(page, 'Система и цель подбора', 'Оборудование');
   await page.getByText('Регулировки сабвуфера').click();
   // 045: выше — блок «Спад по паспорту» с той же разметкой
   const caps = page.locator('details', { has: page.locator(':scope > summary', { hasText: 'Регулировки сабвуфера' }) });
   await caps.locator('.sub-caps').first().getByRole('radio', { name: '4' }).click();
   await page.getByText('Есть all-pass (фазовый) фильтр').first().click();
   await page.goto('/#tuning/sub');
-  await page.getByText('Дополнительно: свои PEQ и all-pass для каждого сабвуфера').click();
+  await showDetail(page, 'Дополнительно: свои PEQ и all-pass для каждого сабвуфера');
   await page.getByRole('button', { name: 'Подобрать фильтры сабвуферов' }).click();
   await expect(page.locator('.subf .stat-row')).toBeVisible({ timeout: 30_000 });
   // подобранные PEQ первого сабвуфера (не больше четырёх) — в проекте после «Применить», а до него — нет
@@ -300,10 +321,16 @@ test.describe('места ещё не выбраны', () => {
 
   test('UX: найденный вариант становится текущей расстановкой, другой — по кнопке', async ({ page }) => {
   await page.goto('/#placement');
-  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await showDetail(page, 'Оценка варианта');
+  await closeDetails(page);
   await expect(page.getByText('Это текущая расстановка')).toBeVisible({ timeout: 15_000 });
+  await closeDetails(page);
   await page.getByRole('tab', { name: 'Вариант 2' }).click();
   await page.getByRole('button', { name: 'Использовать этот вариант' }).click();
+  await closeDetails(page);
   await expect(page.getByText('Это текущая расстановка')).toBeVisible();
   await page.getByRole('button', { name: 'Дальше: «Настройка»' }).click();
   await expect(page.locator('.topbar__title')).toHaveText('Настройка');
@@ -336,12 +363,15 @@ test('UX: поля выбора не мельче 16 px (иначе Safari ув�
 
 test('Сообщить о проблеме: ошибка попадает в журнал, отчёт сохраняется с версией, ошибками и проектом', async ({ page }) => {
   await page.goto('/#room');
+  await showDetail(page, 'Скан и 3D-модель');
   // неподдерживаемый файл скана — запись в журнале с именем файла
+  await showDetail(page, 'Скан и 3D-модель');
   await page.setInputFiles('#scan-file', { name: 'scan.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
   await expect(page.getByText(/Неизвестный формат/)).toBeVisible();
   // необработанное исключение страницы
   await page.evaluate(() => { setTimeout(() => { throw new Error('проверка журнала'); }); });
   await expect.poll(async () => (await errlog(page)).some((e) => e.msg.includes('проверка журнала')), { message: 'исключение в журнале' }).toBe(true);
+  await closeDetails(page);
   await page.getByRole('button', { name: 'Открыть меню' }).click();
   await page.getByRole('button', { name: /О приложении/ }).click();
   await expect(page.getByTestId('errlog-count')).toHaveText('Записано ошибок: 2.');
@@ -388,18 +418,25 @@ test('До и после: второй замер сравнивается с п
 
 test('009: карта звука в автоподборе обновляется при смене варианта, слои карты и осей включаются над планом', async ({ page }) => {
   await page.goto('/#placement');
-  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(page.locator('.score__value').first()).toBeVisible({ timeout: 30_000 });
   const heat = page.locator('.panel--hero .plan__heat rect');
   await expect.poll(() => heat.count(), { timeout: 20_000 }).toBeGreaterThan(100);
   const fillsOf = () => heat.evaluateAll((els) => els.slice(0, 400).map((e) => e.getAttribute('fill')).join());
   const v1 = await fillsOf();
+  await closeDetails(page);
   await page.getByRole('tab', { name: 'Вариант 2' }).click();
   await expect.poll(fillsOf, { timeout: 20_000 }).not.toBe(v1);
   // карта места сабвуфера для этого варианта
+  await closeDetails(page);
+  await page.getByText('Отображение карты', { exact: true }).click();
   await page.getByRole('radio', { name: 'Место сабвуфера' }).click();
   await expect.poll(() => heat.count(), { timeout: 20_000 }).toBeGreaterThan(100);
   // выключить карту, включить оси: 3 линии по длине и 3 по ширине
+  await closeDetails(page);
   await page.getByRole('button', { name: 'Карта звука' }).click();
   await expect(page.getByRole('button', { name: 'Карта звука' })).toHaveAttribute('aria-pressed', 'false');
   await expect(heat).toHaveCount(0);
@@ -417,7 +454,9 @@ test('009: карта звука в автоподборе обновляетс�
   await expect(page.locator('.panel--hero svg.plan .plan__axis')).toHaveCount(6);
   await expect(page.locator('.panel--hero svg.plan .plan__axis.is-mid')).toHaveCount(2);
   // выбор запоминается: в ручном режиме оси включены, карта выключена
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Вручную' }).click();
+  await page.getByText('Отображение карты', { exact: true }).click();
   // (вертикальная линия нулевой ширины для Playwright «невидима» — проверяем количество)
   await expect(page.locator('svg.plan .plan__axis')).toHaveCount(6);
   await expect(page.locator('svg.plan .plan__heat rect')).toHaveCount(0);
@@ -447,11 +486,16 @@ test('046: в режиме «Вручную» карта варианта авт
   });
   const jobs = () => page.evaluate(() => (window as unknown as { jobs: string[] }).jobs.slice());
   await page.goto('/#placement');
-  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(page.locator('.score__value').first()).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => page.locator('.panel--hero .plan__heat rect').count(), { timeout: 20_000 }).toBeGreaterThan(100);
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Вручную' }).click();
   await expect.poll(() => page.locator('svg.plan .plan__heat rect').count(), { timeout: 20_000 }).toBeGreaterThan(100);
+  await showDetail(page, 'Система и цель подбора', 'Оборудование');
   const from = (await jobs()).length;
   const speakers = page.getByRole('radiogroup', { name: 'Фронтальные колонки' });
   const other = (await speakers.getByRole('radio', { name: 'Одна' }).getAttribute('aria-checked')) === 'true' ? 'Пара' : 'Одна';
@@ -469,11 +513,16 @@ test('046: в режиме «Вручную» карта варианта авт
 
 test('009: цель подбора — меньше провалов внизу и провалы на своих модах', async ({ page }) => {
   await page.goto('/#placement');
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await page.getByRole('combobox', { name: 'Что искать' }).selectOption('lowDips');
-  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(page.locator('.score__label').first()).toHaveText('Провалы внизу', { timeout: 30_000 });
   await expect(page.locator('.score').first()).toContainText(/Неровность всей АЧХ \(с пиками\): \d+,\d дБ/);
   // моды: «Свои» начинаются с первых осевых, одну можно снять
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await page.getByRole('combobox', { name: 'Что искать' }).selectOption('modes');
   await expect(page.getByText(/Учитываются: .*\(по глубине\).*\(по ширине\).*\(по высоте\)/)).toBeVisible();
   await page.getByRole('radio', { name: 'Свои' }).click();
@@ -483,27 +532,39 @@ test('009: цель подбора — меньше провалов внизу 
   await expect(on).toHaveCount(2);
   await expect(page.getByText(/Учитываются: .*\(по ширине\).*\(по высоте\)/)).toBeVisible();
   await expect(page.getByText(/Учитываются: .*по глубине/)).toHaveCount(0);
+  await closeDetails(page);
   // результат устарел после смены цели
   await expect(page.getByText(/устарел|изменились/i).first()).toBeVisible();
   // цель — в общем блоке над переключателем: в ручном режиме та же
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Вручную' }).click();
-  await expect(page.locator('.setup-card__summary')).toContainText('цель: без провалов на модах');
+  await expect(page.locator('.setting-link').filter({ has: page.getByText('Система и цель подбора', { exact: true }) })).toContainText('цель: без провалов на модах');
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await expect(page.getByRole('combobox', { name: 'Что искать' })).toHaveValue('modes');
 });
 
 test('043: подъём низа — цель подбора, настройки и эквалайзера, хранится в проекте', async ({ page }) => {
   await page.goto('/#placement');
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   const rise = page.getByRole('radiogroup', { name: 'Подъём низа' });
   await expect(rise.getByRole('radio', { name: 'Ровно' })).toBeChecked();
-  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await showDetail(page, 'Оценка варианта');
   const legend = page.locator('.legend__item--target').first();
   await expect(legend).toHaveText('без комнаты', { timeout: 30_000 });
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await rise.getByRole('radio', { name: '+6 дБ' }).click();
-  await expect(page.locator('.setup-card__summary')).toContainText('цель: ровный бас, подъём низа +6 дБ');
+  await expect(page.locator('.setting-link').filter({ has: page.getByText('Система и цель подбора', { exact: true }) })).toContainText('цель: ровный бас, подъём низа +6 дБ');
+  await closeDetails(page);
   // прежний результат посчитан по ровной цели: устарел, подпись пунктира — прежняя
-  await expect(page.getByText('Параметры изменились — результат устарел.')).toBeVisible();
+  await expect(page.getByText('Параметры изменились — результат устарел.').first()).toBeVisible();
   await expect(legend).toHaveText('без комнаты');
-  await page.getByRole('button', { name: 'Пересчитать' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Пересчитать' }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(legend).toHaveText('цель: подъём низа +6 дБ', { timeout: 30_000 });
   await expect(page.getByText('Параметры изменились — результат устарел.')).toHaveCount(0);
   await draftSaved(page, 'подъём низа +6 дБ', (d) => d.constraints.houseCurve === 6);
@@ -513,6 +574,7 @@ test('043: подъём низа — цель подбора, настройки
   }
   await page.reload();
   await page.goto('/#placement');
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await expect(page.getByRole('radiogroup', { name: 'Подъём низа' }).getByRole('radio', { name: '+6 дБ' })).toBeChecked();
   await page.getByRole('radiogroup', { name: 'Подъём низа' }).getByRole('radio', { name: 'Ровно' }).click();
   await draftSaved(page, 'ровная цель — без поля', (d) => d.constraints.houseCurve === undefined);
@@ -520,11 +582,13 @@ test('043: подъём низа — цель подбора, настройки
 
 test('044: глубже низ — паспорт сабвуфера, строка о низе, устаревший результат, хранится в проекте', async ({ page }) => {
   await page.goto('/#placement');
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await page.getByLabel('Что искать').selectOption('deep');
   await expect(page.getByText('Места, где комната помогает сабвуферу играть ниже')).toBeVisible();
-  await expect(page.locator('.setup-card__summary')).toContainText('глубже низ');
+  await expect(page.locator('.setting-link').filter({ has: page.getByText('Система и цель подбора', { exact: true }) })).toContainText('глубже низ');
   // 045: паспорт — в «Системе», под «Диапазоном»
   await expect(page.getByText('Спад сабвуфера цель берёт из паспорта')).toBeVisible();
+  await showDetail(page, 'Система и цель подбора', 'Оборудование');
   await page.getByText('Спад по паспорту', { exact: true }).click();
   const f3 = page.locator('#sub1-f3');
   const f10 = page.locator('#sub1-f10');
@@ -543,13 +607,21 @@ test('044: глубже низ — паспорт сабвуфера, строк
   await expect(curve).toContainText('12 дБ на октаву');
   await f3.fill('30');
   await expect(curve).toContainText('(по двум точкам)');
-  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await showDetail(page, 'Оценка варианта');
   const low = page.locator('.score__second').locator('visible=true').filter({ hasText: 'Самый низ:' }).first();
   await expect(low).toContainText('на 27 Гц', { timeout: 30_000 });
   await expect(page.locator('.score__label').locator('visible=true').first()).toHaveText('Глубже низ');
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await page.locator('#deep-hz').fill('25');
-  await expect(page.getByText('Параметры изменились — результат устарел.')).toBeVisible();
-  await page.getByRole('button', { name: 'Пересчитать' }).click();
+  await closeDetails(page);
+  await expect(page.getByText('Параметры изменились — результат устарел.').first()).toBeVisible();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Пересчитать' }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(low).toContainText('на 25 Гц', { timeout: 30_000 });
   await draftSaved(page, 'паспорт и частота цели', (d) => {
     const p = d.sources.find((s) => s.id === 'sub1')?.passport;
@@ -561,6 +633,7 @@ test('044: глубже низ — паспорт сабвуфера, строк
   await expect(f10).toHaveValue('27');
   await expect(page.locator('#deep-hz')).toHaveValue('25');
   // пустая частота цели — снова по паспорту
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await page.locator('#deep-hz').fill('');
   await draftSaved(page, 'частота цели по паспорту', (d) => d.constraints.objective?.id === 'deep' && d.constraints.objective.deepHz === undefined);
   await page.locator('#deep-hz').blur();
@@ -572,6 +645,7 @@ test('045: график ниже полосы оценки — паспорт к
   const shade = page.locator('svg.chart:visible .chart__unscored');
   const unscored = page.locator('.legend__item--unscored').locator('visible=true');
   // колонки без сабвуфера: паспорт колонок — один на все
+  await showDetail(page, 'Система и цель подбора', 'Оборудование');
   await page.getByRole('radiogroup', { name: 'Сабвуферы' }).getByRole('radio', { name: 'Нет' }).click();
   await page.getByText('Спад по паспорту', { exact: true }).click();
   const curve = page.locator('.sub-caps p.muted').filter({ hasText: 'Спад:' });
@@ -582,11 +656,16 @@ test('045: график ниже полосы оценки — паспорт к
   await expect(curve).toContainText('(по двум точкам)');
   await page.getByRole('radiogroup', { name: 'Корпус (колонки)' }).getByRole('radio', { name: 'Закрытый' }).click();
   await draftSaved(page, 'паспорт колонок', (d) => d.sources.length === 2 && d.sources.every((s) => s.passport?.f3 === 55 && s.passport.f10 === 40 && s.passport.box === 'sealed'));
-  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(page.locator('.score__value').first()).toBeVisible({ timeout: 30_000 });
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(shade).toHaveCount(1);
   await expect(unscored).toHaveText('не входит в оценку');
   // с сабвуфером блок колонок скрыт, их паспорт хранится; паспорт сабвуфера — там же, в «Системе»
+  await showDetail(page, 'Система и цель подбора', 'Оборудование');
   await page.getByRole('radiogroup', { name: 'Сабвуферы' }).getByRole('radio', { name: '1' }).click();
   await expect(page.locator('#spk-f3')).toHaveCount(0);
   await expect(page.locator('#sub1-f3')).toBeVisible();
@@ -595,25 +674,40 @@ test('045: график ниже полосы оценки — паспорт к
   await page.locator('#sub1-f10').fill('27');
   await draftSaved(page, 'паспорт сабвуфера, паспорт колонок хранится', (d) => d.sources.some((s) => s.kind === 'sub' && s.fLow === 30 && s.passport?.f10 === 27)
     && d.sources.filter((s) => s.kind === 'speaker').every((s) => s.passport?.f3 === 55));
-  await page.getByRole('button', { name: /Подобрать расстановку|Пересчитать/ }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: /Подобрать расстановку|Пересчитать/ }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(page.getByText('Параметры изменились — результат устарел.')).toHaveCount(0, { timeout: 30_000 });
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(shade).toHaveCount(1);
   await expect(page.getByText('График — по цели «Глубже низ»')).toHaveCount(0);
   // «Глубже низ»: график по модели цели, затенение ниже частоты цели
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await page.getByLabel('Что искать').selectOption('deep');
-  await page.getByRole('button', { name: 'Пересчитать' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Пересчитать' }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(page.locator('.score__second').locator('visible=true').filter({ hasText: 'Самый низ:' }).first()).toContainText('на 27 Гц', { timeout: 30_000 });
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(page.getByText('График — по цели «Глубже низ»').locator('visible=true')).toHaveCount(1);
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(shade).toHaveCount(1);
   // ручной режим: тот же график текущей расстановки
+  await closeDetails(page);
   await page.getByRole('radiogroup', { name: 'Режим расстановки' }).getByRole('radio', { name: 'Вручную' }).click();
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(shade).toHaveCount(1);
   await expect(unscored).toHaveText('не входит в оценку');
   await page.reload();
   await page.goto('/#placement');
   await expect(page.locator('#sub1-f10')).toHaveValue('27');
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(shade).toHaveCount(1);
+  await closeDetails(page);
   await page.getByRole('radiogroup', { name: 'Режим расстановки' }).getByRole('radio', { name: 'Автоподбор' }).click();
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(shade).toHaveCount(1);
 });
 
@@ -627,6 +721,7 @@ test('011: обработка на планах — только когда уч
   // галочка выключена: на «Расстановке» элементов обработки нет, в «Настройке» — есть
   expect(await page.locator('svg.plan:visible .plan__treat').count()).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Расстановка' }).click();
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Вручную' }).click();
   await expect(page.locator('svg.plan:visible .plan__treat')).toHaveCount(0);
   await page.getByRole('button', { name: 'Настройка' }).click();
@@ -648,7 +743,9 @@ test('011: обработка на планах — только когда уч
 
 test('012: подсказка к карте «Место слушателя / сабвуфера»; шторка не пропускает касания на страницу', async ({ page, browserName }) => {
   await page.goto('/#placement');
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Вручную' }).click();
+  await page.getByText('Отображение карты', { exact: true }).click();
   await expect(page.locator('.map-help__line')).toContainText('куда сесть');
   await expect(page.locator('.map-help__line')).toContainText('Двигайте ⊙');
   await page.getByRole('radio', { name: 'Место сабвуфера' }).click();
@@ -656,50 +753,60 @@ test('012: подсказка к карте «Место слушателя / с
   await page.getByText('Что показывает карта').click();
   await expect(page.locator('.map-help__mode.is-on')).toContainText('Место сабвуфера');
   // шторка: страница под ней заблокирована, после закрытия — на прежнем месте
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Автоподбор' }).click();
-  await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+
+  await closeDetails(page);
+await page.getByRole('button', { name: 'Подобрать расстановку' }).click();
+  await showDetail(page, 'Оценка варианта');
   await expect(page.locator('.score__value').first()).toBeVisible({ timeout: 20_000 });
+  await closeDetails(page);
   await page.evaluate(() => window.scrollTo(0, 600));
+  await page.locator('.setting-link:visible').filter({ hasText: 'Оценка варианта' }).scrollIntoViewIfNeeded();
   const y0 = await page.evaluate(() => window.scrollY);
-  await page.locator('button.term').first().evaluate((e) => (e as HTMLButtonElement).click());
+  await showDetail(page, 'Оценка варианта');
+  await page.locator('button.term:visible').first().click();
   await expect(page.locator('.sheet')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.body.style.position)).toBe('fixed');
   // Playwright does not implement mouse.wheel for mobile WebKit; both engines still verify lock and restoration.
   if (browserName !== 'webkit') await page.mouse.wheel(0, 800);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await expect(page.locator('.sheet')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => document.body.style.position)).toBe('fixed');
+  await closeDetails(page);
   await expect.poll(() => page.evaluate(() => document.body.style.position)).toBe('');
   // страница не прокрутилась колесом (800 px); небольшой сдвиг возможен, если ниже дорисовалась карта
   expect(Math.abs((await page.evaluate(() => window.scrollY)) - y0)).toBeLessThan(60);
 });
 
-test('013: общий блок «Система и цель подбора» над переключателем режима; свой блок у каждого режима', async ({ page }) => {
+test('049: общая система сохраняет настройки между режимами; границы поиска только в автоподборе', async ({ page }) => {
   await page.goto('/#placement');
-  const card = page.locator('details.setup-card');
-  await expect(card).toHaveAttribute('open', '');
-  // переключатель режима — под общим блоком
-  const cardBox = await card.boundingBox();
+  const card = page.locator('.setting-link').filter({ has: page.getByText('Система и цель подбора', { exact: true }) });
+  await expect(card).toContainText('Система и цель подбора');
   const sw = page.getByRole('radiogroup', { name: 'Режим расстановки' });
-  expect((await sw.boundingBox())!.y).toBeGreaterThan(cardBox!.y + cardBox!.height - 1);
-  // автоподбор: границы поиска — под переключателем; в ручном их нет, а общий блок тот же
+  expect((await sw.boundingBox())!.y).toBeGreaterThan((await card.boundingBox())!.y);
+  await showDetail(page, 'Границы поиска');
   await expect(page.getByText('Только для автоподбора')).toBeVisible();
-  await page.getByRole('radio', { name: 'Пара' }).click();
+  await showDetail(page, 'Система и цель подбора', 'Оборудование');
+  await page.getByRole('radio', { name: 'Одна', exact: true }).click();
+  await closeDetails(page);
   await page.getByRole('radio', { name: 'Вручную' }).click();
   await expect(page.getByText('Только для автоподбора')).toHaveCount(0);
-  await expect(page.getByRole('radio', { name: 'Пара' })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByRole('radiogroup', { name: 'Что ищем' })).toBeVisible();
-  await expect(page.getByText('Система и ограничения')).toHaveCount(0);
-  // свернуть — остаётся сводка; состояние запоминается
-  await page.locator('.setup-card__head').click();
-  await expect(card).not.toHaveAttribute('open', '');
-  await expect(page.locator('.setup-card__summary')).toContainText('пара колонок');
+  await showDetail(page, 'Система и цель подбора', 'Оборудование');
+  await expect(page.getByRole('radio', { name: 'Одна', exact: true })).toBeChecked();
+  await closeDetails(page);
+  await draftSaved(page, 'одна колонка', d => d.sources.filter(s => s.kind === 'speaker').length === 1);
   await page.reload();
-  await expect(page.locator('details.setup-card')).not.toHaveAttribute('open', '');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await showDetail(page, 'Система и цель подбора', 'Оборудование');
+  await expect(page.getByRole('radio', { name: 'Одна', exact: true })).toBeChecked();
 });
 
 test('014: «Очистить» на экране комнаты; модель комнаты без скана; окно — отступ и ширина; стрелка списков с отступом', async ({ page }) => {
   await page.goto('/#room');
   // без скана — 3D-модель по введённым размерам там, где показывается скан; 021: без упоминаний скана и LiDAR
+  await showDetail(page, 'Скан и 3D-модель');
   const model = page.locator('#scan-panel .scan-result');
   await model.scrollIntoViewIfNeeded();
   await expect(model.locator('canvas')).toBeVisible();
@@ -773,7 +880,9 @@ test('015: отражения от передней и задней стен; э
   const plan = page.locator('svg.plan:visible');
   await expect(plan.locator('.plan__heat rect').first()).toBeAttached({ timeout: 20_000 });
   await expect(plan.locator('.plan__singer')).toHaveCount(1);
+  await showDetail(page, 'Показатели и спектр');
   await expect(page.locator('.score__value:visible').first()).not.toHaveText('…');
+  await closeDetails(page);
   await expect(page.getByText(/^Лицом /)).toBeVisible();
   // поворот меняет направление
   const before = await page.getByText(/^Лицом /).textContent();
@@ -781,17 +890,22 @@ test('015: отражения от передней и задней стен; э
   await page.getByRole('button', { name: 'Правее ↻' }).click();
   await expect(page.getByText(/^Лицом /)).not.toHaveText(before!);
   // своя полоса частот, сброс к 80–12 000
+  await showDetail(page, 'Микрофон и голос');
   await page.getByLabel('Нижняя частота').fill('300');
   await page.getByLabel('Верхняя частота').fill('3000');
+  await showDetail(page, 'Показатели и спектр');
   await expect(page.getByText(/300–3.?000 Гц, полосы 1\/6 октавы/)).toBeVisible();
+  await showDetail(page, 'Микрофон и голос');
   await page.getByRole('button', { name: 'Вернуть 80–12 000 Гц' }).click();
   await expect(page.getByLabel('Нижняя частота')).toHaveValue('80');
   // суперкардиоида — другое описание
   await page.getByRole('radio', { name: 'Суперкардиоида' }).click();
   await expect(page.getByText(/задний лепесток/)).toBeVisible();
   // встать в лучшее место № 2
+  await showDetail(page, 'Лучшие места');
   await page.locator('.best-list li').nth(1).getByRole('button', { name: 'Встать сюда' }).click();
   // комната меняется — экран считает заново: окно на стене напротив появляется в списке отражений
+  await closeDetails(page);
   await page.getByRole('button', { name: 'Комната' }).click();
   await page.getByRole('button', { name: 'Конструктор комнаты' }).click();
   await page.getByLabel('Глубина', { exact: true }).fill('4');

@@ -1,3 +1,4 @@
+import { showDetail, closeDetails } from './helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { EMPTY_STATE, draftSaved, finishRoomSteps, scanToSteps } from './helpers';
 
@@ -31,12 +32,15 @@ test('скан ведёт в шаги проверки; после «Сохра�
   await expect(chooseScan(page)).toHaveCount(0);
   await expect(page.getByTestId('scan-summary')).toContainText('В модели комнаты: 5,00 × 4,00 × 2,50 м');
   // «Что учтено в расчётах»: геометрия из скана
+  await page.locator('summary').filter({ hasText: 'Что учтено в расчётах' }).click();
   await expect(page.locator('.report-table:visible')).toContainText('скан «sample-room.obj», 5,00 × 4,00 × 2,50 м');
   // модель комнаты, по которой идут расчёты; исходного скана здесь нет (three.js грузится, когда блок близко к экрану)
+  await showDetail(page, 'Скан и 3D-модель');
   await page.locator('#scan-panel .scan-result').scrollIntoViewIfNeeded();
   await expect(page.locator('#scan-panel .scan-result canvas')).toBeVisible();
   await expect(page.getByText('Исходный скан', { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Модель комнаты, по которой идут расчёты/)).toBeVisible();
+  await closeDetails(page);
   await expect(page.locator('svg.plan:visible').first()).toHaveAttribute('aria-label', /5,00 на 4,00/);
   await page.reload();
   await expect(page.locator('.start-card')).toHaveCount(0);
@@ -138,6 +142,7 @@ test('026: границы скана откатываются вместе с п
   await scanToSteps(page, 'tests/fixtures/out/sample-room.obj');
   await finishRoomSteps(page);
   const openProjects = async () => {
+    await closeDetails(page);
     await page.getByRole('button', { name: 'Открыть меню' }).click();
     await page.locator('.drawer__item', { hasText: 'Проекты' }).click();
   };

@@ -5,7 +5,7 @@ import { ScoreBlock } from '../components/ScoreBlock';
 import type { Project } from '../../state/project';
 import { validateSources } from '../../state/project';
 import type { BassObjective, Constraints, PlacementResult, SourceSpec, Placement, Setup } from '../../core/types';
-import { NumberField, Panel, Segmented, Note, Details } from '../design-system';
+import { ActionBar, DetailPanel, NumberField, Panel, Segmented, Note, Details } from '../design-system';
 import { SystemSettings } from './placement/SystemSettings';
 import { useComputeAction, useComputed } from '../useCompute';
 import { ManualScreen } from './ManualScreen';
@@ -69,7 +69,13 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
         // своей расстановки ещё нет (стоит исходная) — лучший вариант сразу становится текущим:
         // по нему считаются «Настройка», «Обзор», 3D и замер
         if (!changed && shouldAdoptBest(now.current, r.best[0])) onSetup(setupFromPlacement(now.current, r.best[0]));
-        requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        requestAnimationFrame(() => {
+          const target = resultRef.current;
+          if (!target) return;
+          const header = document.querySelector('.topbar')?.getBoundingClientRect().height ?? 0;
+          const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--space-12'));
+          scrollTo({ top: target.getBoundingClientRect().top + scrollY - header - gap, behavior: 'smooth' });
+        });
       },
       failed: (e) => setError(e.message || S.errors.generic),
     });
@@ -169,31 +175,20 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
       {sharedCard}
       <Panel class="mode-panel">
         {modeSwitch}
-        {autoOnly}
+        <DetailPanel title="Границы поиска" summary="Место слушателя и отступы колонок">{autoOnly}</DetailPanel>
       </Panel>
       {/* главное действие видно, пока заполняются настройки выше */}
-      <div class="run-bar is-sticky">
-        <button type="button" class="btn btn--primary btn--wide" onClick={run} disabled={running || srcErrors.length > 0}>
-          {running ? S.placement.running : result ? S.placement.rerun : S.placement.run}
-        </button>
-        {running && (
-          <div class="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
-            <span style={{ width: `${Math.round(progress * 100)}%` }} />
-          </div>
-        )}
-        <CalculationStatus error={error} />
-      </div>
+
 
       <div ref={resultRef}>
         {!result && !running && (
-          <Panel>
+          <Panel class="workspace-plan">
             <PlanView depth={room.depth} width={room.width} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} listenerZone={[c.listenerMinX, c.listenerMaxX]} />
             <p class="small">{S.placement.empty}</p>
           </Panel>
         )}
         {result && current && curve && (
-          <Panel class="panel--hero">
-            <CalculationStatus stale={result.stale ? S.placement.stale : undefined} />
+          <Panel class="panel--hero workspace-plan">
             <div class="tabs" role="tablist">
               {variants.map((_, i) => (
                 <button key={i}
@@ -207,7 +202,8 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
                 </button>
               ))}
             </div>
-            <ScoreLine p={current} baseline={result.baseline} isBaseline={sel === variants.length - 1} objective={c.objective} />
+            <div class="workspace-status"><strong>{fmt(isFlat(c.objective) ? current.score : current.objScore ?? current.score, 1)} дБ</strong><span class="small">{isCurrent(current) ? "Текущая расстановка" : "Выбранный вариант"}</span></div>
+            <DetailPanel title="Оценка варианта"><ScoreLine p={current} baseline={result.baseline} isBaseline={sel === variants.length - 1} objective={c.objective} />
             {current.robust != null && (
               <p class="small">
                 <span class={`robust-tag ${current.robust <= ROBUST_GOOD ? 'is-good' : current.robust <= ROBUST_MID ? 'is-mid' : 'is-bad'}`}>
@@ -217,6 +213,8 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
               </p>
             )}
             {current.scheme === 'dba' && <Note>{S.robust.dbaNote}</Note>}
+            </DetailPanel>
+            <Details summary="Отображение карты">
             <PlanLayers {...layers} />
             {/* «Карта звука» прячет только окраску плана и её шкалу; выбор и пояснение остаются (009) */}
             {subs.length > 0 && (
@@ -226,6 +224,7 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
               <Segmented label={S.manual.whichSub} value={effSub} options={subs.map((s) => ({ value: s.id, label: `С${s.id.slice(3)}` }))} onChange={setMapSub} />
             )}
             <MapModeHelp mode={effKind} where="auto" />
+            </Details>
             <PlanView
               depth={room.depth} width={room.width} placement={current}
               zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope}
@@ -236,19 +235,10 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
             />
             {layers.map && heat && <HeatLegend hm={heat} />}
             <CalculationStatus busy={layers.map && heatBusy} label={S.layers.computing} />
-            {isCurrent(current) ? (
-              <>
-                <Note tone="good">{S.placement.inUse}</Note>
-                {onGo && <button type="button" class="btn btn--primary" onClick={() => onGo('tuning')}>{S.placement.toTuning}</button>}
-              </>
-            ) : (
-              <>
-                <button type="button" class="btn btn--primary" onClick={() => applyVariant(current)}>{S.placement.use}</button>
-                <p class="muted small">{S.placement.notInUse}</p>
-              </>
-            )}
+            <p class="small muted">{isCurrent(current) ? S.placement.inUse : S.placement.notInUse}</p>
             <button type="button" class="btn" onClick={() => openManual(current)}>{S.manual.openManual}</button>
-            <Positions p={current} />
+            <DetailPanel title="Координаты"><Positions p={current} /></DetailPanel>
+            <DetailPanel title="АЧХ и сравнение">
             <h3 class="subhead">{S.placement.response}</h3>
             <SmoothedResponseChart screen="placement-auto"
               fLo={Math.min(curve.f[0], ...(baseCurve ? [baseCurve.f[0]] : []))}
@@ -267,6 +257,9 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
               {curve.f[0] < curve.scoredFrom && <span class="legend__item legend__item--unscored">{S.placement.legendUnscored}</span>}
             </div>
             {current.low && current.chart && <p class="muted small">{S.placement.chartDeep}</p>}
+            </DetailPanel>
+            <Details summary="Подробности подбора">
+            <button type="button" class="btn" onClick={run} disabled={running || srcErrors.length > 0}>{S.placement.rerun}</button>
             {current.penalties.length > 0 && (
               <>
                 <h3 class="subhead">{S.placement.penalties}</h3>
@@ -280,9 +273,28 @@ export function PlacementScreen({ project, onSources, onConstraints, onPrecision
             <Details summary="Как считается">
               <p class="small">{S.placement.assumptions}</p>
             </Details>
+            </Details>
           </Panel>
         )}
       </div>
+      <ActionBar>
+        {running || !result || result.stale || error || !current ? (
+          <button type="button" class="btn btn--primary btn--wide" onClick={run} disabled={running || srcErrors.length > 0}>
+            {running ? S.placement.running : error ? 'Повторить расчёт' : result ? S.placement.rerun : S.placement.run}
+          </button>
+        ) : !isCurrent(current) ? (
+          <button type="button" class="btn btn--primary btn--wide" onClick={() => applyVariant(current)}>{S.placement.use}</button>
+        ) : onGo ? (
+          <button type="button" class="btn btn--primary btn--wide" onClick={() => onGo('tuning')}>{S.placement.toTuning}</button>
+        ) : <p class="small" role="status">{S.placement.inUse}</p>}
+        {running && (
+          <div class="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+            <span style={{ width: `${Math.round(progress * 100)}%` }} />
+          </div>
+        )}
+        {srcErrors.length > 0 && <p class="small" role="alert">Проверьте систему: {srcErrors[0]}</p>}
+        <CalculationStatus error={error} stale={result?.stale ? S.placement.stale : undefined} />
+      </ActionBar>
     </div>
   );
 }

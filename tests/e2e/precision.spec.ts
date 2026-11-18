@@ -1,17 +1,21 @@
+import { showDetail } from './helpers';
 import { test, expect } from '@playwright/test';
 import { draftSaved, fitsWidth } from './helpers';
 
 // 026: точность расчёта — общая настройка проекта; узкое сглаживание доступно только при подробных данных
 test('точность расчёта открывает сглаживание 1/24 и 1/48, предупреждает о времени и общая для расстановки и голоса', async ({ page }) => {
   await page.goto('/#manual');
+  await showDetail(page, 'АЧХ и сравнение');
   const manual = page.locator('.smoothed-chart[data-screen="placement-manual"]');
   await expect(manual.getByRole('slider')).toHaveValue('1', { timeout: 20000 });
   await expect(manual.getByRole('button', { name: 'Сглаживание 1/24', exact: true })).toHaveCount(0);
-  const score = page.locator('.score__value:visible').first();
+  const score = page.locator('.score__value').first();
   await expect(score).not.toHaveText('…');
 
+  await showDetail(page, 'Система и цель подбора', 'Цель и точность');
   await page.getByRole('radio', { name: 'Максимальная', exact: true }).click();
   await expect(page.getByText('Расчёты идут в 3–4 раза дольше', { exact: false })).toBeVisible();
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(manual.getByRole('button', { name: 'Сглаживание 1/48', exact: true })).toBeVisible();
   await expect(manual.getByRole('button', { name: 'Сглаживание 1/24', exact: true })).toBeVisible();
   // прежний выбор (1/12) сохранился: теперь это четвёртая точка из семи
@@ -22,22 +26,30 @@ test('точность расчёта открывает сглаживание 
 
   // голос: та же настройка, исходная кривая — 1/48 октавы, выбранная раньше 1/6 остаётся сглаживанием
   await page.evaluate(() => { location.hash = 'voice'; });
+  await showDetail(page, 'Микрофон и голос');
   await expect(page.getByRole('radio', { name: 'Максимальная', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByText('Карта мест считается в 2–5 раз дольше.')).toBeVisible();
+  await showDetail(page, 'Показатели и спектр');
   const voice = page.locator('.smoothed-chart[data-screen="voice"]');
   await expect(voice.getByRole('button', { name: 'Исходная кривая 1/48 октавы', exact: true })).toBeVisible({ timeout: 20000 });
   await expect(voice.getByRole('slider')).toHaveValue('3');
-  await expect(page.getByText('Карта мест считается в 2–5 раз дольше.')).toBeVisible();
 
   // стандартная точность: узких точек нет, действует прежняя базовая точка; настройка переживает перезагрузку
+  await showDetail(page, 'Микрофон и голос');
   await page.getByRole('radio', { name: 'Стандартная', exact: true }).click();
+  await showDetail(page, 'Показатели и спектр');
   await expect(voice.getByRole('button', { name: 'Исходная кривая 1/6 октавы', exact: true })).toBeVisible({ timeout: 20000 });
   await expect(voice.getByRole('slider')).toHaveValue('0');
+  await showDetail(page, 'Микрофон и голос');
   await page.getByRole('radio', { name: 'Высокая', exact: true }).click();
+  await showDetail(page, 'Показатели и спектр');
   await expect(voice.getByRole('button', { name: 'Исходная кривая 1/24 октавы', exact: true })).toBeVisible({ timeout: 20000 });
   await draftSaved(page, 'точность «Высокая»', (d) => d.precision === 'high');
   await page.reload();
+  await showDetail(page, 'Микрофон и голос');
   await expect(page.getByRole('radio', { name: 'Высокая', exact: true })).toHaveAttribute('aria-checked', 'true', { timeout: 20000 });
   await page.evaluate(() => { location.hash = 'manual'; });
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(manual.getByRole('button', { name: 'Сглаживание 1/24', exact: true })).toBeVisible({ timeout: 20000 });
   await expect(manual.getByRole('button', { name: 'Сглаживание 1/48', exact: true })).toHaveCount(0);
   for (const width of [320, 393]) {

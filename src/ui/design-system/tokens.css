@@ -96,6 +96,8 @@
   --space-inline: var(--space-8);
   --space-field: var(--space-4);
   --player-clearance: 120px;
+  --action-clearance: 0px; /* Height of the visible fixed action panel. */
+  --action-player-offset: var(--player-clearance); /* Actual player height + --space-16, measured by ActionBar. */
   --touch-min: 44px;
   --control-height: 46px;
   --control-large: 52px;

@@ -5,3 +5,5 @@ export { ActionMenu } from './ActionMenu';
 export { CalculationStatus } from './CalculationStatus';
 export { ConfirmSheet } from './ConfirmSheet';
 export { FailurePanel } from './FailurePanel';
+export { ActionBar } from './ActionBar';
+export { DetailPanel } from './DetailPanel';

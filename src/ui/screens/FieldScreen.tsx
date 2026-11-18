@@ -9,7 +9,7 @@ import { computeReverb } from '../../core/reverb';
 import { useComputed } from '../useCompute';
 import { PlanKey, PlanView, keysFor, type PlanItem, type PlanProps } from '../components/PlanView';
 import { HeightRange } from '../components/HeightRange';
-import { NumberField, Note, Panel, Segmented } from '../design-system';
+import { DetailPanel, Details, NumberField, Note, Panel, Segmented } from '../design-system';
 import { SPAN } from '../fieldColors';
 import { S } from '../strings';
 import { PlayButton } from '../components/MiniPlayer';
@@ -217,6 +217,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
         </div>
         {shown && <p class="field-shown small">{shown}{busy ? ` · ${S.field.computingNew}` : ''}</p>}
         <p class="muted small">{S.field.rotateHint}</p>
+        <Details summary="Частота и отображение">
         <Segmented
           label={S.field.kindLabel}
           value={kind}
@@ -297,13 +298,14 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
           <span>+{threshold + SPAN} дБ</span>
         </div>
         <p class="muted small">{S.field.legend(threshold)}</p>
+        </Details>
         {field && <span class="model-tag">{field.model === 'wave' ? S.model.waveTag : S.model.modalTag}</span>}
         {field && field.skipped.length > 0 && <Note tone="warn">{S.field.skipped(field.skipped.map((f) => fmt(f, 0)).join(', '))}</Note>}
         {error && <Note tone="warn">{error}</Note>}
         {!request && <Note>{S.field.pickSome}</Note>}
       </Panel>
 
-      <Panel title={S.field.sliceTitle}>
+      <DetailPanel title={S.field.sliceTitle}><Panel title={S.field.sliceTitle} class="workspace-plan">
         <p class="small">{S.field.sliceIntro}</p>
         <div class="slice-row">
           <div class="slice-row__plan">
@@ -321,7 +323,7 @@ export function FieldScreen({ project, modes, onSetup }: Props) {
             <button type="button" class="btn btn--small btn--ghost" onClick={() => setProbe(null)}>{S.manual.removeProbe}</button>
           </div>
         )}
-      </Panel>
+      </Panel></DetailPanel>
     </div>
   );
 }

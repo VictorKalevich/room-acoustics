@@ -1,31 +1,40 @@
+import { showDetail, closeDetails } from './helpers';
 import { test, expect } from '@playwright/test';
 import { draftSaved, fitsWidth } from './helpers';
 
 test('smoothing preferences are independent for voice, manual and auto and survive reload', async ({ page }) => {
   await page.goto('/#voice');
+  await showDetail(page, 'Показатели и спектр');
   const voice = page.locator('.smoothed-chart[data-screen="voice"]');
   await expect(voice.getByRole('slider')).toHaveValue('0', { timeout: 20000 });
   await voice.getByRole('button', { name: 'Сглаживание 1/2', exact: true }).click();
   await voice.getByRole('radio', { name: 'Психоакустическое', exact: true }).click();
   await expect(voice.getByRole('slider')).toHaveCount(0);
   await page.evaluate(() => { location.hash = 'manual'; });
+  await showDetail(page, 'АЧХ и сравнение');
   const manual = page.locator('.smoothed-chart[data-screen="placement-manual"]');
   await expect(manual.getByRole('slider')).toHaveValue('1');
   await manual.getByRole('button', { name: 'Сглаживание 1/3', exact: true }).click();
   await page.evaluate(() => { location.hash = 'placement'; });
+  await closeDetails(page);
   await page.getByRole('button', { name: 'Подобрать расстановку', exact: true }).click();
+  await showDetail(page, 'АЧХ и сравнение');
   const auto = page.locator('.smoothed-chart[data-screen="placement-auto"]');
   await expect(auto.getByRole('slider')).toHaveValue('1', { timeout: 20000 });
   await auto.getByRole('button', { name: 'Сглаживание Без', exact: true }).click();
   await page.evaluate(() => { location.hash = 'voice'; });
+  await showDetail(page, 'Показатели и спектр');
   await expect(voice.getByRole('radio', { name: 'Психоакустическое', exact: true })).toHaveAttribute('aria-checked', 'true');
   await voice.getByRole('radio', { name: 'Октавное', exact: true }).click();
   await expect(voice.getByRole('slider')).toHaveValue('2');
   await page.reload();
+  await showDetail(page, 'Показатели и спектр');
   await expect(voice.getByRole('slider')).toHaveValue('2');
   await page.evaluate(() => { location.hash = 'manual'; });
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(manual.getByRole('slider')).toHaveValue('3');
   await page.evaluate(() => { location.hash = 'placement'; });
+  await showDetail(page, 'АЧХ и сравнение');
   await expect(auto.getByRole('slider')).toHaveValue('0');
 });
 
@@ -38,6 +47,7 @@ test('smoothing changes only the curve, not the score, map or worker calculation
     };
   });
   await page.goto('/#voice');
+  await showDetail(page, 'Показатели и спектр');
   const chart = page.locator('.smoothed-chart[data-screen="voice"]');
   await expect(chart.getByRole('slider')).toBeVisible({ timeout: 20000 });
   const score = await page.locator('.score__value:visible').first().textContent();
@@ -72,12 +82,15 @@ test('legacy sitting project keeps mouth height without the posture switch', asy
   await page.getByRole('alertdialog').getByRole('button', { name: 'Открыть проект' }).click();
   // 022: «Место для записи» — вкладка «Голос» нижней панели
   await page.getByRole('navigation', { name: 'Разделы', exact: true }).getByRole('button', { name: 'Голос' }).click();
+  await showDetail(page, 'Микрофон и голос');
   await expect(page.getByLabel('Высота микрофона', { exact: true })).toHaveValue('123,5');
   await expect(page.getByRole('radio', { name: /^(Сидя|Стоя)$/ })).toHaveCount(0);
   await page.getByLabel('Высота микрофона', { exact: true }).fill('145');
   await page.getByLabel('От рта до микрофона', { exact: true }).focus();
+  await showDetail(page, 'Показатели и спектр');
   await expect(page.locator('.score__value:visible').first()).not.toHaveText('…');
   await draftSaved(page, 'высота микрофона 145 см', (d) => d.voice?.mouthZ === 1.45);
   await page.reload();
+  await showDetail(page, 'Микрофон и голос');
   await expect(page.getByLabel('Высота микрофона', { exact: true })).toHaveValue('145');
 });

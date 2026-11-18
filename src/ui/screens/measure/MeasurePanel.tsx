@@ -7,7 +7,7 @@ import { useEffect } from 'preact/hooks';
 import { compareMeasurement, parseRew, type CalibrationResult } from '../../../core/measure';
 import { useComputeAction, useComputed } from '../../useCompute';
 import { ResponseChart } from '../../components/Charts';
-import { Panel, Note } from '../../design-system';
+import { ActionBar, Panel, Note } from '../../design-system';
 import { S } from '../../strings';
 import { fmt } from '../../format';
 import { MeasureCompare } from '../../components/MeasureCompare';
@@ -101,12 +101,12 @@ export function MeasurePanel({ project, onRoom, onSetup }: { project: Project; o
           </div>
           <p class="small"><strong>{S.tuning.measureRms(fmt(cmp.rms, 1))}</strong></p>
           <p class="muted small">{S.tuning.measureHow}</p>
-          <div class="btn-row">
+          <ActionBar label="Подстройка модели"><div class="btn-row">
             <button type="button" class="btn btn--primary" onClick={runCal} disabled={busy}>{busy ? S.tuning.calibrating : S.tuning.calibrate}</button>
             {room.calibration && (
               <button type="button" class="btn btn--ghost" onClick={() => { onRoom({ ...room, calibration: null, leakage: room.calibration?.leakageBefore ?? room.leakage }); setCal(null); }}>{S.tuning.resetCalibration}</button>
             )}
-          </div>
+          </div></ActionBar>
           {cal && (
             <Note tone="good">
               {S.tuning.calibrated(fmt(cal.dampingScale, 2), S.zones.leakages[cal.leakage as Leakage].toLowerCase(), fmt(cal.rmsBefore, 1), fmt(cal.rmsAfter, 1))}

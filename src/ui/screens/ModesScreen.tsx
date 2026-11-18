@@ -5,7 +5,7 @@ import { useComputed } from '../useCompute';
 import type { Mode, ReverbResult, Room } from '../../core/types';
 import { bonelloCheck, modeIssues, proportionsNotes, modeWhere } from '../../core/modes';
 import { ModeChart } from '../components/Charts';
-import { Panel, Note, Details } from '../design-system';
+import { DetailPanel, Panel, Note, Details } from '../design-system';
 import { S } from '../strings';
 import { PlayButton } from '../components/MiniPlayer';
 import { Term } from '../components/Term';
@@ -43,7 +43,7 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
 
       {(isWave(room) || (room.extensions ?? []).length > 0) && <SystemModesPanel room={room} fMax={Math.min(200, Math.max(120, reverb.schroeder))} />}
 
-      <Panel title={S.modes.proportions}>
+      <DetailPanel title={S.modes.proportions}><Panel title={S.modes.proportions}>
         {notes.length ? notes.map((n, ki) => <Note key={ki} tone="warn">{n}</Note>) : <Note tone="good">{S.modes.proportionsOk}</Note>}
         {issues.clusters.length > 0 && (
           <>
@@ -66,9 +66,9 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
           {bonello.ok ? S.modes.bonelloOk : S.modes.bonelloBad(bonello.violations.map((v) => fmt(v, v < 40 ? 1 : 0)).join(', '))}
         </p>
         <p class="muted small">Осевых мод ниже 200 Гц: {axial.filter((m) => m.f <= 200).length}.</p>
-      </Panel>
+      </Panel></DetailPanel>
 
-      <Panel title={S.modes.table}>
+      <DetailPanel title={S.modes.table}><Panel title={S.modes.table}>
         <p class="muted small">{S.tone.hintTable} {S.tone.warn}</p>
         <div class="table-scroll">
           <table class="modes-table">
@@ -102,7 +102,7 @@ export function ModesScreen({ room, modes, fMax, reverb }: { room: Room; modes: 
         <Details summary="Допущения">
           <p class="small">{S.modes.assumptions}</p>
         </Details>
-      </Panel>
+      </Panel></DetailPanel>
     </div>
   );
 }
