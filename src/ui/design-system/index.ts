@@ -7,4 +7,5 @@ export { ConfirmSheet } from './ConfirmSheet';
 export { FailurePanel } from './FailurePanel';
 export { ActionBar } from './ActionBar';
 export { DetailPanel } from './DetailPanel';
+export { RmsHistoryChart } from './RmsHistoryChart';
 export { Toast } from './Toast';

@@ -9,6 +9,7 @@ import '@fontsource/golos-text/latin-500.css';
 import '@fontsource/golos-text/latin-600.css';
 import '../../styles.css';
 import { ActionBar, DetailPanel, ActionMenu, CalculationStatus, ConfirmSheet, Details, FailurePanel, Note, NumberField, Panel, SectionNav, Segmented, SelectField, Toast } from './index';
+import { RmsHistoryChart } from './RmsHistoryChart';
 import { componentFamilies } from './registry';
 import { WallView } from '../components/WallView';
 import { ResponseChart } from '../components/Charts';
@@ -159,6 +160,12 @@ function Catalog() {
         <span class="legend__item legend__item--unscored">не входит в оценку</span>
       </div>
       <p class="small muted">Затенение — частоты ниже полосы оценки (045): кривая продолжена вниз по модели спада, шкала центрируется по оцениваемой части.</p>
+    </Panel>
+    <Panel title="История RMS">
+      <RmsHistoryChart live={false} rows={[-60, -58, -49, -40, -50, -58].map((rmsDbfs, i) => ({
+        endSeconds: i + 1, rmsDbfs, rms1sDbfs: rmsDbfs - 1, windowComplete: i !== 3, missingBefore: i === 3 ? 1 : 0,
+        peakHz: 996, clipped: false,
+      }))} />
     </Panel>
     <Panel title="Реестр визуальных семейств">
       <dl class="glossary">{componentFamilies.map(([name, api]) => <div key={name}><dt>{name}</dt><dd class="small text-code">{api}</dd></div>)}</dl>

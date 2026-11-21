@@ -726,6 +726,10 @@ export const S = {
   },
 
   noise: {
+    history: 'История RMS', blockRms: 'RMS блока', secondRms: 'RMS за 1 с',
+    liveHistory: 'Последние 60 с · dBFS. В JSON сохраняется весь сеанс.',
+    fullHistory: 'Весь сеанс · dBFS. Разрывы показывают пропуски.',
+    name: 'Название измерения',
     subtitle: 'Уровень шума и распределение энергии по частотам',
     start: 'Начать', stop: 'Остановить', reset: 'Сбросить', export: 'Сохранить JSON',
     idle: 'Готов к измерению', pending: 'Ожидаем доступ к микрофону', running: 'Идёт измерение',

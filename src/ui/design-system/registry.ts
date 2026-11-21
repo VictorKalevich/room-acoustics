@@ -21,7 +21,7 @@ export const componentFamilies = [
   ['Списки', '.plain-list · .best-list · .project-list · .advice-list · .steps-list'],
   ['План комнаты', 'PlanView · .plan · .plan__rug · .plan__zone-rect.is-selected · .plan-key · .heat-legend'],
   ['Развёртка стены', 'WallView · .wall-view · __window · __door · __gap · __arch · __carpet · __curtain · __furniture'],
-  ['Графики', 'Charts · SmoothedResponseChart · .chart · .chart__unscored (ниже полосы оценки — 045) · .legend · .legend__item--unscored'],
+  ['Графики', 'Charts · SmoothedResponseChart · RmsHistoryChart (шумомер, 052) · .chart · .chart__unscored (ниже полосы оценки — 045) · .legend · .legend__item--unscored'],
   ['3D и сканы', 'Field3D · RoomPreview · ScanPreview · LayoutEditor'],
   ['Аудио', 'MiniPlayer · Auralize · .play-btn · .rta-big'],
   ['Помощь и статус', 'Term · MapModeHelp · WizardStrip · .update-banner · .whatif-strip'],

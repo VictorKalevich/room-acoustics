@@ -31,6 +31,7 @@ async function installInput(page: Page, scenario: 'deny' | 'pending' | 'tone') {
       osc.frequency.value = 1000;
       const gain = ctx.createGain();
       gain.gain.value = document.body.dataset.requests === '2' ? 0.25 : 0.5;
+      document.addEventListener('test-level-step', () => { gain.gain.value = 0.25; }, {once: true});
       osc.connect(gain).connect(dest);
       osc.start();
       const track = dest.stream.getAudioTracks()[0];
@@ -91,16 +92,37 @@ test('рабочая комната, тестовый PCM, JSON, останов�
   await expect(page.locator('.rta-big strong:visible')).toHaveText(/-9\.[0-2]/);
   const chart = page.getByRole('img', {name: 'Спектр входного сигнала'});
   await expect(chart).toBeVisible();
+  await expect(page.getByText(/RMS за 1 с · -9\.[0-2] dBFS/)).toBeVisible();
+  await page.evaluate(() => document.dispatchEvent(new Event('test-level-step')));
+  await expect(page.getByText(/RMS за 1 с · -15\.[0-2] dBFS/)).toBeVisible();
+  await expect(page.getByRole('img', { name: 'История RMS' })).toBeVisible();
+  await page.setViewportSize({ width: 320, height: 640 });
+  expect(await fitsWidth(page)).toBe(true);
+  await expect(page.locator('body')).toHaveAttribute('data-requests', '1');
   await page.getByRole('button', { name: 'Остановить' }).click();
   await expect(page.locator('body')).toHaveAttribute('data-closed', '1');
   await page.getByLabel('Результат ручной проверки').selectOption('passed');
   const download = page.waitForEvent('download');
+  await page.getByLabel('Название измерения').fill('Ступени 1 кГц');
   await page.getByRole('button', {name: 'Сохранить JSON'}).click();
-  const file = await (await download).path();
+  const saved = await download;
+  expect(saved.suggestedFilename()).toBe('noise-Ступени 1 кГц.json');
+  const file = await saved.path();
   const json = await readFile(file!, 'utf8');
   const report = JSON.parse(json);
   expect(report.manual).toBe('passed');
-  expect(report.measurement.rmsDbfs).toBeCloseTo(-9.03, 0);
+  expect(report.measurement.rmsDbfs).toBeCloseTo(-15.05, 0);
+  expect(report.name).toBe('Ступени 1 кГц');
+  expect(report.history.length).toBe(report.measurement.blocks);
+  expect(report.history[0].windowComplete).toBe(false);
+  expect(report.history.at(-1).rms1sDbfs).toBeCloseTo(-15.05, 0);
+  let endSeconds = 0;
+  for (const row of report.history) {
+    expect(row.endSeconds).toBeCloseTo(endSeconds + (1 + row.missingBefore) * report.fftSize / report.path.sampleRate, 8);
+    expect(Math.abs(Date.parse(row.timestamp) - (report.audioStartMs + row.endSeconds * 1000))).toBeLessThan(1);
+    expect(typeof row.clipped).toBe('boolean');
+    endSeconds = row.endSeconds;
+  }
   expect(Math.abs(report.measurement.peakHz - 1000)).toBeLessThan(report.path.sampleRate / report.fftSize);
   expect(json).not.toMatch(/deviceId|groupId|"pcm"|"label"/i);
   await page.getByRole('button', { name: 'Сбросить' }).click();
