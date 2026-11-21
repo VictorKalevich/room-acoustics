@@ -3,16 +3,17 @@ import { useLayoutEffect, useRef } from 'preact/hooks';
 import { useSheetLock } from '../sheetLock';
 import { S } from '../strings';
 
-export type DrawerItem = 'measure' | 'voice' | 'report' | 'projects' | 'help' | 'about';
+export type DrawerItem = 'measure' | 'noise' | 'voice' | 'report' | 'projects' | 'help' | 'about';
 // 022: «Место для записи» — вкладка «Голос» нижней панели; пока комната не создана, в меню только то, что без неё работает.
 // 024: «Проекты» (с импортом и экспортом) — на месте прежнего «Импорт и экспорт»
 const GROUPS: { title: string; items: DrawerItem[] }[] = [
-  { title: 'Работа со звуком', items: ['measure'] },
+  { title: 'Работа со звуком', items: ['measure', 'noise'] },
   { title: 'Проект', items: ['report', 'projects'] },
   { title: 'Справка', items: ['help', 'about'] },
 ];
 const NEEDS_ROOM: DrawerItem[] = ['measure', 'report'];
 const ICONS: Record<DrawerItem, string> = {
+  noise: 'M3 11v2 M7 7v10 M12 3v18 M17 8v8 M21 10v4',
   measure: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z M5 11a7 7 0 0 0 14 0 M12 18v3',
   voice: 'M10 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M3.5 21v-1.5a6.5 6.5 0 0 1 13 0V21 M18.2 5.5a1.5 1.5 0 0 1 3 0v3a1.5 1.5 0 0 1-3 0z M19.7 10v3.5',
   report: 'M6 3h9l4 4v14H6z M14 3v5h5 M9 13h7 M9 17h7',

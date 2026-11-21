@@ -44,7 +44,7 @@ interface OnDevice {
 }
 
 /** Прочитать хранилище приложения напрямую. Базу, которой ещё нет, не создаёт; своё соединение закрывает. */
-const onDevice = (page: Page) => page.evaluate(() => new Promise<OnDevice>((resolve, reject) => {
+export const onDevice = (page: Page) => page.evaluate(() => new Promise<OnDevice>((resolve, reject) => {
   const none: OnDevice = { draft: null, scans: [] };
   const req = indexedDB.open('room-acoustics');
   // базы ещё нет: отмена создания, иначе приложение не открыло бы её своей версией

@@ -23,6 +23,7 @@ import { MiniPlayer } from './components/MiniPlayer';
 import { WizardStrip } from './components/WizardStrip';
 import { wizardOn } from './wizard';
 import { HelpScreen } from './screens/HelpScreen';
+import { NoiseScreen } from './screens/NoiseScreen';
 import { MeasureScreen } from './screens/MeasureScreen';
 import { ReportScreen } from './screens/ReportScreen';
 import { VoiceScreen } from './screens/VoiceScreen';
@@ -50,6 +51,7 @@ const TITLES: Record<Tab, string> = {
   placement: S.placement.title,
   tuning: S.tuning.title,
   projects: S.projects.title,
+  noise: S.drawer.items.noise,
   measure: S.drawer.items.measure,
   voice: S.drawer.items.voice,
   report: S.drawer.items.report,
@@ -183,6 +185,7 @@ export function App() {
             onGo={go}
           />,
         )}
+        {tab === 'noise' && guard(TITLES.noise, <NoiseScreen />)}
         {roomReady && <RetainedSection active={tab === 'measure'}>
           {guard(TITLES.measure, <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} onPlacement={toPlacement} />)}
         </RetainedSection>}

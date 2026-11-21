@@ -31,7 +31,7 @@ export function chartCurve(e: { response: { f: number[]; db: number[]; target: n
  * yRange — своя шкала с нулём на 0 дБ (например, голос относительно прямого звука), иначе — по среднему, 33 дБ.
  * scoredFrom — граница оценки (045): ниже неё полоса затенена, шкала центрируется только по оцениваемой части.
  */
-export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks: yt, scoredFrom }: { lines: Line[]; referenceLines?: Line[]; fLo: number; fHi: number; yRange?: [number, number]; yTicks?: number[]; scoredFrom?: number }) {
+export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks: yt, scoredFrom, label = 'График АЧХ' }: { lines: Line[]; referenceLines?: Line[]; fLo: number; fHi: number; yRange?: [number, number]; yTicks?: number[]; scoredFrom?: number; label?: string }) {
   const W = 340, H = 210, l = 34, r = 10, t = 12, b = 26;
   const x = logScale(fLo, fHi, l, W - r);
   const from = scoredFrom != null && scoredFrom > fLo ? Math.min(scoredFrom, fHi) : null;
@@ -45,7 +45,7 @@ export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks:
   const ticks = (fHi / fLo > 40 ? WIDE_TICKS : TICKS).filter((f) => f >= fLo && f <= fHi);
   const yTicks = yt ?? [-10, 0, 10];
   return (
-    <svg class="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="График АЧХ">
+    <svg class="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
       {from != null && <rect class="chart__unscored" x={l} y={t} width={x(from) - l} height={H - t - b} />}
       {ticks.map((f, ki) => (
         <g key={ki} class="chart__grid">
