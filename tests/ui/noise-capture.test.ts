@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openMic } from '../../src/ui/audio/mic';
-import { audioContext, micOpened } from '../../src/ui/audio/tone';
+import { audioContext, micOpened, releaseNoiseContext } from '../../src/ui/audio/tone';
 import { recorderWorklet } from '../../src/ui/audio/recorderWorklet';
 import { runInNewContext } from 'node:vm';
 
-vi.mock('../../src/ui/audio/tone', () => ({ audioContext: vi.fn(), micOpened: vi.fn() }));
+vi.mock('../../src/ui/audio/tone', () => ({ audioContext: vi.fn(), micOpened: vi.fn(), releaseNoiseContext: vi.fn() }));
 const node = () => ({connect: vi.fn(), disconnect: vi.fn()});
 const block = () => new Float32Array(4096).fill(0.5);
 function setup() {
@@ -26,9 +26,41 @@ function setup() {
 }
 
 beforeEach(() => vi.clearAllMocks());
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('общий захват', () => {
+  it('создаёт свежий контекст после Stop, сохраняя контекст, занятый другим инструментом', async () => {
+    const tone = await vi.importActual<typeof import('../../src/ui/audio/tone')>('../../src/ui/audio/tone');
+    class Context {
+      state = 'running';
+      close = vi.fn(async () => { this.state = 'closed'; });
+    }
+    vi.stubGlobal('window', { AudioContext: Context });
+    const first = tone.audioContext(true);
+    tone.releaseNoiseContext(first);
+    expect(first.state).toBe('closed');
+    const second = tone.audioContext(true);
+    expect(second).not.toBe(first);
+    expect(tone.audioContext()).toBe(second);
+    tone.releaseNoiseContext(second);
+    expect(second.state).toBe('running');
+  });
+  it('при открытой дорожке без PCM завершает ожидание и освобождает вход для нового запуска', async () => {
+    vi.useFakeTimers();
+    const {ctx, track, options, processor} = setup();
+    const first = await openMic(options);
+    vi.advanceTimersByTime(6000);
+    expect(options.onInterrupt).toHaveBeenCalledWith('noData');
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(releaseNoiseContext).toHaveBeenCalledWith(ctx);
+    first.close();
+    const next = await openMic({...options, signal: new AbortController().signal});
+    processor.onaudioprocess!({playbackTime: 0, inputBuffer: {getChannelData: () => new Float32Array(4096)}});
+    vi.advanceTimersByTime(6000);
+    expect(options.onBlock).toHaveBeenCalledTimes(1);
+    expect(options.onInterrupt).toHaveBeenCalledTimes(1);
+    next.close();
+  });
   it('одна ограниченная повторная попытка, диагностика, пропуск и прерывание', async () => {
     const {devices, options, track, processor} = setup();
     devices.getUserMedia.mockRejectedValueOnce(new DOMException('', 'OverconstrainedError'));

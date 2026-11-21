@@ -12,7 +12,7 @@ async function installInput(page: Page, scenario: 'deny' | 'pending' | 'tone') {
     const devices = new EventTarget();
     Object.defineProperty(navigator, 'mediaDevices', { value: devices, configurable: true });
     if (mode === 'tone' && !window.AudioContext?.prototype.createMediaStreamDestination) return false;
-    if (!window.AudioContext) Object.defineProperty(window, 'AudioContext', { value: class { state = 'running'; } });
+    if (!window.AudioContext) Object.defineProperty(window, 'AudioContext', { value: class { state = 'running'; close() { return Promise.resolve(); } } });
     Object.defineProperty(navigator, 'canShare', { value: () => false });
     let ctx: AudioContext;
     Object.assign(devices, { async getUserMedia() {
@@ -30,7 +30,7 @@ async function installInput(page: Page, scenario: 'deny' | 'pending' | 'tone') {
       const osc = ctx.createOscillator();
       osc.frequency.value = 1000;
       const gain = ctx.createGain();
-      gain.gain.value = 0.5;
+      gain.gain.value = document.body.dataset.requests === '2' ? 0.25 : 0.5;
       osc.connect(gain).connect(dest);
       osc.start();
       const track = dest.stream.getAudioTracks()[0];
@@ -103,7 +103,20 @@ test('рабочая комната, тестовый PCM, JSON, останов�
   expect(report.measurement.rmsDbfs).toBeCloseTo(-9.03, 0);
   expect(Math.abs(report.measurement.peakHz - 1000)).toBeLessThan(report.path.sampleRate / report.fftSize);
   expect(json).not.toMatch(/deviceId|groupId|"pcm"|"label"/i);
+  await page.getByRole('button', { name: 'Сбросить' }).click();
+  await expect(page.locator('.rta-big strong:visible')).toHaveText('—');
+  // Моделируем открывшийся Worklet, который при повторном старте не передал ни одного блока.
+  await page.evaluate(() => {
+    const post = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (message: unknown, options?: StructuredSerializeOptions | Transferable[]) {
+      if (message === 'stream' && document.body.dataset.requests === '2') return;
+      Reflect.apply(post, this, [message, options]);
+    };
+  });
   await start(page).click();
+  await expect(page.locator('.rta-big strong:visible')).toHaveText(/-15\.[0-2]/, {timeout: 10000});
+  await expect(page.getByText(/Обработка PCM · ScriptProcessor/)).toBeVisible();
+  await expect(page.locator('body')).toHaveAttribute('data-requests', '2');
   await expect(chart).toBeVisible();
   await page.evaluate(() => document.dispatchEvent(new Event('test-mute')));
   await expect(page.getByText(/Сигнал микрофона прерван/)).toBeVisible();

@@ -12,6 +12,7 @@ export interface ToneState {
 
 
 let ctx: AudioContext | null = null;
+let noiseOnly: AudioContext | null = null;
 let osc: OscillatorNode | null = null;
 let gain: GainNode | null = null;
 let state: ToneState = { playing: false, f: 50, volume: 0.25, label: '' };
@@ -50,13 +51,24 @@ export function onTone(fn: (s: ToneState) => void): () => void {
 }
 
 /** Общий AudioContext. Вызывать синхронно в обработчике касания — иначе iOS оставит его на паузе. */
-export function audioContext(): AudioContext {
+export function audioContext(forNoise = false): AudioContext {
   if (!ctx) {
     ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    noiseOnly = forNoise ? ctx : null;
   }
+  // Любой другой клиент может сохранить узел или запустить звук позже.
+  if (!forNoise) noiseOnly = null;
   // iOS: 'suspended' до касания, 'interrupted' после звонка или ухода в фон
   if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
   return ctx;
+}
+
+/** Следующее касание создаст свежий тракт. Контекст, которым пользовался другой инструмент, сохраняется. */
+export function releaseNoiseContext(current: AudioContext) {
+  if (current !== ctx || current !== noiseOnly) return;
+  ctx = null;
+  noiseOnly = null;
+  void current.close().catch(() => undefined);
 }
 
 export function playTone(f: number, label = '') {

@@ -14,6 +14,7 @@ class RaRec extends AudioWorkletProcessor {
     };
   }
   process(inputs) {
+    if (this.mode === 'close') return false;
     const ch = inputs[0]?.[0];
     if (!ch || !this.mode) return true;
     if (this.mode === true) { this.port.postMessage(ch.slice()); return true; }

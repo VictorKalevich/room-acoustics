@@ -41,7 +41,7 @@ export function NoiseScreen() {
     session.current = null;
     active.controller.abort();
     const measurement = last.path ? active.meter.snapshot(last.path.sampleRate) : null;
-    update({ status, measurement });
+    update({ status, measurement, error: status === t.noData ? 'NoAudioData' : last.error });
   }
   useLayoutEffect(() => {
     const leave = () => stop(t.hidden);
@@ -68,18 +68,19 @@ export function NoiseScreen() {
       const mic = await openMic({
         signal: active.controller.signal,
         onInterrupt: reason => { if (session.current === active) stop(t[reason]); },
+        onBackendChange: path => { if (session.current === active) update({ path }); },
         onBlock(pcm, sequence) {
           if (session.current !== active || !last.path) return;
           active.meter.push(pcm, sequence);
           const now = performance.now();
           if (now < nextRefresh) return;
           nextRefresh = now + (last.path.backend === 'AudioWorklet' ? 150 : 350);
-          update({ measurement: active.meter.snapshot(last.path.sampleRate) });
+          update({ status: t.running, measurement: active.meter.snapshot(last.path.sampleRate) });
         },
       });
       if (session.current !== active) { mic.close(); return; }
       setLabel(mic.label);
-      update({ status: t.running, path: mic.diagnostics });
+      update({ status: t.waitingForAudio, path: mic.diagnostics });
     } catch (error) {
       if (session.current !== active) return;
       const name = (error as Error).name;
