@@ -106,7 +106,8 @@ test('рабочая комната, тестовый PCM, JSON, останов�
   await page.getByLabel('Название измерения').fill('Ступени 1 кГц');
   await page.getByRole('button', {name: 'Сохранить JSON'}).click();
   const saved = await download;
-  expect(saved.suggestedFilename()).toBe('noise-Ступени 1 кГц.json');
+  // WebKit в Linux заменяет пробелы на подчёркивания в предложенном имени файла.
+  expect(saved.suggestedFilename()).toMatch(/^noise-Ступени[ _]1[ _]кГц\.json$/);
   const file = await saved.path();
   const json = await readFile(file!, 'utf8');
   const report = JSON.parse(json);
