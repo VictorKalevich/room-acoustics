@@ -1,11 +1,15 @@
 import { CAL_KEY, loadCal } from '../../state/legacyMicCalibration';
 // «Замер»: свип (АЧХ в нескольких точках → замер проекта), хлопок (RT60 по октавам), живой анализатор баса.
 import { evalPpo } from '../../core/precision';
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { shownTreatments } from '../../core/treatments';
 import type { Project } from '../../state/project';
 import type { Measurement, Room, Setup } from '../../core/types';
-import { analyzeSweep, averageRT, calAt, clapRT60, logGrid, logSweep, parseCalibration, powerAverage, RT_BANDS, smoothOct, sweepSegment, wav16, type BandRT, type SweepResult } from '../../core/dsp';
+import { analyzeSweep, averageRT, clapRT60, logGrid, logSweep, parseCalibration, powerAverage, RT_BANDS, smoothOct, sweepSegment, wav16, type BandRT, type SweepResult } from '../../core/dsp';
+import { afterSmoothing, beforeSmoothing, micKey, type AppliedMic, type LegacyCal } from '../../core/micApply';
+import type { MicRecordCalibration, MicScope } from '../../core/micCalibration';
+import { micCatalog } from '../../state/micCatalog';
+import { MicCalibrationPanel, MicStartHint, announceCatalogChange, appliedMic, fromCatalog, micLabel, micLoading, type MicSetup, type MicState } from '../components/MicCalibrationPanel';
 import { setBusy } from '../updates';
 import { computeReverb } from '../../core/reverb';
 import { openMic, playBuffer, shareFile, type Mic } from '../audio/mic';
@@ -40,7 +44,6 @@ export function MeasureScreen({ project, onSetup, onRoom, onGo, view, active, on
   const [cal, setCal] = useState(loadCal());
   const [err, setErr] = useState<string | null>(null);
   const calInput = useRef<HTMLInputElement>(null);
-  const applyCal = (f: number[], db: number[]) => (cal ? db.map((v, i) => v - calAt(cal, f[i])) : db);
 
   return (
     <div class="screen">
@@ -81,9 +84,9 @@ export function MeasureScreen({ project, onSetup, onRoom, onGo, view, active, on
         {err && <Note tone="warn">{err}</Note>}
       </Panel>
       </div>
-      {placed && <RetainedSection active={view === 'sweep'}><SweepTool project={project} onSetup={onSetup} onGo={onGo} applyCal={applyCal} active={active && view === 'sweep'} /></RetainedSection>}
+      {placed && <RetainedSection active={view === 'sweep'}><SweepTool project={project} onSetup={onSetup} onGo={onGo} legacy={cal} active={active && view === 'sweep'} /></RetainedSection>}
       <RetainedSection active={view === 'clap'}><ClapTool project={project} active={active && view === 'clap'} /></RetainedSection>
-      <RetainedSection active={view === 'rta'}><RtaTool project={project} applyCal={applyCal} active={active && view === 'rta'} /></RetainedSection>
+      <RetainedSection active={view === 'rta'}><RtaTool project={project} legacy={cal} active={active && view === 'rta'} /></RetainedSection>
       {placed && <RetainedSection active={view === 'compare'}>
         <MeasurePanel project={project} onSetup={onSetup} onRoom={onRoom} />
         <div class="btn-row"><button type="button" class="btn" onClick={() => onGo('tuning/eq')}>Открыть эквалайзер</button></div>
@@ -92,18 +95,57 @@ export function MeasureScreen({ project, onSetup, onRoom, onGo, view, active, on
   );
 }
 
+// ---------- Общий выбор микрофона (054) ----------
+
+/** Вход по выбору инструмента; системный вход открывается прежним запросом. */
+const deviceOf = (setup: MicSetup) => setup.input.source === 'system' ? '' : setup.input.source.localDeviceId;
+const openFor = (device: string) => device ? openMic({ deviceId: device }) : openMic();
+/** Точки одного замера — с одной поправкой. В legacy прежняя кривая по-прежнему может смениться между точками. */
+const pinOf = (mic: AppliedMic) => mic.mode === 'legacy' ? 'legacy' : micKey(mic);
+
+/** Смена аудиоустройств, пока открыт вход с профилем каталога: поправка подтверждалась для прежнего входа. */
+function useRouteChange(on: boolean, changed: () => void) {
+  const latest = useRef(changed);
+  latest.current = changed;
+  useEffect(() => {
+    const media = navigator.mediaDevices;
+    if (!on || !media?.addEventListener) return;
+    const handler = () => latest.current();
+    media.addEventListener('devicechange', handler);
+    return () => media.removeEventListener('devicechange', handler);
+  }, [on]);
+}
+
+function useMicScope(tool: 'rta' | 'sweep' | 'clap', projectId: string) {
+  const scope = useMemo<MicScope>(() => ({ tool, projectId }), [tool, projectId]);
+  const [state, setState] = useState<MicState>(micLoading);
+  const [epoch, setEpoch] = useState(0);
+  const interrupted = useCallback(() => setEpoch((n) => n + 1), []);
+  return { scope, state, changed: setState, epoch, interrupted };
+}
+
 // ---------- Свип ----------
 
-function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Project; onSetup: (s: Setup) => void; onGo: (t: Destination) => void; applyCal: (f: number[], db: number[]) => number[]; active: boolean }) {
+function SweepTool({ project, onSetup, onGo, legacy, active }: { project: Project; onSetup: (s: Setup) => void; onGo: (t: Destination) => void; legacy: LegacyCal | null; active: boolean }) {
   const activeView = useActiveView(active);
+  const micSel = useMicScope('sweep', project.id);
   const [playHere, setPlayHere] = useState(false);
   const [takes, setTakes] = useState<SweepResult[]>([]);
   // сеанс записи: повторное сохранение с добавленными точками уточняет замер; все точки убрали — новый сеанс
   const session = useRef(makeId());
-  useEffect(() => { if (!takes.length) session.current = makeId(); }, [takes.length]);
+  // поправка точек сеанса: закреплена первой точкой (054)
+  const sessionMic = useRef<AppliedMic | null>(null);
+  const takeMic = useRef<AppliedMic | null>(null);
+  useEffect(() => { if (!takes.length) { session.current = makeId(); sessionMic.current = null; } }, [takes.length]);
   const [state, setState] = useState<'idle' | 'rec' | 'busy'>('idle');
+  const [opening, setOpening] = useState(false);
   const [msg, setMsg] = useState<{ t: string; tone: 'warn' | 'good' } | null>(null);
   const mic = useRef<Mic | null>(null);
+  const openedFor = useRef('');
+  // вход сменился при открытом микрофоне: точку с профилем не принимаем, вход открываем и проверяем заново
+  const stale = useRef(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  useRouteChange(catalogOpen, () => { stale.current = true; });
   const timer = useRef<number | null>(null);
   useEffect(() => {
     if (!active) {
@@ -117,7 +159,8 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
 
   const finish = () => {
     const m = mic.current;
-    if (!m) return;
+    const applied = takeMic.current;
+    if (!m || !applied) return;
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     const rec = m.stop();
     setState('busy');
@@ -125,11 +168,13 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
       try {
         const sweep = logSweep(F1, F2, T, m.sampleRate);
         if (rec.length < sweep.length) throw new Error(S.measure.tooShort);
+        if (stale.current && applied.mode === 'catalog') throw new Error(S.noise.device);
         const seg = sweepSegment(rec, sweep.length, m.sampleRate);
         if (!seg) throw new Error(S.measure.cutOff);
-        const r = analyzeSweep(seg, sweep, F1, F2, m.sampleRate);
+        const r = analyzeSweep(seg, sweep, F1, F2, m.sampleRate, applied.mode === 'catalog' ? (f, db) => beforeSmoothing(applied, f, db) : undefined);
         const warn = r.peak > 0.98 ? S.measure.clip : r.peak < 0.01 ? S.measure.quiet : r.snrDb < 20 ? S.measure.noisy(Math.round(r.snrDb)) : null;
-        setTakes((t) => [...t, { ...r, db: applyCal(r.f, r.db) }]);
+        sessionMic.current ??= applied;
+        setTakes((t) => [...t, { ...r, db: afterSmoothing(applied, r.f, r.db) }]);
         setMsg(warn ? { t: warn, tone: 'warn' } : { t: S.measure.takeOk(Math.round(r.snrDb)), tone: 'good' });
       } catch (e) {
         setMsg({ t: (e as Error).message, tone: 'warn' });
@@ -140,14 +185,30 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
 
   const record = async () => {
     setMsg(null);
+    const setup = micSel.state.setup;
+    if (!setup) return;
+    const applied = appliedMic(setup, legacy);
+    if (sessionMic.current && pinOf(sessionMic.current) !== pinOf(applied)) { setMsg({ t: S.mic.lockedTakes, tone: 'warn' }); return; }
+    const device = deviceOf(setup);
+    setOpening(true);
     try {
+      if (mic.current && (openedFor.current !== device || stale.current)) { mic.current.close(); mic.current = null; }
+      stale.current = false;
       if (!mic.current) {
-        const opened = await openMic();
+        const opened = await openFor(device);
         if (!activeView.current) { opened.close(); return; }
         mic.current = opened;
+        openedFor.current = device;
       }
       const m = mic.current;
+      setCatalogOpen(applied.mode === 'catalog');
       if (!m.running()) { setMsg({ t: S.measure.tapAgain, tone: 'warn' }); return; }
+      if (applied.mode === 'catalog') {
+        await micCatalog.bindRoute(micSel.scope, setup, m.route);
+        announceCatalogChange();
+        if (!activeView.current) return;
+      }
+      takeMic.current = applied;
       m.start();
       setState('rec');
       if (playHere) {
@@ -159,13 +220,24 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
       }
     } catch (e) {
       setState('idle');
-      setMsg({ t: S.measure.micError((e as Error).message), tone: 'warn' });
-    }
+      if (fromCatalog(e)) micSel.interrupted();
+      setMsg({ t: fromCatalog(e) ? (e as Error).message : S.measure.micError((e as Error).message), tone: 'warn' });
+    } finally { setOpening(false); }
   };
 
   const [savedN, setSavedN] = useState(0);
   // пока есть несохранённые точки, приложение не перезапускается на новую версию
   useEffect(() => { setBusy('takes', takes.length > 0 && takes.length !== savedN); return () => setBusy('takes', false); }, [takes.length, savedN]);
+  // снимок поправки сохранённого замера (054): записи нет — прежняя калибровка
+  const saved = project.current.measurement?.session;
+  const [savedRecord, setRecord] = useState<{ session: string; calibration: MicRecordCalibration | null } | null>(null);
+  useEffect(() => {
+    if (!saved) return;
+    let live = true;
+    micCatalog.readRecord(micSel.scope, saved).then((calibration) => { if (live) setRecord({ session: saved, calibration }); }, () => undefined);
+    return () => { live = false; };
+  }, [saved, micSel.scope]);
+  const savedCalibration = saved && savedRecord?.session === saved ? savedRecord.calibration : null;
   const avg = takes.length ? powerAverage(takes.map((t) => t.db)) : null;
   const save = () => {
     if (!avg) return;
@@ -173,9 +245,19 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
     const f = takes[0].f;
     const m: Measurement = { name: S.measure.measName(takes.length), importedAt: new Date().toISOString(), f, db: avg, points: takes.length, session: session.current };
     onSetup(withMeasurement(project.current, m));
-    setMsg({ t: S.measure.saved, tone: 'good' });
+    const applied = sessionMic.current;
+    if (!applied || applied.mode === 'legacy') { setMsg({ t: S.measure.saved, tone: 'good' }); return; }
+    const calibration: MicRecordCalibration = applied.mode === 'catalog' ? { mode: 'catalog', profile: applied.profile } : { mode: 'none' };
+    const id = session.current;
+    setMsg({ t: S.measure.saved + ' ' + S.mic.record(micLabel(applied)), tone: 'good' });
+    micCatalog.saveRecord(micSel.scope, id, calibration).then(
+      () => setRecord({ session: id, calibration }),
+      (e) => setMsg({ t: S.mic.recordFailed((e as Error).message), tone: 'warn' }));
   };
-  return (
+  const recording = state !== 'idle' || opening;
+  return (<>
+    <MicCalibrationPanel scope={micSel.scope} busy={recording} lockText={takes.length ? S.mic.lockedTakes : undefined}
+      changed={micSel.changed} routeEpoch={micSel.epoch} legacy={legacy} />
     <Panel title={S.measure.sweepTitle}>
       <ol class="small steps-list">
         <li>{S.measure.sweepSteps[0]}</li>
@@ -194,7 +276,7 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
       )}
       <ActionBar label="Запись свипа">
         {state !== 'rec' ? (
-          <button type="button" class="btn btn--primary" disabled={state === 'busy'} onClick={record}>
+          <button type="button" class="btn btn--primary" disabled={state === 'busy' || opening || !micSel.state.setup} onClick={record}>
             {state === 'busy' ? S.measure.analyzing : S.measure.recordPoint(takes.length + 1)}
           </button>
         ) : (
@@ -202,6 +284,7 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
             <span class="rec-dot" aria-hidden="true" /> {playHere ? S.measure.playing : S.measure.stop}
           </button>
         )}
+        {!recording && <MicStartHint block={micSel.state.block} />}
       </ActionBar>
       {state === 'rec' && !playHere && <p class="small">{S.measure.startNow}</p>}
       {msg && <Note tone={msg.tone}>{msg.t}</Note>}
@@ -216,6 +299,7 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
             ]}
           />
           <p class="muted small">{S.measure.takesLegend(takes.length)}</p>
+          {sessionMic.current && sessionMic.current.mode !== 'legacy' && <p class="muted small">{S.mic.record(micLabel(sessionMic.current))}</p>}
           <div class="btn-row">
             <button type="button" class="btn btn--primary" onClick={save}>{S.measure.save}</button>
             <button type="button" class="btn btn--ghost" onClick={() => setTakes((t) => t.slice(0, -1))}>{S.measure.undo}</button>
@@ -224,16 +308,22 @@ function SweepTool({ project, onSetup, onGo, applyCal, active }: { project: Proj
           </div>
         </>
       )}
+      {!takes.length && savedCalibration && <p class="muted small">{S.mic.savedRecord(savedCalibration.mode === 'catalog'
+        ? savedCalibration.profile.name + ' · v' + savedCalibration.profile.version : S.mic.none)}</p>}
       <MeasureCompare setup={project.current} onSetup={onSetup} rise={project.constraints.houseCurve} />
     </Panel>
-  );
+  </>);
 }
 
 // ---------- Хлопок ----------
 
 function ClapTool({ project, active }: { project: Project; active: boolean }) {
   const activeView = useActiveView(active);
+  // 054: выбор входа и профиля; поправка профиля в RT60 не входит — расчёт прежний
+  const micSel = useMicScope('clap', project.id);
   const [state, setState] = useState<'idle' | 'rec' | 'busy'>('idle');
+  const [opening, setOpening] = useState(false);
+  const openedFor = useRef('');
   const [res, setRes] = useState<BandRT[][]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const mic = useRef<Mic | null>(null);
@@ -245,11 +335,17 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
   const rev = useMemo(() => computeReverb(project.room), [project.room]);
   const go = async () => {
     setMsg(null);
+    const setup = micSel.state.setup;
+    if (!setup) return;
+    const device = deviceOf(setup);
+    setOpening(true);
     try {
+      if (mic.current && openedFor.current !== device) { mic.current.close(); mic.current = null; }
       if (!mic.current) {
-        const opened = await openMic();
+        const opened = await openFor(device);
         if (!activeView.current) { opened.close(); return; }
         mic.current = opened;
+        openedFor.current = device;
       }
       const m = mic.current;
       if (!m.running()) { setMsg(S.measure.tapAgain); return; }
@@ -269,7 +365,7 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
     } catch (e) {
       setState('idle');
       setMsg(S.measure.micError((e as Error).message));
-    }
+    } finally { setOpening(false); }
   };
   const avgRT = averageRT(res);
   const avg = avgRT.map((r) => r.t60);
@@ -277,12 +373,14 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
   const model = (band: number) => rev.used[rev.bands.indexOf(band)] ?? null;
   const midM = [avg[2], avg[3]].filter((x): x is number => x != null);
   const mid = midM.length ? midM.reduce((a, b) => a + b, 0) / midM.length : null;
-  return (
+  return (<>
+    <MicCalibrationPanel scope={micSel.scope} busy={state !== 'idle' || opening} changed={micSel.changed} routeEpoch={micSel.epoch} />
     <Panel title={S.measure.clapTitle}>
       <p class="small">{S.measure.clapIntro} <Term id="rt60">RT60</Term>.</p>
-      <ActionBar label="Замер хлопком"><button type="button" class="btn btn--primary" disabled={state !== 'idle'} onClick={go}>
+      <ActionBar label="Замер хлопком"><button type="button" class="btn btn--primary" disabled={state !== 'idle' || opening || !micSel.state.setup} onClick={go}>
         {state === 'rec' ? S.measure.clapNow : state === 'busy' ? S.measure.analyzing : S.measure.clapStart}
-      </button></ActionBar>
+      </button>
+      {state === 'idle' && !opening && <MicStartHint block={micSel.state.block} />}</ActionBar>
       {msg && <Note tone="warn">{msg}</Note>}
       {res.length > 0 && (
         <>
@@ -305,37 +403,49 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
         </>
       )}
     </Panel>
-  );
+  </>);
 }
 
 // ---------- Анализатор ----------
 
-function RtaTool({ project, applyCal, active }: { project: Project; applyCal: (f: number[], db: number[]) => number[]; active: boolean }) {
+function RtaTool({ project, legacy, active }: { project: Project; legacy: LegacyCal | null; active: boolean }) {
   const { room, sources, constraints: c, current } = project;
+  const micSel = useMicScope('rta', project.id);
   const [on, setOn] = useState(false);
   useEffect(() => { if (!active) setOn(false); }, [active]);
   const [curve, setCurve] = useState<number[] | null>(null);
-  const [snaps, setSnaps] = useState<{ name: string; db: number[] }[]>([]);
+  // 054: у каждой кривой своя поправка; во время работы выбор закрыт
+  const [curveMic, setCurveMic] = useState<{ label: string; legacy: boolean } | null>(null);
+  const [snaps, setSnaps] = useState<{ name: string; db: number[]; mic: { label: string; legacy: boolean } | null }[]>([]);
   const [here, setHere] = useState<{ x: number; y: number } | null>(null);
   const [tone, setTone] = useState(getTone());
   const [msg, setMsg] = useState<string | null>(null);
   useEffect(() => onTone(setTone), []);
   const mic = useRef<Mic | null>(null);
   const freqs = useMemo(() => logGrid(15, 250, 24), []);
-  // калибровку микрофона могут загрузить, пока анализатор работает: цикл берёт актуальную
-  const calRef = useRef(applyCal);
-  useEffect(() => { calRef.current = applyCal; });
+  // прежнюю калибровку могут загрузить, пока анализатор работает: цикл берёт актуальную
+  const legacyRef = useRef(legacy);
+  useEffect(() => { legacyRef.current = legacy; });
+  const pinned = useRef<{ setup: MicSetup; mic: AppliedMic } | null>(null);
+  const { scope: rtaScope, interrupted } = micSel;
+  useRouteChange(on && pinned.current?.mic.mode === 'catalog', () => { setMsg(S.noise.device); setOn(false); interrupted(); });
   useEffect(() => {
-    if (!on) return;
+    const run = pinned.current;
+    if (!on || !run) return;
     let raf = 0, stop = false, last = 0;
     let an: AnalyserNode | null = null;
     let buf: Float32Array | null = null;
     (async () => {
       try {
         if (!mic.current) {
-          const opened = await openMic();
+          const opened = await openFor(deviceOf(run.setup));
           if (stop) { opened.close(); return; }
           mic.current = opened;
+        }
+        if (run.mic.mode === 'catalog') {
+          await micCatalog.bindRoute(rtaScope, run.setup, mic.current.route);
+          announceCatalogChange();
+          if (stop) return;
         }
         an = mic.current.analyser(32768);
         buf = new Float32Array(an.frequencyBinCount);
@@ -352,13 +462,16 @@ function RtaTool({ project, applyCal, active }: { project: Project; applyCal: (f
               const b = Number.isFinite(buf![k0 + 1]) ? buf![k0 + 1] : a;
               return a * (1 - tt) + b * tt;
             });
-            setCurve(calRef.current(freqs, smoothOct(freqs, db, 1 / 12)));
+            const live: AppliedMic = run.mic.mode === 'legacy' ? { mode: 'legacy', legacy: legacyRef.current } : run.mic;
+            setCurve(afterSmoothing(live, freqs, smoothOct(freqs, beforeSmoothing(live, freqs, db), 1 / 12)));
+            setCurveMic((m) => m?.label === micLabel(live) ? m : { label: micLabel(live), legacy: live.mode === 'legacy' });
           }
           raf = requestAnimationFrame(loop);
         };
         raf = requestAnimationFrame(loop);
       } catch (e) {
-        setMsg(S.measure.micError((e as Error).message));
+        if (fromCatalog(e)) interrupted();
+        setMsg(fromCatalog(e) ? (e as Error).message : S.measure.micError((e as Error).message));
         setOn(false);
       }
     })();
@@ -370,7 +483,7 @@ function RtaTool({ project, applyCal, active }: { project: Project; applyCal: (f
       mic.current?.close();
       mic.current = null;
     };
-  }, [on, freqs]);
+  }, [on, freqs, rtaScope, interrupted]);
   useEffect(() => () => mic.current?.close(), []);
   // прогноз модели в точке, где стоит телефон
   const probeSetup = useMemo(() => (here ? { ...current, listener: { x: here.x, y: here.y, z: c.earHeight } } : null), [here, current, c.earHeight]);
@@ -393,21 +506,35 @@ function RtaTool({ project, applyCal, active }: { project: Project; applyCal: (f
     ...sources.filter((s) => current.positions[s.id]).map((s) => ({ id: s.id, kind: (s.kind === 'sub' ? 'sub' : 'spk') as PlanItem['kind'], pos: current.positions[s.id] })),
     { id: 'listener', kind: 'listener', pos: current.listener },
   ];
-  return (
+  const toggle = () => {
+    const setup = micSel.state.setup;
+    if (!on) {
+      if (!setup) return;
+      setMsg(null);
+      pinned.current = { setup, mic: appliedMic(setup, legacy) };
+    }
+    setOn(!on);
+  };
+  const shown = [...snaps.map((s) => s.mic), ...(curve ? [curveMic] : [])].filter((m): m is { label: string; legacy: boolean } => !!m);
+  const mixed = shown.some((m) => !m.legacy) && new Set(shown.map((m) => m.label)).size > 1;
+  return (<>
+    <MicCalibrationPanel scope={micSel.scope} busy={on} changed={micSel.changed} routeEpoch={micSel.epoch} legacy={legacy} />
     <Panel title={S.measure.rtaTitle}>
       <p class="small">{S.measure.rtaIntro} <Term id="crawl">{S.measure.crawl}</Term>.</p>
       <ActionBar label="Живой анализатор"><div class="btn-row">
-        <button type="button" class={`btn btn--primary${on ? ' is-rec' : ''}`} onClick={() => setOn(!on)}>{on ? S.measure.rtaStop : S.measure.rtaStart}</button>
-        {curve && <button type="button" class="btn btn--ghost" onClick={() => setSnaps((s) => [...s.slice(-3), { name: S.measure.point(s.length + 1), db: curve }])}>{S.measure.remember}</button>}
+        <button type="button" class={`btn btn--primary${on ? ' is-rec' : ''}`} disabled={!on && !micSel.state.setup} onClick={toggle}>{on ? S.measure.rtaStop : S.measure.rtaStart}</button>
+        {curve && <button type="button" class="btn btn--ghost" onClick={() => setSnaps((s) => [...s.slice(-3), { name: S.measure.point(s.length + 1), db: curve, mic: curveMic }])}>{S.measure.remember}</button>}
         {snaps.length > 0 && <button type="button" class="btn btn--ghost" onClick={() => setSnaps([])}>{S.measure.clear}</button>}
-      </div></ActionBar>
+      </div>
+      {!on && <MicStartHint block={micSel.state.block} />}</ActionBar>
       {msg && <Note tone="warn">{msg}</Note>}
       {atTone != null && <p class="rta-big"><strong>{fmt(atTone, 1)}</strong> дБ <span class="muted small">{S.measure.atTone(fmt(tone.f, 1))}</span></p>}
       {curve && <ResponseChart fLo={15} fHi={250} lines={lines} />}
       {curve && <p class="muted small">{S.measure.rtaLegend(snaps.length)}{ev ? ` ${S.measure.predLegend}` : ''}</p>}
+      {curve && mixed && <Note>{S.mic.rtaMixed([...new Set(shown.map((m) => m.label))].join('; '))}</Note>}
       <h3 class="subhead">{S.measure.whereTitle}</h3>
       <p class="muted small">{S.measure.whereHint}</p>
       <PlanView depth={room.depth} width={room.width} items={items} zones={room.zones} extensions={room.extensions} openings={room.openings} features={room.features} treatments={shownTreatments(room)} slope={room.slope} marks={here ? [{ x: here.x, y: here.y, label: '', kind: 'probe' }] : []} onTap={setHere} showKey={false} />
     </Panel>
-  );
+  </>);
 }

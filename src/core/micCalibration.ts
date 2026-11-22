@@ -33,6 +33,18 @@ export interface MicInputPreference {
   absoluteCalibration: { offsetDb: number; physicalInput: string; captureMode: string; verifiedAt: string;
     references?: readonly { referenceSpl: number; measuredDbfs: number }[] } | null;
 }
+/** Фактическая дорожка открытого входа (054). Без deviceId неизменность тракта между запусками не установить. */
+export interface MicRoute { deviceId: string; groupId: string | null; label: string; sampleRate: number }
+/**
+ * Подтверждение применимости профиля в одном инструменте (054). route — дорожка первого подтверждённого измерения:
+ * пока её нет, подтверждение действует только в запуске приложения run.
+ */
+export interface MicConfirmation {
+  profileId: string; version: number; source: MicInputPreference['source']; model: string | null;
+  run: string | null; route: MicRoute | null;
+}
+/** Снимок поправки сохранённого замера свипа (054). Нет записи — замер сделан с прежней калибровкой. */
+export type MicRecordCalibration = { mode: 'none' } | { mode: 'catalog'; profile: MicProfile };
 /** Отдельное от Project хранилище. Импорт добавляет версию, выбор — отдельная операция. */
 export interface MicCatalog {
   list(): Promise<readonly MicProfile[]>;

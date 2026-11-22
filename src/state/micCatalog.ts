@@ -1,16 +1,25 @@
 import { builtinProfiles, faberStudy } from '../core/micBuiltins';
-import { defaultMicSelection, type MicCatalog, type MicInputPreference, type MicProfile, type MicScope, type MicSelection } from '../core/micCalibration';
+import {
+  defaultMicSelection, type MicCatalog, type MicConfirmation, type MicInputPreference, type MicProfile, type MicRecordCalibration,
+  type MicRoute, type MicScope, type MicSelection,
+} from '../core/micCalibration';
 import { validateProfile } from '../core/micCurve';
 
 type Entry = { profile: MicProfile; archived: boolean };
-type Setting = { scope: MicScope; selection: MicSelection; input: MicInputPreference };
-interface CatalogData { schema: 1; preferredModel?: string | null; entries: Entry[]; settings: Setting[] }
+type Setting = { scope: MicScope; selection: MicSelection; input: MicInputPreference; confirmation?: MicConfirmation | null };
+interface MeasurementRecord { scope: MicScope; session: string; savedAt: string; calibration: MicRecordCalibration }
+// 054: confirmation и records необязательны; код C1 читает и переписывает их без изменений.
+interface CatalogData { schema: 1; preferredModel?: string | null; entries: Entry[]; settings: Setting[]; records?: MeasurementRecord[] }
 export const defaultInput = (): MicInputPreference => ({ confirmedModel: null, source: 'system', absoluteCalibration: null });
+/** Один запуск приложения. Подтверждение без проверенной дорожки после перезапуска недействительно. */
+const run = globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
 const sameScope = (a: MicScope, b: MicScope) => a.tool === b.tool && (a.tool === 'noise' || (b.tool !== 'noise' && a.projectId === b.projectId));
 export const sameVersion = (a: Pick<MicProfile, 'id' | 'version'>, b: Pick<MicProfile, 'id' | 'version'>) => a.id === b.id && a.version === b.version;
-function matches(selection: MicSelection, p: MicProfile) {
+function matches(selection: MicSelection, p: Pick<MicProfile, 'id' | 'version'>) {
   return selection.mode === 'catalog' && selection.profileId === p.id && selection.version === p.version;
 }
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+export const usableRoute = (route: MicRoute | null | undefined): route is MicRoute => !!route && typeof route.deviceId === 'string' && route.deviceId !== '';
 function setting(data: CatalogData, scope: MicScope) {
   let row = data.settings.find(s => sameScope(scope, s.scope));
   if (!row) {
@@ -19,6 +28,7 @@ function setting(data: CatalogData, scope: MicScope) {
   }
   return row;
 }
+const checkScope = (scope: MicScope) => !!scope && ['noise', 'rta', 'sweep', 'clap'].includes(scope.tool) && (scope.tool === 'noise' || !!scope.projectId);
 function checkInput(input: MicInputPreference) {
   if (!input || (input.confirmedModel !== null && typeof input.confirmedModel !== 'string') ||
       (input.source !== 'system' && (typeof input.source?.localDeviceId !== 'string' || !input.source.localDeviceId)))
@@ -28,20 +38,32 @@ function checkInput(input: MicInputPreference) {
       !absolute.captureMode || !Number.isFinite(Date.parse(absolute.verifiedAt)) || input.source === 'system' ||
       absolute.physicalInput !== input.source.localDeviceId)) throw new Error('Абсолютная калибровка требует проверенного физического входа и тракта.');
 }
+function checkConfirmation(c: MicConfirmation | null | undefined) {
+  if (c == null) return;
+  if (typeof c.profileId !== 'string' || !Number.isSafeInteger(c.version) || (c.model !== null && typeof c.model !== 'string') ||
+      (c.source !== 'system' && typeof c.source?.localDeviceId !== 'string') || (c.run !== null && typeof c.run !== 'string') ||
+      (c.route !== null && !(usableRoute(c.route) && Number.isFinite(c.route.sampleRate) && typeof c.route.label === 'string')))
+    throw new Error('Повреждено подтверждение профиля.');
+}
 function checkData(data: CatalogData) {
-  if ((data.preferredModel != null && typeof data.preferredModel !== 'string') || data.schema !== 1 || !Array.isArray(data.entries) || !Array.isArray(data.settings))
+  if ((data.preferredModel != null && typeof data.preferredModel !== 'string') || data.schema !== 1 || !Array.isArray(data.entries) ||
+      !Array.isArray(data.settings) || (data.records !== undefined && !Array.isArray(data.records)))
     throw new Error('Неизвестный формат каталога. Данные сохранены.');
   for (const entry of data.entries) {
     validateProfile(entry.profile);
     if (entry.profile.origin !== 'user' || typeof entry.archived !== 'boolean') throw new Error('Повреждена запись каталога.');
   }
   for (const row of data.settings) {
-    if (!row.scope || !['noise','rta','sweep','clap'].includes(row.scope.tool) ||
-        (row.scope.tool !== 'noise' && !row.scope.projectId) ||
-        !row.selection || !['legacy','none','catalog'].includes(row.selection.mode) ||
+    if (!checkScope(row.scope) || !row.selection || !['legacy','none','catalog'].includes(row.selection.mode) ||
         (row.selection.mode === 'catalog' && (!row.selection.profileId || !Number.isSafeInteger(row.selection.version))))
       throw new Error('Повреждён выбор инструмента.');
     checkInput(row.input);
+    checkConfirmation(row.confirmation);
+  }
+  for (const record of data.records ?? []) {
+    if (!checkScope(record?.scope) || typeof record.session !== 'string' || !Number.isFinite(Date.parse(record.savedAt)) ||
+        !['none', 'catalog'].includes(record.calibration?.mode)) throw new Error('Повреждён снимок калибровки замера.');
+    if (record.calibration.mode === 'catalog') validateProfile(record.calibration.profile);
   }
 }
 
@@ -76,11 +98,26 @@ async function access<T>(write: boolean, action: (data: CatalogData) => T): Prom
 }
 
 const available = (d: CatalogData) => [...builtinProfiles, ...d.entries.filter(e => !e.archived).map(e => e.profile)];
+const archivedOf = (d: CatalogData) => d.entries.filter(e => e.archived).map(e => e.profile);
+/** Подтверждение действует для той же версии, того же входа и модели; без дорожки — только в этом запуске. */
+function confirmed(data: CatalogData, row: Setting) {
+  const c = row.confirmation, s = row.selection;
+  return !!c && s.mode === 'catalog' && c.profileId === s.profileId && c.version === s.version &&
+    available(data).some(p => matches(s, p)) && same(c.source, row.input.source) && c.model === row.input.confirmedModel &&
+    (c.route !== null || c.run === run);
+}
+function expectRow(row: Setting, expected: { selection: MicSelection; input: MicInputPreference }) {
+  if (!same(row.selection, expected.selection) || !same(row.input, expected.input)) throw new Error('Выбор микрофона изменился. Проверьте настройки.');
+}
 export const micCatalog = {
   studies: [faberStudy] as const,
   list: () => access(false, available),
   read(scope: MicScope) {
-    return access(false, data => ({ profiles: available(data), ...setting(data, scope) }));
+    return access(false, data => {
+      const row = setting(data, scope);
+      return { profiles: available(data), archived: archivedOf(data), selection: row.selection, input: row.input,
+        confirmed: confirmed(data, row), persistent: confirmed(data, row) && row.confirmation!.route !== null };
+    });
   },
   nextVersion(id: string) {
     return access(false, data => data.entries.reduce((last, e) => e.profile.id === id ? Math.max(last, e.profile.version) : last, 0) + 1);
@@ -98,7 +135,9 @@ export const micCatalog = {
   select(scope: MicScope, selection: MicSelection) {
     return access(true, data => {
       if (selection.mode === 'catalog' && !available(data).some(p => matches(selection, p))) throw new Error('Версия профиля недоступна.');
-      setting(data, scope).selection = selection;
+      const row = setting(data, scope);
+      row.selection = selection;
+      row.confirmation = null;
     });
   },
   readInput: (scope: MicScope) => access(false, data => setting(data, scope).input),
@@ -107,6 +146,7 @@ export const micCatalog = {
       checkInput(preference);
       const row = setting(data, scope);
       if (row.input.confirmedModel !== preference.confirmedModel) data.preferredModel = preference.confirmedModel;
+      if (!same(row.input.source, preference.source) || row.input.confirmedModel !== preference.confirmedModel) row.confirmation = null;
       row.input = preference;
     });
   },
@@ -118,6 +158,40 @@ export const micCatalog = {
       checkInput(next);
       row.input = next;
     });
+  },
+  /** Подтвердить или снять подтверждение текущего выбора инструмента. Другие инструменты не меняются. */
+  confirm(scope: MicScope, expected: { selection: MicSelection; input: MicInputPreference }, yes: boolean) {
+    return access(true, data => {
+      const row = setting(data, scope);
+      expectRow(row, expected);
+      const s = row.selection;
+      if (!yes) { row.confirmation = null; return; }
+      if (s.mode !== 'catalog' || !available(data).some(p => matches(s, p))) throw new Error('Версия профиля недоступна.');
+      row.confirmation = { profileId: s.profileId, version: s.version, source: row.input.source, model: row.input.confirmedModel, run, route: null };
+    });
+  },
+  /**
+   * Перед приёмом данных: подтверждение всё ещё действует и открыта та же дорожка. Первое измерение привязывает
+   * дорожку, и подтверждение переживает перезапуск; другая дорожка снимает подтверждение.
+   * Возвращает true, если подтверждение сохранится между запусками.
+   */
+  async bindRoute(scope: MicScope, expected: { selection: MicSelection; input: MicInputPreference }, route: MicRoute | null) {
+    // Исключение внутри транзакции откатило бы сброс, поэтому о несовпадении сообщаем после записи.
+    const result = await access(true, data => {
+      const row = setting(data, scope);
+      expectRow(row, expected);
+      if (!confirmed(data, row)) throw new Error('Подтвердите применимость профиля перед измерением.');
+      const c = row.confirmation!;
+      if (c.route === null) {
+        if (usableRoute(route)) row.confirmation = { ...c, route };
+        return usableRoute(route) ? 'kept' : 'run';
+      }
+      if (same(c.route, route)) return 'kept';
+      row.confirmation = null;
+      return 'changed';
+    });
+    if (result === 'changed') throw new Error('Вход изменился после подтверждения профиля. Проверьте вход и подтвердите профиль заново.');
+    return result === 'kept';
   },
   references(profile: MicProfile) {
     return access(false, data => data.settings.filter(s => matches(s.selection, profile)).map(s => s.scope));
@@ -131,6 +205,27 @@ export const micCatalog = {
         throw new Error('Список использующих инструментов изменился. Повторите подтверждение.');
       // Retain immutable data and dangling selection visibly until explicit replacement.
       entry.archived = true;
+      for (const row of refs) row.confirmation = null;
     });
+  },
+  /** Вернуть архивную версию в выбор с прежними id, версией и данными. Выбор инструментов не меняется. */
+  restore(profile: MicProfile) {
+    return access(true, data => {
+      const entry = data.entries.find(e => sameVersion(e.profile, profile));
+      if (!entry || !entry.archived) throw new Error('Версия не найдена в архиве.');
+      entry.archived = false;
+    });
+  },
+  /** Снимок поправки сохранённого замера свипа; повторное сохранение того же сеанса заменяет снимок. */
+  saveRecord(scope: MicScope, session: string, calibration: MicRecordCalibration) {
+    return access(true, data => {
+      data.records ??= [];
+      const index = data.records.findIndex(r => sameScope(r.scope, scope) && r.session === session);
+      const record = { scope, session, savedAt: new Date().toISOString(), calibration };
+      if (index < 0) data.records.push(record); else data.records[index] = record;
+    });
+  },
+  readRecord(scope: MicScope, session: string) {
+    return access(false, data => data.records?.find(r => sameScope(r.scope, scope) && r.session === session)?.calibration ?? null);
   },
 } satisfies MicCatalog & Record<string, unknown>;

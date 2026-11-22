@@ -17,3 +17,14 @@ export function fmtSigned(v: number, digits = 1): string {
 
 export const fmtHz =(f: number) => (f >= 1000 ? `${fmt(f / 1000, f % 1000 ? 1 : 0)} к` : fmt(f, f < 100 ? 1 : 0));
 export const fmtInt = (n: number) => new Intl.NumberFormat('ru-RU').format(Math.round(n));
+
+/**
+ * Имя файла экспорта шумомера (054, UX-001): название пользователя без префикса, недопустимые символы заменены;
+ * без названия — «noise-ГГГГ-ММ-ДД-ЧЧММ» по началу записи.
+ */
+export function noiseFileName(name: string, startMs: number | null, now = Date.now()) {
+  const safe = name.trim().replace(/\.json$/i, '').replace(/[^\p{L}\p{N}._ -]+/gu, '-').slice(0, 80).replace(/^[.\s-]+|[.\s-]+$/g, '');
+  if (safe) return safe + '.json';
+  const d = new Date(startMs ?? now), pad = (n: number) => String(n).padStart(2, '0');
+  return `noise-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+}

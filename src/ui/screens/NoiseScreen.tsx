@@ -9,8 +9,9 @@ import { NoiseAnalysis, NoiseLevels, levelText } from './NoiseAnalysis';
 import { Details, Note, Panel, SelectField, RmsHistoryChart } from '../design-system';
 import { S } from '../strings';
 import { BUILD } from '../updates';
-
-import { MicCalibrationPanel, type MicSetup } from '../components/MicCalibrationPanel';
+import { noiseFileName } from '../format';
+import { loadCal } from '../../state/legacyMicCalibration';
+import { MicCalibrationPanel, MicStartHint, announceCatalogChange, fromCatalog, micLoading, type MicSetup, type MicState } from '../components/MicCalibrationPanel';
 import { AbsoluteReference } from '../components/AbsoluteReference';
 import type { MicScope } from '../../core/micCalibration';
 
@@ -48,7 +49,9 @@ export function NoiseScreen() {
   const [weight, setWeight] = useState<Weight>('Z');
   const [period, setPeriod] = useState<SpectrumPeriod>('now');
   const [exportError, setExportError] = useState(false);
-  const [setup, setSetup] = useState<MicSetup | null>(null);
+  const [micState, setMic] = useState<MicState>(micLoading);
+  const setup = micState.setup;
+  const [legacy] = useState(loadCal);
   const [routeEpoch, setRouteEpoch] = useState(0);
   const session = useRef<{ controller: AbortController; meter: NoiseMeter | null } | null>(null);
   const update = (changes: Partial<Report>) => { last = { ...last, ...changes }; render(last); };
@@ -114,6 +117,12 @@ export function NoiseScreen() {
       }) : Promise.resolve();
       const [mic] = await Promise.all([opening, verify]);
       if (session.current !== active) { mic.close(); return; }
+      if (setup.profile) {
+        // Тот же вход, что при подтверждении; первое подтверждённое измерение его привязывает (UX-003).
+        try { await micCatalog.bindRoute(noiseScope, setup, mic.route); } catch (error) { mic.close(); throw error; }
+        announceCatalogChange();
+        if (session.current !== active) { mic.close(); return; }
+      }
       verified = true;
       active.meter ??= new NoiseMeter(mic.sampleRate, setup.profile);
       setLabel(mic.label);
@@ -125,7 +134,7 @@ export function NoiseScreen() {
       active.controller.abort();
       const key = Object.hasOwn(t.errors, name) ? name as keyof typeof t.errors : 'unknown';
       if (setup.profile) setRouteEpoch(n => n + 1);
-      update({ error: key, status: error instanceof Error && error.message.startsWith('Выбор микрофона') ? error.message : t.errors[key] });
+      update({ error: key, status: fromCatalog(error) ? (error as Error).message : t.errors[key] });
     }
   }
 
@@ -163,8 +172,7 @@ export function NoiseScreen() {
         ...point, timestamp: new Date(origin! + point.endSeconds * 1000).toISOString(),
       })),
     };
-    const safeName = name.replace(/[^\p{L}\p{N}._ -]+/gu, '-').slice(0, 80);
-    try { await shareFile(JSON.stringify(data), safeName ? 'noise-' + safeName + '.json' : 'noise-diagnostics.json', 'application/json'); }
+    try { await shareFile(JSON.stringify(data), noiseFileName(name, origin), 'application/json'); }
     catch { setExportError(true); }
   }
   const { measurement: m, path } = report;
@@ -180,6 +188,7 @@ export function NoiseScreen() {
         <button type="button" class="btn btn--ghost" disabled={busy || report.status === t.idle}
           onClick={() => { lastMeter = null; update(fresh()); setLabel(''); setExportError(false); }}>{t.reset}</button>
       </div>
+      {!busy && <MicStartHint block={micState.block} />}
       <p role="status">{report.status}</p>
       <SelectField label="Частотное взвешивание" value={weight} options={['Z', 'A', 'C'].map(value => ({ value, label: value }))}
         onChange={v => setWeight(v as Weight)} />
@@ -190,7 +199,7 @@ export function NoiseScreen() {
       <p class="small">{t.time} · {m?.activeSeconds.toFixed(1) ?? '0'} с</p>
       {!!m?.clipped && <Note tone="warn">{t.clipping}</Note>}
     </Panel>
-    <MicCalibrationPanel scope={noiseScope} busy={busy} changed={setSetup} routeEpoch={routeEpoch} />
+    <MicCalibrationPanel scope={noiseScope} busy={busy} changed={setMic} routeEpoch={routeEpoch} legacy={legacy} />
     <AbsoluteReference meter={meter} path={path} setup={capturedSetup} next={setup} busy={busy}
       refresh={() => setRouteEpoch(v => v + 1)} />
     <NoiseAnalysis meter={meter} blocks={m?.blocks ?? 0} weight={weight} period={period} onPeriod={setPeriod} />

@@ -11,8 +11,8 @@ export const componentFamilies = [
   ['Выбор действия', 'ActionMenu · .action-menu'],
   ['Флажки и фильтры', '.check · .chip · .plan-layers · .smoothing-stops'],
   ['Ползунки', '.smoothing-slider · .freq-slider · .hrange · .miniplayer__vol'],
-  ['Сообщения', 'Toast — краткое подтверждение действия · Note · CalculationStatus · RoomFirst/PlacementFirst (закрытый экран) · FailurePanel (сбой раздела или приложения) · DraftFailure (рабочий проект не открылся при запуске) · .note · .progress · .spinner'],
-  ['Раскрытие', 'Details · .details'],
+  ['Сообщения', 'Toast — краткое подтверждение действия · Note · MicStartHint (причина недоступного запуска со ссылкой на настройку, 054) · CalculationStatus · RoomFirst/PlacementFirst (закрытый экран) · FailurePanel (сбой раздела или приложения) · DraftFailure (рабочий проект не открылся при запуске) · .note · .progress · .spinner'],
+  ['Раскрытие', 'Details · .details (в том числе «Архив профилей» микрофона — 054)'],
   ['Шторки', 'ConfirmSheet (danger/primary, cancel, extra, список .plain-list) · .sheet · .sheet-backdrop · .sheet__close'],
   ['Карточки объектов', '.zone-card · .zone-card.is-selected · .zone-card.is-error (не помещается в комнату) · .wall-items · .found-opening · .problem'],
   ['Метки состояния', '.tag · .model-tag · .sev · .robust-tag · .score__grade'],
@@ -28,7 +28,8 @@ export const componentFamilies = [
   ['Экспорт и отчёт', '.export · .report · .report-pre · .compare-table'],
 ] as const;
 
-/** Exhaustive skins for native controls, used by the browser audit. File inputs are hidden infrastructure. */
+/** Exhaustive skins for native controls, used by the browser audit. File inputs are hidden infrastructure,
+ * except the native picker of the microphone profile editor inside a .field (053, audited on measure routes since 054). */
 export const controlSkins = {
   button: [
     '.btn', '.setting-link', '.segmented button', '.tabs button', '.section-nav button', '.tabbar button',
@@ -38,6 +39,6 @@ export const controlSkins = {
   input: [
     '.field__box input', '.field__box select', '.field__box textarea', '.check input',
     '.smoothing-slider', '.freq-slider input', '.miniplayer__vol input', '.export textarea',
-    'input[type="file"].visually-hidden',
+    'input[type="file"].visually-hidden', '.field > input[type="file"]',
   ],
 } as const;

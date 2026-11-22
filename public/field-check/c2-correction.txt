@@ -1,0 +1,8 @@
+# SYNTHETIC C2 TEST ONLY - not a microphone calibration
+# Select correction. Columns: frequency (Hz), correction (dB)
+15 6
+50 6
+70 0
+120 0
+180 -6
+500 -6

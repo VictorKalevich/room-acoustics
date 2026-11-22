@@ -13,6 +13,7 @@ import { RmsHistoryChart } from './RmsHistoryChart';
 import { componentFamilies } from './registry';
 import { WallView } from '../components/WallView';
 import { ResponseChart } from '../components/Charts';
+import { MicStartHint } from '../components/MicCalibrationPanel';
 import { defaultRoom } from '../../state/project';
 import type { Room } from '../../core/types';
 
@@ -112,6 +113,13 @@ function Catalog() {
       <SectionNav label="Раздел каталога" value={section} onChange={setSection} options={[{ value: 'one', label: 'Первый', hint: 'Раздел' }, { value: 'two', label: 'Второй', hint: 'Другой раздел' }]} />
       <div class="chips"><button type="button" class={checked ? 'chip is-on' : 'chip'} aria-pressed={checked} onClick={() => setChecked(!checked)}>Фильтр</button><button type="button" class="chip chip--more">Другой вариант</button></div>
       <label class="field__label" for="catalog-range">Ползунок</label><input class="smoothing-slider" id="catalog-range" type="range" min="0" max="4" step="1" />
+    </Panel>
+    <Panel title="Причина недоступного запуска (054)" id="catalog-mic">
+      <p class="small">Причина стоит рядом с кнопкой запуска; «Открыть настройку» раскрывает и фокусирует нужное поле этой панели.</p>
+      <Details summary="Настройки следующего измерения"><label class="check" data-mic-target="confirm"><input type="checkbox" />Подтверждение применимости профиля</label></Details>
+      <button type="button" class="btn btn--primary" disabled>Начать</button>
+      <MicStartHint block={{ text: 'не подтверждена применимость профиля.', target: 'confirm', panel: 'catalog-mic' }} />
+      <Details summary="Архив профилей · 1"><p class="small">Архивная версия: выбор, предпросмотр, «Восстановить», «Экспорт кривой», «Экспорт профиля». Кнопки удаления нет.</p></Details>
     </Panel>
     <Panel title="Сообщения и метки">
       <Note>Информация</Note><Note tone="good">Успешное действие</Note><Note tone="warn">Предупреждение</Note>

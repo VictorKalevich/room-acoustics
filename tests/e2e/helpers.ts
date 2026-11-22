@@ -133,3 +133,47 @@ export async function showDetail(page: Page, ...path: string[]) {
   await closeDetails(page);
   for (const title of path) await openDetail(page, title);
 }
+
+// Устанавливаем вход в основном JS-мире загруженной страницы. WebKit может заново
+// создать JS-обёртку нативного MediaDevices и потерять переопределённый на ней метод.
+export async function installInput(page: Page, scenario: 'deny' | 'pending' | 'tone', deviceId?: string) {
+  return page.evaluate(([mode, device]) => {
+    const devices = new EventTarget();
+    Object.defineProperty(navigator, 'mediaDevices', { value: devices, configurable: true });
+    if (mode === 'tone' && !window.AudioContext?.prototype.createMediaStreamDestination) return false;
+    if (!window.AudioContext) Object.defineProperty(window, 'AudioContext', { value: class { state = 'running'; close() { return Promise.resolve(); } } });
+    Object.defineProperty(navigator, 'canShare', { value: () => false });
+    let ctx: AudioContext;
+    Object.assign(devices, { async getUserMedia() {
+      document.body.dataset.requests = String(1 + Number(document.body.dataset.requests || 0));
+      if (mode === 'deny') throw new DOMException('', 'NotAllowedError');
+      if (mode === 'pending') return new Promise(resolve => {
+        document.addEventListener('grant', () => resolve({
+          getTracks: () => [{ stop: () => { document.body.dataset.closed = 'yes'; } }],
+        }), { once: true });
+      });
+      // Синус идёт через настоящий Web Audio только на виртуальную входную дорожку.
+      ctx ??= new AudioContext();
+      await ctx.resume();
+      const dest = ctx.createMediaStreamDestination();
+      const osc = ctx.createOscillator();
+      osc.frequency.value = 1000;
+      const gain = ctx.createGain();
+      gain.gain.value = document.body.dataset.requests === '2' ? 0.25 : 0.5;
+      document.addEventListener('test-level-step', () => { gain.gain.value = 0.25; }, {once: true});
+      osc.connect(gain).connect(dest);
+      osc.start();
+      const track = dest.stream.getAudioTracks()[0];
+      // 054: идентификатор входа, как у настоящего микрофона, — для проверки сохранения подтверждения.
+      if (device) { const settings = track.getSettings.bind(track); track.getSettings = () => ({ ...settings(), deviceId: device, groupId: 'test-group' }); }
+      const stop = track.stop.bind(track);
+      track.stop = () => {
+        stop(); osc.stop(); gain.disconnect(); osc.disconnect();
+        document.body.dataset.closed = String(1 + Number(document.body.dataset.closed || 0));
+      };
+      document.addEventListener('test-mute', () => track.dispatchEvent(new Event('mute')), { once: true });
+      return dest.stream;
+    } });
+    return true;
+  }, [scenario, deviceId] as const);
+}

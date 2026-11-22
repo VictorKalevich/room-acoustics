@@ -106,7 +106,9 @@ export interface SweepResult { f: number[]; db: number[]; peak: number; snrDb: n
  * Импульсная характеристика из записи свипа и АЧХ в полосе 15–500 Гц.
  * Отклик нормируется на отклик самого свипа, поэтому неровность обратного фильтра не мешает.
  */
-export function analyzeSweep(rec: Float32Array, sweep: Float32Array, f1: number, f2: number, fs: number): SweepResult {
+export function analyzeSweep(rec: Float32Array, sweep: Float32Array, f1: number, f2: number, fs: number,
+  /** 054: поправка микрофона из каталога — к АЧХ на сетке до сглаживания; без неё результат прежний. */
+  correct?: (f: number[], db: number[]) => number[]): SweepResult {
   const inv = inverseSweep(sweep, f1, f2, fs);
   const ir = convolve(rec, inv);
   const ref = convolve(sweep, inv);
@@ -137,7 +139,8 @@ export function analyzeSweep(rec: Float32Array, sweep: Float32Array, f1: number,
   const snr = nc ? 10 * Math.log10((pk * pk) / (noise / nc + 1e-30)) : 60;
   let recPeak = 0;
   for (let i = 0; i < rec.length; i++) recPeak = Math.max(recPeak, Math.abs(rec[i]));
-  return { f: freqs, db: smoothOct(freqs, a.map((v, i) => v - b[i]), 1 / 24), peak: recPeak, snrDb: snr, irPeakAt: pkAt / fs };
+  const h = a.map((v, i) => v - b[i]);
+  return { f: freqs, db: smoothOct(freqs, correct ? correct(freqs, h) : h, 1 / 24), peak: recPeak, snrDb: snr, irPeakAt: pkAt / fs };
 }
 
 /** Среднее по мощности нескольких АЧХ на одной сетке. */

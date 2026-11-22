@@ -1,10 +1,13 @@
 import { audioContext, micOpened, releaseNoiseContext } from './tone';
 import { loadRecorder } from './recorderWorklet';
 import { noiseDiagnostics, type NoiseDiagnostics } from './noiseDiagnostics';
+import type { MicRoute } from '../../core/micCalibration';
 
 export interface Mic {
   sampleRate: number;
   label: string;
+  /** Фактическая дорожка (054): для проверки, что подтверждённый профиль относится к этому же входу. Только локально. */
+  route: MicRoute;
   start(): void;
   stop(): Float32Array;
   analyser(fftSize?: number): AnalyserNode;
@@ -22,10 +25,12 @@ interface StreamOptions {
 let owner: symbol | null = null;
 const preferred = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
 
-export function openMic(): Promise<Mic>;
 export function openMic(options: StreamOptions): Promise<Mic & { diagnostics: NoiseDiagnostics }>;
-/** Общий контекст запускается внутри жеста. Один владелец, включая ожидание разрешения. */
-export async function openMic(options?: StreamOptions): Promise<Mic & { diagnostics?: NoiseDiagnostics }> {
+export function openMic(input?: { deviceId?: string }): Promise<Mic>;
+/** Общий контекст запускается внутри жеста. Один владелец, включая ожидание разрешения. Без deviceId — прежний запрос. */
+export async function openMic(arg?: { deviceId?: string } | StreamOptions): Promise<Mic & { diagnostics?: NoiseDiagnostics }> {
+  const options = arg && 'onBlock' in arg ? arg : undefined;
+  const deviceId = arg?.deviceId;
   const devices = navigator.mediaDevices;
   if (!devices?.getUserMedia) throw new DOMException('Откройте приложение в Safari по HTTPS.', 'NotSupportedError');
   if (owner) throw new DOMException('Микрофон уже занят другим измерением.', 'InvalidStateError');
@@ -69,11 +74,11 @@ export async function openMic(options?: StreamOptions): Promise<Mic & { diagnost
     let stream: MediaStream;
     let fallback = false;
     try {
-      stream = await devices.getUserMedia({ audio: options?.deviceId ? { ...preferred, deviceId: { exact: options.deviceId } } : preferred });
+      stream = await devices.getUserMedia({ audio: deviceId ? { ...preferred, deviceId: { exact: deviceId } } : preferred });
     } catch (error) {
       if (!options || closed || (error as Error).name !== 'OverconstrainedError') throw error;
       fallback = true;
-      stream = await devices.getUserMedia({ audio: options.deviceId ? { deviceId: { exact: options.deviceId } } : true });
+      stream = await devices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true });
     }
     if (closed) {
       stream.getTracks().forEach(t => t.stop());
@@ -87,7 +92,7 @@ export async function openMic(options?: StreamOptions): Promise<Mic & { diagnost
     }
     const track = stream.getAudioTracks()[0];
     if (!track) throw new DOMException('Нет аудиодорожки', 'NotFoundError');
-    if (options?.deviceId && track.getSettings?.().deviceId !== options.deviceId)
+    if (deviceId && track.getSettings?.().deviceId !== deviceId)
       throw new DOMException('Не удалось подтвердить выбранный вход.', 'OverconstrainedError');
     let received = false;
     function deliver(pcm: Float32Array, sequence: number) {
@@ -179,6 +184,7 @@ export async function openMic(options?: StreamOptions): Promise<Mic & { diagnost
     return {
       sampleRate: ctx.sampleRate,
       label: track.label ?? '',
+      route: { deviceId: track.getSettings?.().deviceId ?? '', groupId: track.getSettings?.().groupId ?? null, label: track.label ?? '', sampleRate: ctx.sampleRate },
       diagnostics: options ? noiseDiagnostics(track, ctx.sampleRate, port ? 'AudioWorklet' : 'ScriptProcessor', fallback) : undefined,
       running: () => ctx.state === 'running',
       start() {

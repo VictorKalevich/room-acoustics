@@ -133,3 +133,24 @@ it('удерживает точный deviceId при повторном зап�
   expect(JSON.stringify(mic.diagnostics)).not.toContain('private');
   mic.close();
 });
+
+describe('054 · вход старых инструментов', () => {
+  const preferred = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+  it('системный вход открывается прежним запросом; выбранный — точным deviceId; маршрут возвращается для подтверждения', async () => {
+    const { devices, track } = setup();
+    const legacy = await openMic();
+    expect(devices.getUserMedia).toHaveBeenLastCalledWith({ audio: preferred });
+    expect(legacy.route).toEqual({ deviceId: 'private', groupId: null, label: 'private', sampleRate: 44100 });
+    expect('diagnostics' in legacy && legacy.diagnostics).toBeFalsy();
+    await expect(openMic()).rejects.toMatchObject({ name: 'InvalidStateError' });
+    legacy.close();
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    const chosen = await openMic({ deviceId: 'private' });
+    expect(devices.getUserMedia).toHaveBeenLastCalledWith({ audio: { ...preferred, deviceId: { exact: 'private' } } });
+    chosen.close();
+    // другой вход, чем просили, не принимается и не держит микрофон
+    await expect(openMic({ deviceId: 'usb' })).rejects.toMatchObject({ name: 'OverconstrainedError' });
+    expect(track.stop).toHaveBeenCalledTimes(3);
+    (await openMic()).close();
+  });
+});

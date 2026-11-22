@@ -1,51 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
-import { EMPTY_STATE, fitsWidth, onDevice } from './helpers';
+import { EMPTY_STATE, fitsWidth, installInput, onDevice } from './helpers';
 import { readFile } from 'node:fs/promises';
 
 const start = (page: Page) => page.getByRole('button', { name: 'Начать', exact: true });
 const menu = (page: Page) => page.getByRole('button', { name: 'Открыть меню' }).click();
-
-// Устанавливаем вход в основном JS-мире загруженной страницы. WebKit может заново
-// создать JS-обёртку нативного MediaDevices и потерять переопределённый на ней метод.
-async function installInput(page: Page, scenario: 'deny' | 'pending' | 'tone') {
-  return page.evaluate(mode => {
-    const devices = new EventTarget();
-    Object.defineProperty(navigator, 'mediaDevices', { value: devices, configurable: true });
-    if (mode === 'tone' && !window.AudioContext?.prototype.createMediaStreamDestination) return false;
-    if (!window.AudioContext) Object.defineProperty(window, 'AudioContext', { value: class { state = 'running'; close() { return Promise.resolve(); } } });
-    Object.defineProperty(navigator, 'canShare', { value: () => false });
-    let ctx: AudioContext;
-    Object.assign(devices, { async getUserMedia() {
-      document.body.dataset.requests = String(1 + Number(document.body.dataset.requests || 0));
-      if (mode === 'deny') throw new DOMException('', 'NotAllowedError');
-      if (mode === 'pending') return new Promise(resolve => {
-        document.addEventListener('grant', () => resolve({
-          getTracks: () => [{ stop: () => { document.body.dataset.closed = 'yes'; } }],
-        }), { once: true });
-      });
-      // Синус идёт через настоящий Web Audio только на виртуальную входную дорожку.
-      ctx ??= new AudioContext();
-      await ctx.resume();
-      const dest = ctx.createMediaStreamDestination();
-      const osc = ctx.createOscillator();
-      osc.frequency.value = 1000;
-      const gain = ctx.createGain();
-      gain.gain.value = document.body.dataset.requests === '2' ? 0.25 : 0.5;
-      document.addEventListener('test-level-step', () => { gain.gain.value = 0.25; }, {once: true});
-      osc.connect(gain).connect(dest);
-      osc.start();
-      const track = dest.stream.getAudioTracks()[0];
-      const stop = track.stop.bind(track);
-      track.stop = () => {
-        stop(); osc.stop(); gain.disconnect(); osc.disconnect();
-        document.body.dataset.closed = String(1 + Number(document.body.dataset.closed || 0));
-      };
-      document.addEventListener('test-mute', () => track.dispatchEvent(new Event('mute')), { once: true });
-      return dest.stream;
-    } });
-    return true;
-  }, scenario);
-}
 
 test.describe('первый запуск', () => {
   test.use({ storageState: EMPTY_STATE });
@@ -138,8 +96,8 @@ test('рабочая комната, тестовый PCM, JSON, останов�
   await page.getByLabel('Название измерения').fill('Ступени 1 кГц');
   await page.getByRole('button', {name: 'Сохранить JSON'}).click();
   const saved = await download;
-  // WebKit в Linux заменяет пробелы на подчёркивания в предложенном имени файла.
-  expect(saved.suggestedFilename()).toMatch(/^noise-Ступени[ _]1[ _]кГц\.json$/);
+  // WebKit в Linux заменяет пробелы на подчёркивания в предложенном имени файла. UX-001: без префикса noise-.
+  expect(saved.suggestedFilename()).toMatch(/^Ступени[ _]1[ _]кГц\.json$/);
   const file = await saved.path();
   const json = await readFile(file!, 'utf8');
   const report = JSON.parse(json);
@@ -215,20 +173,22 @@ test('C1 · импорт, фиксация версии сеанса, возвр
   await file.setInputFiles({ name:'bad.csv', mimeType:'text/csv', buffer:Buffer.from('20,1\n10,2') });
   await expect(page.getByText(/строго возрастать/)).toBeVisible();
   await file.setInputFiles({ name:'test.csv', mimeType:'text/csv', buffer:Buffer.from('Hz,dB\n100,6\n10000,6') });
+  // UX-002: название из имени файла без расширения.
+  await expect(page.getByLabel('Название профиля')).toHaveValue('test');
   await page.getByLabel('Содержимое файла').selectOption('correction');
   await expect(page.getByRole('img', {name:'Исходная кривая и применяемая поправка'})).toBeVisible();
   await page.setViewportSize({width:320,height:800});
   expect(await fitsWidth(page)).toBe(true);
   await page.getByLabel(/Это калибровка микрофона/).check();
   await page.getByRole('button',{name:'Сохранить в каталог'}).click();
-  await expect(selector.locator('option', {hasText:'test.csv · v1'})).toHaveCount(1);
+  await expect(selector.locator('option', {hasText:'test · v1'})).toHaveCount(1);
   await expect(selector).toHaveValue('none');
-  await selector.selectOption({label:'test.csv · v1'});
+  await selector.selectOption({label:'test · v1'});
   await expect(start(page)).toBeDisabled();
   await confirm.check();
   await expect(start(page)).toBeEnabled();
   await page.reload(); await settings(); await manager();
-  await expect(selector.locator('option:checked')).toHaveText('test.csv · v1');
+  await expect(selector.locator('option:checked')).toHaveText('test · v1');
   await expect(start(page)).toBeDisabled();
   await confirm.check();
   const usable = await installInput(page, 'tone');
@@ -249,9 +209,13 @@ test('C1 · импорт, фиксация версии сеанса, возвр
   }
   expect(await page.evaluate(() => localStorage.getItem('ra-mic-cal'))).toBe(legacy);
   expect(await onDevice(page)).toEqual(original);
+  // C2: в «Анализаторе» каталог доступен, но по умолчанию — прежняя калибровка; выбор шумомера сюда не переходит.
   await page.goto('/#measure/rta');
   await expect(page.getByText(/Калибровка: legacy-A/)).toBeVisible();
-  await expect(selector).toHaveCount(0);
+  await expect(page.getByText(/Действует прежняя калибровка «legacy-A»/)).toBeVisible();
+  await settings();
+  await expect(selector).toHaveValue('legacy');
+  await expect(selector.locator('option', {hasText:'test · v1'})).toHaveCount(1);
 });
 
 test('C1 · повреждение каталога требует явного выбора временного raw', async ({ page }) => {
@@ -293,8 +257,9 @@ test('C1 · копирование legacy, новая версия и архив
   const sheet=page.getByRole('alertdialog');
   await expect(sheet).toContainText('Шумомер');
   await sheet.getByRole('button',{name:'Архивировать'}).click();
-  await expect(selector.locator('option:checked')).toHaveText('Выбранная версия недоступна');
+  await expect(selector.locator('option:checked')).toHaveText('Выбранная версия архивирована');
   await expect(start(page)).toBeDisabled();
+  await expect(page.getByText(/Запуск недоступен: выбранная версия профиля архивирована/)).toBeVisible();
   await selector.selectOption({label:'Персональная · v2'});
   await page.getByLabel(/Подтверждаю применимость/).check();
   await expect(start(page)).toBeEnabled();
