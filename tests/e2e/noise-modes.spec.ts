@@ -3,6 +3,7 @@ import { computeModes } from '../../src/core/modes';
 import { exportRecord } from '../../src/core/noiseFile';
 import { roomSnapshot } from '../../src/core/noiseModes';
 import { defaultRoom } from '../../src/state/project';
+import { fmt } from '../../src/ui/format';
 import { BUILD, sessionRecord, toneMeter } from '../fixtures/noise';
 import { fitsWidth, installInput, onDevice, openDetail } from './helpers';
 
@@ -57,10 +58,14 @@ test('057 · моды на живом спектре: выкл. по умолч�
   await expect(page.getByText(/^Расчётная частота [\d,]+ Гц · осевая мода \(1, 0, 0\) · по глубине/)).toBeVisible();
   await expect(marks(page).and(page.locator('.is-selected'))).toHaveCount(1);
 
+  // Частота живого входа зависит от звукового устройства машины (в CI на Linux — не 48 кГц): числа — от неё.
+  const fs = Number((await page.getByText(/^Обработка PCM · /).first().textContent())?.match(/(\d+) Гц/)?.[1]);
+  expect(fs).toBeGreaterThan(0);
   await peaks(page).click();
-  await expect(page.getByText('Для поиска пиков нужен средний спектр не короче 8,2 с', { exact: false })).toBeVisible();
+  // не меньше 24 кадров с шагом 16384 отсчёта: 8,2 с при 48 кГц
+  await expect(page.getByText(`Для поиска пиков нужен средний спектр не короче ${fmt(24 * 16384 / fs, 1)} с`, { exact: false })).toBeVisible();
   await page.getByLabel('Спектр и полосы').selectOption('session');
-  await expect(page.getByText(/^Поиск от 2\d,\d до [\d,]+ Гц по показанному спектру без сглаживания: шаг 1,465 Гц/)).toBeVisible();
+  await expect(page.getByText(new RegExp(`^Поиск от 2\\d,\\d до [\\d,]+ Гц по показанному спектру без сглаживания: шаг ${fmt(fs / 32768, 3)} Гц`))).toBeVisible();
   await expect(page.getByText(/Совпадение частот не доказывает, что пик вызван модой/)).toBeVisible();
   await expect(page.getByText(/Пассивный шум — не АЧХ комнаты, не передаточная функция, не SBIR и не RT60/)).toBeVisible();
   await page.setViewportSize({ width: 320, height: 640 });
