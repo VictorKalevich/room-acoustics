@@ -1,3 +1,4 @@
+import type { MicProfile } from './micCalibration';
 import { NoiseSpectrum, emptyPowerRange, recordPower } from './noiseSpectrum';
 import { fft } from './dsp';
 
@@ -34,8 +35,8 @@ export class NoiseMeter {
   private readonly re = new Float64Array(FFT_SIZE);
   private readonly im = new Float64Array(FFT_SIZE);
 
-  constructor(readonly sampleRate: number) {
-    this.spectral = new NoiseSpectrum(sampleRate);
+  constructor(readonly sampleRate: number, readonly profile: MicProfile | null = null) {
+    this.spectral = new NoiseSpectrum(sampleRate, profile);
     this.firstBin = Math.ceil(20 * FFT_SIZE / sampleRate);
     const lastBin = Math.floor(Math.min(20000 / sampleRate, 0.5) * FFT_SIZE);
     this.f = Array.from({ length: lastBin - this.firstBin + 1 }, (_, i) => (i + this.firstBin) * sampleRate / FFT_SIZE);

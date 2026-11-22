@@ -13,6 +13,7 @@ export interface Mic {
 }
 
 interface StreamOptions {
+  deviceId?: string;
   signal: AbortSignal;
   onBlock(pcm: Float32Array, sequence: number): void;
   onInterrupt(reason: 'track' | 'context' | 'device' | 'noData'): void;
@@ -68,11 +69,11 @@ export async function openMic(options?: StreamOptions): Promise<Mic & { diagnost
     let stream: MediaStream;
     let fallback = false;
     try {
-      stream = await devices.getUserMedia({ audio: preferred });
+      stream = await devices.getUserMedia({ audio: options?.deviceId ? { ...preferred, deviceId: { exact: options.deviceId } } : preferred });
     } catch (error) {
       if (!options || closed || (error as Error).name !== 'OverconstrainedError') throw error;
       fallback = true;
-      stream = await devices.getUserMedia({ audio: true });
+      stream = await devices.getUserMedia({ audio: options.deviceId ? { deviceId: { exact: options.deviceId } } : true });
     }
     if (closed) {
       stream.getTracks().forEach(t => t.stop());
@@ -86,6 +87,8 @@ export async function openMic(options?: StreamOptions): Promise<Mic & { diagnost
     }
     const track = stream.getAudioTracks()[0];
     if (!track) throw new DOMException('Нет аудиодорожки', 'NotFoundError');
+    if (options?.deviceId && track.getSettings?.().deviceId !== options.deviceId)
+      throw new DOMException('Не удалось подтвердить выбранный вход.', 'OverconstrainedError');
     let received = false;
     function deliver(pcm: Float32Array, sequence: number) {
       if (!options || closed || track.muted || ctx.state !== 'running') return;

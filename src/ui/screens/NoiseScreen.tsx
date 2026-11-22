@@ -1,4 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { micCatalog } from '../../state/micCatalog';
+import { maxBoostDb } from '../../core/micCurve';
 import { FFT_SIZE, NoiseMeter, type NoisePoint } from '../../core/noise';
 import { openMic, shareFile } from '../audio/mic';
 import type { NoiseDiagnostics } from '../audio/noiseDiagnostics';
@@ -8,6 +10,11 @@ import { Details, Note, Panel, SelectField, RmsHistoryChart } from '../design-sy
 import { S } from '../strings';
 import { BUILD } from '../updates';
 
+import { MicCalibrationPanel, type MicSetup } from '../components/MicCalibrationPanel';
+import { AbsoluteReference } from '../components/AbsoluteReference';
+import type { MicScope } from '../../core/micCalibration';
+
+const noiseScope: MicScope = { tool: 'noise' };
 const t = S.noise;
 interface Report {
   date: string;
@@ -26,6 +33,7 @@ const fresh = (): Report => ({
 });
 // Один последний отчёт в памяти вкладки, независимо от проекта. PCM здесь нет.
 let last = fresh();
+let capturedSetup: MicSetup | null = null;
 let lastMeter: NoiseMeter | null = null;
 const describe = (v: unknown): string => {
   if (v == null) return t.unknown;
@@ -40,6 +48,8 @@ export function NoiseScreen() {
   const [weight, setWeight] = useState<Weight>('Z');
   const [period, setPeriod] = useState<SpectrumPeriod>('now');
   const [exportError, setExportError] = useState(false);
+  const [setup, setSetup] = useState<MicSetup | null>(null);
+  const [routeEpoch, setRouteEpoch] = useState(0);
   const session = useRef<{ controller: AbortController; meter: NoiseMeter | null } | null>(null);
   const update = (changes: Partial<Report>) => { last = { ...last, ...changes }; render(last); };
 
@@ -66,7 +76,8 @@ export function NoiseScreen() {
   }, []);
 
   async function start() {
-    if (session.current) return;
+    if (session.current || !setup) return;
+    capturedSetup = setup;
     const active = { controller: new AbortController(), meter: null as NoiseMeter | null };
     session.current = active;
     lastMeter = null;
@@ -74,15 +85,17 @@ export function NoiseScreen() {
     setExportError(false);
     setLabel('');
     let nextRefresh = 0;
+    let verified = false;
     try {
       if (!window.isSecureContext) throw new DOMException('', 'NotSupportedError');
-      const mic = await openMic({
+      const opening = openMic({
         signal: active.controller.signal,
-        onInterrupt: reason => { if (session.current === active) stop(t[reason]); },
+        deviceId: setup.input.source === 'system' ? undefined : setup.input.source.localDeviceId,
+        onInterrupt: reason => { if (session.current === active) { stop(t[reason]); setRouteEpoch(n => n + 1); } },
         onBackendChange: path => { if (session.current === active) update({ path }); },
         onBlock(pcm, sequence) {
-          if (session.current !== active || !last.path) return;
-          active.meter ??= new NoiseMeter(last.path.sampleRate);
+          if (session.current !== active || !verified || !last.path) return;
+          active.meter ??= new NoiseMeter(last.path.sampleRate, setup.profile);
           active.meter.push(pcm, sequence);
           const now = performance.now();
           if (now < nextRefresh) return;
@@ -91,8 +104,18 @@ export function NoiseScreen() {
             audioStartMs: active.meter.audioStartMs });
         },
       });
+      // Open inside the user gesture. Before accepting any blocks, verify the
+      // pinned selection against edits/archives made concurrently in another tab.
+      const verify = setup.profile ? micCatalog.read(noiseScope).then(row => {
+        const pinned = setup.profile!;
+        if (row.selection.mode !== 'catalog' || row.selection.profileId !== pinned.id || row.selection.version !== pinned.version ||
+            !row.profiles.some(p => p.id === pinned.id && p.version === pinned.version) ||
+            JSON.stringify(row.input) !== JSON.stringify(setup.input)) throw new Error('Выбор микрофона изменился. Проверьте настройки.');
+      }) : Promise.resolve();
+      const [mic] = await Promise.all([opening, verify]);
       if (session.current !== active) { mic.close(); return; }
-      active.meter ??= new NoiseMeter(mic.sampleRate);
+      verified = true;
+      active.meter ??= new NoiseMeter(mic.sampleRate, setup.profile);
       setLabel(mic.label);
       update({ status: t.waitingForAudio, path: mic.diagnostics });
     } catch (error) {
@@ -101,18 +124,27 @@ export function NoiseScreen() {
       session.current = null;
       active.controller.abort();
       const key = Object.hasOwn(t.errors, name) ? name as keyof typeof t.errors : 'unknown';
-      update({ error: key, status: t.errors[key] });
+      if (setup.profile) setRouteEpoch(n => n + 1);
+      update({ error: key, status: error instanceof Error && error.message.startsWith('Выбор микрофона') ? error.message : t.errors[key] });
     }
   }
 
   async function save() {
     const meter = session.current?.meter ?? lastMeter;
     const spectrum = meter?.spectral.average(period, weight);
+    const corrected = meter?.profile ? meter.spectral.average(period, weight, true) : null;
     const measurement = meter?.snapshot() ?? last.measurement;
     const origin = meter?.audioStartMs ?? last.audioStartMs;
     const name = last.name.trim();
     const data = {
-      schema: 2, build: BUILD, mode: 'raw', units: 'dBFS', fftSize: FFT_SIZE,
+      ...(meter?.profile && corrected ? { calibration: {
+        profile: meter.profile, model: capturedSetup?.input.confirmedModel, maxBoostDb: meter.profile.maxBoostDb ?? maxBoostDb, outsideRange: 'uncorrected',
+        correctedSpectrum: { period, weight, seconds: corrected.seconds, units: 'FS²/Hz',
+          psd: corrected.seconds ? Array.from(corrected.density) : null,
+          meanSquare: corrected.seconds ? corrected.density.reduce((sum, v) => sum + v, 0) * meter.spectral.binHz : null,
+          bands: corrected.seconds ? bandPowers(corrected.density, meter.spectral.binHz) : [] },
+      } } : {}),
+      schema: meter?.profile ? 3 : 2, build: BUILD, mode: 'raw', units: 'dBFS', fftSize: FFT_SIZE,
       window: 'periodic Hann', spectrum: 'one-sided peak amplitude per bin', rmsWindowSamples: FFT_SIZE,
       secureContext: window.isSecureContext, microphoneApi: !!navigator.mediaDevices?.getUserMedia,
       ...last, name, measurement, rmsAverageSeconds: 1, audioStartMs: origin,
@@ -143,7 +175,7 @@ export function NoiseScreen() {
     <Panel title={t.subtitle}>
       <p class="small">{t.raw}</p>
       <div class="btn-row">
-        <button type="button" class="btn btn--primary" disabled={busy} onClick={start}>{t.start}</button>
+        <button type="button" class="btn btn--primary" disabled={busy || !setup} onClick={start}>{t.start}</button>
         <button type="button" class="btn" disabled={!busy} onClick={() => stop(t.stopped)}>{t.stop}</button>
         <button type="button" class="btn btn--ghost" disabled={busy || report.status === t.idle}
           onClick={() => { lastMeter = null; update(fresh()); setLabel(''); setExportError(false); }}>{t.reset}</button>
@@ -158,6 +190,9 @@ export function NoiseScreen() {
       <p class="small">{t.time} · {m?.activeSeconds.toFixed(1) ?? '0'} с</p>
       {!!m?.clipped && <Note tone="warn">{t.clipping}</Note>}
     </Panel>
+    <MicCalibrationPanel scope={noiseScope} busy={busy} changed={setSetup} routeEpoch={routeEpoch} />
+    <AbsoluteReference meter={meter} path={path} setup={capturedSetup} next={setup} busy={busy}
+      refresh={() => setRouteEpoch(v => v + 1)} />
     <NoiseAnalysis meter={meter} blocks={m?.blocks ?? 0} weight={weight} period={period} onPeriod={setPeriod} />
     <Panel title={t.history}>
       {report.history.length ? <>

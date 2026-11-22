@@ -15,6 +15,7 @@ export interface MicProfile {
     { kind: 'response'; responseDb: readonly number[] } | { kind: 'correction'; correctionDb: readonly number[] }
   );
   referenceHz: number;
+  maxBoostDb?: number;
   validRangeHz: readonly [number, number];
   digitizationUncertaintyDb: number | null;
   validationStatus: 'experimental' | 'validated' | 'unverified';
@@ -29,7 +30,8 @@ export function defaultMicSelection(scope: MicScope): MicSelection {
 export interface MicInputPreference {
   source: 'system' | { localDeviceId: string };
   confirmedModel: string | null;
-  absoluteCalibration: { offsetDb: number; physicalInput: string; captureMode: string; verifiedAt: string } | null;
+  absoluteCalibration: { offsetDb: number; physicalInput: string; captureMode: string; verifiedAt: string;
+    references?: readonly { referenceSpl: number; measuredDbfs: number }[] } | null;
 }
 /** Отдельное от Project хранилище. Импорт добавляет версию, выбор — отдельная операция. */
 export interface MicCatalog {

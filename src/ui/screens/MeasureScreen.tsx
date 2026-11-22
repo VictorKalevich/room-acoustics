@@ -1,3 +1,4 @@
+import { CAL_KEY, loadCal } from '../../state/legacyMicCalibration';
 // «Замер»: свип (АЧХ в нескольких точках → замер проекта), хлопок (RT60 по октавам), живой анализатор баса.
 import { evalPpo } from '../../core/precision';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -33,12 +34,6 @@ interface Props {
 }
 
 const F1 = 10, F2 = 1000, T = 6;
-const CAL_KEY = 'ra-mic-cal';
-
-function loadCal(): { name: string; f: number[]; db: number[] } | null {
-  try { return JSON.parse(localStorage.getItem(CAL_KEY) ?? 'null'); } catch { return null; }
-}
-
 export function MeasureScreen({ project, onSetup, onRoom, onGo, view, active, onPlacement }: Props) {
   const placed = !!project.current.placed;
   const gated = !placed && (view === 'sweep' || view === 'compare');

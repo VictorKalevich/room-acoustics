@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'preact/hooks';
+import { maxBoostDb } from '../../core/micCurve';
 import { FFT_SIZE, type NoiseMeter } from '../../core/noise';
 import { bandPowers, SPECTRUM_HOP, SPECTRUM_SIZE, type SpectrumPeriod, type Weight } from '../../core/noiseSpectrum';
 import { ResponseChart } from '../components/Charts';
@@ -35,8 +36,10 @@ export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod }: {
   const [upper, setUpper] = useState('20000');
   const [floor, setFloor] = useState('-120');
   const [smoothing, setSmoothing] = useState('0');
+  const [view, setView] = useState('corrected');
+  const corrected = !!meter?.profile && view === 'corrected';
   const spectrum = meter?.spectral;
-  const average = useMemo(() => blocks ? spectrum?.average(period, weight) : undefined, [spectrum, blocks, period, weight]);
+  const average = useMemo(() => blocks ? spectrum?.average(period, weight, corrected) : undefined, [spectrum, blocks, period, weight, corrected]);
   const highHz = Math.min(Number(upper), (meter?.sampleRate ?? 48000) / 2);
   const plot = useMemo(() => average?.seconds && spectrum
     ? noisePlot(average.density, spectrum.binHz, highHz, Number(smoothing)) : null, [average, spectrum, highHz, smoothing]);
@@ -44,6 +47,13 @@ export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod }: {
   const empty = blocks ? 'Прогрев спектра · ожидаем полное непрерывное окно' : S.noise.empty;
   return <>
     <Panel title={S.noise.spectrum}>
+      {meter?.profile && <>
+        <SelectField label="Представление спектра" value={view} onChange={setView} options={[
+          { value: 'corrected', label: 'С поправкой · ' + meter.profile.name + ' · v' + meter.profile.version },
+          { value: 'raw', label: 'Исходный спектр' },
+        ]} />
+        <p class="small">Поправка в диапазоне {meter.profile.validRangeHz.join('–')} Гц, усиление до +{meter.profile.maxBoostDb ?? maxBoostDb} дБ. За границами сохранена исходная энергия.</p>
+      </>}
       <div class="grid-2">
         <SelectField label="Спектр и полосы" value={period} options={periods} onChange={v => onPeriod(v as SpectrumPeriod)} />
         <SelectField label="Диапазон частот" value={upper} onChange={setUpper} options={[
@@ -59,6 +69,7 @@ export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod }: {
           yRange={[Number(floor), 0]} yTicks={Array.from({ length: 1 - Number(floor) / 20 }, (_, i) => -20 * i)} />
         <p class="small">PSD ({weight}), dBFS/Гц · пик {plot.peakHz.toFixed(2)} Гц</p>
       </> : <p class="small">{average?.seconds ? 'Нет энергии в выбранном диапазоне' : empty}</p>}
+      {corrected && average && average.seconds > 0 && <p>Уровень по PSD с поправкой ({weight}) за выбранный интервал · {levelText(average.density.reduce((sum, v) => sum + v, 0) * spectrum!.binHz)} dBFS</p>}
       {meter && <p class="small">FFT {SPECTRUM_SIZE} · шаг {spectrum!.binHz.toFixed(3)} Гц · окно {(SPECTRUM_SIZE / meter.sampleRate).toFixed(3)} с
         {' · интервал '}{(SPECTRUM_HOP / meter.sampleRate).toFixed(3)} с · учтено {(average?.seconds ?? 0).toFixed(2)} с</p>}
     </Panel>

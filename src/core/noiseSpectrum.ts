@@ -1,3 +1,5 @@
+import type { MicProfile } from './micCalibration';
+import { powerGains } from './micCurve';
 import { fft } from './dsp';
 
 export const SPECTRUM_SIZE = 32768;
@@ -58,8 +60,11 @@ export class NoiseSpectrum {
   private end = 0;
   private frames = 0;
 
-  constructor(readonly sampleRate: number) {
+  private readonly calibration: Float64Array | null;
+
+  constructor(readonly sampleRate: number, profile: MicProfile | null = null) {
     this.binHz = sampleRate / SPECTRUM_SIZE;
+    this.calibration = profile ? powerGains(profile, this.binHz, bins) : null;
     const gains = (w: Weight) => Float64Array.from({ length: bins }, (_, k) => weightPower(k * this.binHz, w));
     this.gain = { A: gains('A'), C: gains('C') };
   }
@@ -127,7 +132,7 @@ export class NoiseSpectrum {
     return this.frames ? this.weightedSums[weight] / this.frames : null;
   }
 
-  average(period: SpectrumPeriod, weight: Weight) {
+  average(period: SpectrumPeriod, weight: Weight, corrected = false) {
     const density = new Float64Array(bins);
     let samples = 0;
     if (period === 'now') {
@@ -155,6 +160,7 @@ export class NoiseSpectrum {
       if (samples) for (let k = 0; k < bins; k++) density[k] /= samples;
     }
     if (weight !== 'Z') for (let k = 0; k < bins; k++) density[k] *= this.gain[weight][k];
+    if (corrected && this.calibration) for (let k = 0; k < bins; k++) density[k] *= this.calibration[k];
     return { density, seconds: samples / this.sampleRate };
   }
 }

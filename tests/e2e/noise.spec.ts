@@ -200,3 +200,103 @@ test('позднее разрешение после ухода освобожд
   await page.evaluate(() => document.dispatchEvent(new Event('grant')));
   await expect(page.locator('body')).toHaveAttribute('data-closed', 'yes');
 });
+
+test('C1 · импорт, фиксация версии сеанса, возврат без коррекции и сохранность legacy', async ({ page }) => {
+  await page.goto('/#noise');
+  const legacy = '{"name":"legacy-A","f":[30,60,120],"db":[1,2,3]}';
+  await page.evaluate(v => localStorage.setItem('ra-mic-cal',v), legacy);
+  const original = await onDevice(page);
+  const settings = () => page.getByText('Настройки следующего измерения', {exact:true}).click();
+  const manager = () => page.getByText('Управление профилями и импорт', {exact:true}).click();
+  const selector = page.getByLabel('Профиль инструмента');
+  const confirm = page.getByLabel(/Подтверждаю применимость/);
+  await settings(); await manager();
+  const file = page.getByLabel('Файл микрофонной калибровки');
+  await file.setInputFiles({ name:'bad.csv', mimeType:'text/csv', buffer:Buffer.from('20,1\n10,2') });
+  await expect(page.getByText(/строго возрастать/)).toBeVisible();
+  await file.setInputFiles({ name:'test.csv', mimeType:'text/csv', buffer:Buffer.from('Hz,dB\n100,6\n10000,6') });
+  await page.getByLabel('Содержимое файла').selectOption('correction');
+  await expect(page.getByRole('img', {name:'Исходная кривая и применяемая поправка'})).toBeVisible();
+  await page.setViewportSize({width:320,height:800});
+  expect(await fitsWidth(page)).toBe(true);
+  await page.getByLabel(/Это калибровка микрофона/).check();
+  await page.getByRole('button',{name:'Сохранить в каталог'}).click();
+  await expect(selector.locator('option', {hasText:'test.csv · v1'})).toHaveCount(1);
+  await expect(selector).toHaveValue('none');
+  await selector.selectOption({label:'test.csv · v1'});
+  await expect(start(page)).toBeDisabled();
+  await confirm.check();
+  await expect(start(page)).toBeEnabled();
+  await page.reload(); await settings(); await manager();
+  await expect(selector.locator('option:checked')).toHaveText('test.csv · v1');
+  await expect(start(page)).toBeDisabled();
+  await confirm.check();
+  const usable = await installInput(page, 'tone');
+  if (usable) {
+    await start(page).click();
+    await expect(page.getByText(/Уровень по PSD с поправкой/)).toBeVisible();
+    await page.getByRole('button',{name:'Остановить'}).click();
+    // Settings collapse on stop. Freeze this run even after explicitly selecting none.
+    await settings(); await selector.selectOption('none');
+    const download = page.waitForEvent('download');
+    await page.getByRole('button',{name:'Сохранить JSON'}).click();
+    const report = JSON.parse(await readFile((await (await download).path())!, 'utf8'));
+    expect(report.calibration.profile.version).toBe(1);
+    const raw = report.spectralAnalysis.psd[683], corrected = report.calibration.correctedSpectrum.psd[683];
+    expect(10*Math.log10(corrected/raw)).toBeCloseTo(6,7);
+    expect(report.measurement.rmsDbfs).toBeCloseTo(-9.03,0);
+    await expect(page.getByLabel('Представление спектра')).toBeVisible();
+  }
+  expect(await page.evaluate(() => localStorage.getItem('ra-mic-cal'))).toBe(legacy);
+  expect(await onDevice(page)).toEqual(original);
+  await page.goto('/#measure/rta');
+  await expect(page.getByText(/Калибровка: legacy-A/)).toBeVisible();
+  await expect(selector).toHaveCount(0);
+});
+
+test('C1 · повреждение каталога требует явного выбора временного raw', async ({ page }) => {
+  await page.goto('/#noise');
+  await expect(start(page)).toBeEnabled();
+  await page.evaluate(() => new Promise<void>((resolve,reject) => {
+    const req = indexedDB.open('ra.micCalibration',1);
+    req.onsuccess = () => {
+      const db=req.result, tx=db.transaction('catalog','readwrite');
+      tx.objectStore('catalog').put({schema:999},'v1');
+      tx.oncomplete=()=>{db.close();resolve();}; tx.onabort=()=>reject(tx.error);
+    };
+  }));
+  await page.reload();
+  await expect(start(page)).toBeDisabled();
+  await page.getByRole('button',{name:'Без коррекции на этот раз'}).click();
+  await expect(start(page)).toBeEnabled();
+});
+
+test('C1 · копирование legacy, новая версия и архив с явным выбором замены', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('ra-mic-cal', JSON.stringify({name:'Исходная',f:[100,1000,8000],db:[-3,0,2]})));
+  await page.goto('/#noise');
+  await page.getByText('Настройки следующего измерения',{exact:true}).click();
+  await page.getByText('Управление профилями и импорт',{exact:true}).click();
+  await page.getByRole('button',{name:'Подготовить копию прежней калибровки'}).click();
+  const save = page.getByRole('button',{name:'Сохранить в каталог'});
+  await expect(save).toBeDisabled();
+  await page.getByLabel(/Это калибровка микрофона/).check();
+  await save.click();
+  const selector=page.getByLabel('Профиль инструмента');
+  await selector.selectOption({label:'Исходная · v1'});
+  await page.getByRole('button',{name:'Изменить в новой версии'}).click();
+  await page.getByLabel('Название профиля').fill('Персональная');
+  await page.getByLabel('Предел усиления').selectOption('3');
+  await page.getByLabel(/Это калибровка микрофона/).check(); await save.click();
+  await expect(selector.locator('option:checked')).toHaveText('Исходная · v1');
+  await page.getByLabel('Запись каталога').selectOption({label:'Исходная · v1'});
+  await page.getByRole('button',{name:'Архивировать',exact:true}).click();
+  const sheet=page.getByRole('alertdialog');
+  await expect(sheet).toContainText('Шумомер');
+  await sheet.getByRole('button',{name:'Архивировать'}).click();
+  await expect(selector.locator('option:checked')).toHaveText('Выбранная версия недоступна');
+  await expect(start(page)).toBeDisabled();
+  await selector.selectOption({label:'Персональная · v2'});
+  await page.getByLabel(/Подтверждаю применимость/).check();
+  await expect(start(page)).toBeEnabled();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('ra-mic-cal')!))).toEqual({name:'Исходная',f:[100,1000,8000],db:[-3,0,2]});
+});

@@ -122,3 +122,14 @@ describe('общий захват', () => {
     expect(post.mock.calls[0][0].pcm.length).toBe(4096);
   });
 });
+
+it('удерживает точный deviceId при повторном запросе и освобождает неподтверждённую дорожку', async () => {
+  const { devices, options, track } = setup();
+  devices.getUserMedia.mockRejectedValueOnce(new DOMException('', 'OverconstrainedError'));
+  await expect(openMic({ ...options, deviceId:'different' })).rejects.toMatchObject({name:'OverconstrainedError'});
+  expect(devices.getUserMedia).toHaveBeenLastCalledWith({audio:{deviceId:{exact:'different'}}});
+  expect(track.stop).toHaveBeenCalledTimes(1);
+  const mic = await openMic({...options, deviceId:'private'});
+  expect(JSON.stringify(mic.diagnostics)).not.toContain('private');
+  mic.close();
+});

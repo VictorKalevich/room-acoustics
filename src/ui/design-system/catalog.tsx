@@ -99,6 +99,7 @@ function Catalog() {
         <NumberField label="Расстояние" value={distance} min={5} max={100} unit="см" onChange={setDistance} />
       </div>
       <SelectField label="Выбор" value={mode} options={options} onChange={setMode} />
+      <SelectField disabled label="Выбор во время сохранения" value={mode} options={options} onChange={setMode} />
       <SelectField label="Выбор с подсказкой" value={mode} options={options} onChange={setMode} hint="Значение по умолчанию — если у вас другое, выберите." />
       <NumberField label="Пустое поле (ещё не введено)" value={NaN} min={1} max={50} unit="м" onChange={() => undefined} />
       <NumberField optional label="Необязательное: очистите — «не указано»" value={optional} min={10} max={200} unit="Гц" digits={0} onChange={setOptional} hint={Number.isNaN(optional) ? 'Не указано' : undefined} />
