@@ -2,7 +2,8 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { FFT_SIZE, NoiseMeter, type NoisePoint } from '../../core/noise';
 import { openMic, shareFile } from '../audio/mic';
 import type { NoiseDiagnostics } from '../audio/noiseDiagnostics';
-import { ResponseChart } from '../components/Charts';
+import { SPECTRUM_SIZE, SPECTRUM_HOP, bandPowers, type SpectrumPeriod, type Weight } from '../../core/noiseSpectrum';
+import { NoiseAnalysis, NoiseLevels, levelText } from './NoiseAnalysis';
 import { Details, Note, Panel, SelectField, RmsHistoryChart } from '../design-system';
 import { S } from '../strings';
 import { BUILD } from '../updates';
@@ -25,6 +26,7 @@ const fresh = (): Report => ({
 });
 // Один последний отчёт в памяти вкладки, независимо от проекта. PCM здесь нет.
 let last = fresh();
+let lastMeter: NoiseMeter | null = null;
 const describe = (v: unknown): string => {
   if (v == null) return t.unknown;
   if (typeof v === 'boolean') return v ? t.yes : t.no;
@@ -35,6 +37,8 @@ const percent = (v?: number | null) => v == null ? '—' : (100 * v).toFixed(1) 
 export function NoiseScreen() {
   const [report, render] = useState(last);
   const [label, setLabel] = useState('');
+  const [weight, setWeight] = useState<Weight>('Z');
+  const [period, setPeriod] = useState<SpectrumPeriod>('now');
   const [exportError, setExportError] = useState(false);
   const session = useRef<{ controller: AbortController; meter: NoiseMeter | null } | null>(null);
   const update = (changes: Partial<Report>) => { last = { ...last, ...changes }; render(last); };
@@ -44,6 +48,8 @@ export function NoiseScreen() {
     if (!active) return;
     session.current = null;
     active.controller.abort();
+    lastMeter = active.meter;
+    lastMeter?.spectral.releasePcm();
     update({ status, measurement: active.meter?.snapshot() ?? null, history: active.meter?.history ?? [],
       audioStartMs: active.meter?.audioStartMs ?? null, error: status === t.noData ? 'NoAudioData' : last.error });
   }
@@ -63,6 +69,7 @@ export function NoiseScreen() {
     if (session.current) return;
     const active = { controller: new AbortController(), meter: null as NoiseMeter | null };
     session.current = active;
+    lastMeter = null;
     update({ ...fresh(), name: last.status === t.idle ? last.name : '', status: t.pending });
     setExportError(false);
     setLabel('');
@@ -99,7 +106,8 @@ export function NoiseScreen() {
   }
 
   async function save() {
-    const meter = session.current?.meter;
+    const meter = session.current?.meter ?? lastMeter;
+    const spectrum = meter?.spectral.average(period, weight);
     const measurement = meter?.snapshot() ?? last.measurement;
     const origin = meter?.audioStartMs ?? last.audioStartMs;
     const name = last.name.trim();
@@ -108,6 +116,17 @@ export function NoiseScreen() {
       window: 'periodic Hann', spectrum: 'one-sided peak amplitude per bin', rmsWindowSamples: FFT_SIZE,
       secureContext: window.isSecureContext, microphoneApi: !!navigator.mediaDevices?.getUserMedia,
       ...last, name, measurement, rmsAverageSeconds: 1, audioStartMs: origin,
+      spectralAnalysis: meter && spectrum && {
+        fftSize: SPECTRUM_SIZE, hopSamples: SPECTRUM_HOP, binHz: meter.spectral.binHz, weight, period,
+        validSpectralSeconds: spectrum.seconds, psdUnits: 'FS²/Hz',
+        psd: spectrum.seconds ? Array.from(spectrum.density) : null,
+        bands: spectrum.seconds ? bandPowers(spectrum.density, meter.spectral.binHz) : [],
+        bandPowerUnits: 'FS²', leqPower: weight === 'Z' ? meter.sessionPower : meter.spectral.leqPower(weight),
+        leqSeconds: weight === 'Z' ? meter.history.length * FFT_SIZE / meter.sampleRate : meter.spectral.weightedSeconds,
+        rmsWindowSamples: weight === 'Z' ? FFT_SIZE : SPECTRUM_SIZE,
+        rmsPower: weight === 'Z' ? meter.blockPower : meter.spectral.range[weight],
+        sessionPeakAmplitude: meter.peakAmplitude,
+      },
       history: (meter?.history ?? last.history).map(point => ({
         ...point, timestamp: new Date(origin! + point.endSeconds * 1000).toISOString(),
       })),
@@ -118,6 +137,8 @@ export function NoiseScreen() {
   }
   const { measurement: m, path } = report;
   const busy = !!session.current;
+  const meter = session.current?.meter ?? lastMeter;
+  const current = weight === 'Z' ? meter?.blockPower.current : meter?.spectral.range[weight].current;
   return <div class="screen">
     <Panel title={t.subtitle}>
       <p class="small">{t.raw}</p>
@@ -125,22 +146,19 @@ export function NoiseScreen() {
         <button type="button" class="btn btn--primary" disabled={busy} onClick={start}>{t.start}</button>
         <button type="button" class="btn" disabled={!busy} onClick={() => stop(t.stopped)}>{t.stop}</button>
         <button type="button" class="btn btn--ghost" disabled={busy || report.status === t.idle}
-          onClick={() => { update(fresh()); setLabel(''); setExportError(false); }}>{t.reset}</button>
+          onClick={() => { lastMeter = null; update(fresh()); setLabel(''); setExportError(false); }}>{t.reset}</button>
       </div>
       <p role="status">{report.status}</p>
-      <p class="small">{t.rms}</p>
-      <p class="rta-big"><strong>{m?.rmsDbfs == null ? (m?.blocks ? '−∞' : '—') : m.rmsDbfs.toFixed(1)}</strong> {t.unit}</p>
-      <p>{t.secondRms} · {m?.windowComplete ? (m.rms1sDbfs?.toFixed(1) ?? '−∞') + ' dBFS' : '—'}</p>
+      <SelectField label="Частотное взвешивание" value={weight} options={['Z', 'A', 'C'].map(value => ({ value, label: value }))}
+        onChange={v => setWeight(v as Weight)} />
+      <p class="small">{t.rms} ({weight})</p>
+      <p class="rta-big"><strong>{levelText(current)}</strong> {t.unit}</p>
+      <p>{t.secondRms} · {m?.windowComplete ? (m.rms1sDbfs?.toFixed(1) ?? '−∞') + ' dBFS' : '—'} (Z)</p>
+      <NoiseLevels meter={meter} weight={weight} />
       <p class="small">{t.time} · {m?.activeSeconds.toFixed(1) ?? '0'} с</p>
       {!!m?.clipped && <Note tone="warn">{t.clipping}</Note>}
     </Panel>
-    <Panel title={t.spectrum}>
-      {m?.f.length && path ? <>
-        <ResponseChart label={t.spectrum} lines={[{ f: m.f, db: m.db, cls: 'is-measured' }]} fLo={20}
-          fHi={Math.min(20000, path.sampleRate / 2)} yRange={[-100, 0]} yTicks={[-100, -80, -60, -40, -20, 0]} />
-        <p class="small">{t.axis} · {t.peak} {m.peakHz?.toFixed(1)} Гц</p>
-      </> : <p class="small">{m?.blocks ? t.silence : t.empty}</p>}
-    </Panel>
+    <NoiseAnalysis meter={meter} blocks={m?.blocks ?? 0} weight={weight} period={period} onPeriod={setPeriod} />
     <Panel title={t.history}>
       {report.history.length ? <>
         <RmsHistoryChart rows={report.history} live={busy} />

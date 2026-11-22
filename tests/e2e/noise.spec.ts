@@ -60,6 +60,12 @@ test.describe('первый запуск', () => {
     expect(await page.locator('body').getAttribute('data-requests')).toBeNull();
     await page.setViewportSize({ width: 320, height: 640 });
     expect(await fitsWidth(page)).toBe(true);
+    const weight = page.getByLabel('Частотное взвешивание');
+    await expect(weight).toHaveValue('Z');
+    await weight.focus();
+    await expect(weight).toBeFocused();
+    await weight.selectOption('C');
+    expect(await page.locator('body').getAttribute('data-requests')).toBeNull();
     await start(page).click();
     await expect(page.getByText(/Доступ запрещён/)).toBeVisible();
     await expect(page.getByRole('img', { name: 'Спектр входного сигнала' })).toHaveCount(0);
@@ -93,6 +99,13 @@ test('рабочая комната, тестовый PCM, JSON, останов�
   const chart = page.getByRole('img', {name: 'Спектр входного сигнала'});
   await expect(chart).toBeVisible();
   await expect(page.getByText(/RMS за 1 с · -9\.[0-2] dBFS/)).toBeVisible();
+  const liveWeight = page.getByLabel('Частотное взвешивание');
+  await liveWeight.selectOption('C');
+  await page.getByLabel('Спектр и полосы').selectOption('10');
+  await expect(page.getByText(/PSD \(C\)/)).toBeVisible();
+  await liveWeight.selectOption('A');
+  await liveWeight.selectOption('Z');
+  await expect(page.locator('body')).toHaveAttribute('data-requests', '1');
   await page.evaluate(() => document.dispatchEvent(new Event('test-level-step')));
   await expect(page.getByText(/RMS за 1 с · -15\.[0-2] dBFS/)).toBeVisible();
   await expect(page.getByRole('img', { name: 'История RMS' })).toBeVisible();
@@ -102,6 +115,25 @@ test('рабочая комната, тестовый PCM, JSON, останов�
   await page.getByRole('button', { name: 'Остановить' }).click();
   await expect(page.locator('body')).toHaveAttribute('data-closed', '1');
   await page.getByLabel('Результат ручной проверки').selectOption('passed');
+  await expect(page.getByText(/Цифровой sample peak за сеанс/)).toContainText('-6.0 dBFS');
+  const period = page.getByLabel('Спектр и полосы');
+  for (const option of ['10', '60', 'session']) await period.selectOption(option);
+  const weights = page.getByLabel('Частотное взвешивание');
+  for (const option of ['A', 'C', 'Z']) {
+    await weights.selectOption(option);
+    await expect(page.getByText(new RegExp('PSD \\(' + option + '\\)'))).toBeVisible();
+  }
+  // У остановленного сеанса меняется только представление сохранённых чисел.
+  const levels = await page.getByText(/Leq за сеанс/).textContent();
+  const bands = await page.locator('.meter__value').allTextContents();
+  expect(parseFloat(bands[3])).toBeGreaterThan(99);
+  await page.getByLabel('Сглаживание графика').selectOption('3');
+  await page.getByLabel('Диапазон частот').selectOption('250');
+  await page.getByLabel('Шкала PSD').selectOption('-140');
+  await expect(page.getByText(/Leq за сеанс/)).toHaveText(levels!);
+  expect(await page.locator('.meter__value').allTextContents()).toEqual(bands);
+  expect(await fitsWidth(page)).toBe(true);
+  await page.getByLabel('Диапазон частот').selectOption('20000');
   const download = page.waitForEvent('download');
   await page.getByLabel('Название измерения').fill('Ступени 1 кГц');
   await page.getByRole('button', {name: 'Сохранить JSON'}).click();
@@ -112,6 +144,10 @@ test('рабочая комната, тестовый PCM, JSON, останов�
   const json = await readFile(file!, 'utf8');
   const report = JSON.parse(json);
   expect(report.manual).toBe('passed');
+  expect(report.fftSize).toBe(4096);
+  expect(report.spectralAnalysis).toMatchObject({ fftSize: 32768, hopSamples: 16384, period: 'session', weight: 'Z' });
+  expect(report.spectralAnalysis.psd).toHaveLength(16385);
+  expect(report.spectralAnalysis.bands[3].percent).toBeGreaterThan(99);
   expect(report.measurement.rmsDbfs).toBeCloseTo(-15.05, 0);
   expect(report.name).toBe('Ступени 1 кГц');
   expect(report.history.length).toBe(report.measurement.blocks);

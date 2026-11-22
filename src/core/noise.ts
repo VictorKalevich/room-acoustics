@@ -1,3 +1,4 @@
+import { NoiseSpectrum, emptyPowerRange, recordPower } from './noiseSpectrum';
 import { fft } from './dsp';
 
 export const FFT_SIZE = 4096;
@@ -18,6 +19,10 @@ export interface NoisePoint {
 export class NoiseMeter {
   readonly history: NoisePoint[] = [];
   audioStartMs: number | null = null;
+  readonly spectral: NoiseSpectrum;
+  readonly blockPower = emptyPowerRange();
+  private sumSquares = 0;
+  private samplePeak = 0;
   private blocks = 0;
   private missing = 0;
   private clipped = 0;
@@ -30,6 +35,7 @@ export class NoiseMeter {
   private readonly im = new Float64Array(FFT_SIZE);
 
   constructor(readonly sampleRate: number) {
+    this.spectral = new NoiseSpectrum(sampleRate);
     this.firstBin = Math.ceil(20 * FFT_SIZE / sampleRate);
     const lastBin = Math.floor(Math.min(20000 / sampleRate, 0.5) * FFT_SIZE);
     this.f = Array.from({ length: lastBin - this.firstBin + 1 }, (_, i) => (i + this.firstBin) * sampleRate / FFT_SIZE);
@@ -61,14 +67,19 @@ export class NoiseMeter {
     const endSeconds = this.next * FFT_SIZE / this.sampleRate;
     this.audioStartMs ??= receivedAtMs - endSeconds * 1000;
     const tailSize = this.sampleRate % FFT_SIZE;
-    let full = 0, tail = 0, clipped = false;
+    let full = 0, tail = 0, peak = 0;
     for (let i = 0; i < FFT_SIZE; i++) {
       const square = pcm[i] * pcm[i];
       full += square;
       if (i >= FFT_SIZE - tailSize) tail += square;
-      if (Math.abs(pcm[i]) >= 1) clipped = true;
+      peak = Math.max(peak, Math.abs(pcm[i]));
     }
+    const clipped = peak >= 1;
     if (clipped) this.clipped++;
+    this.sumSquares += full;
+    this.samplePeak = Math.max(this.samplePeak, peak);
+    recordPower(this.blockPower, full / FFT_SIZE);
+    this.spectral.push(pcm, this.next * FFT_SIZE);
     // Для ровно одной секунды нужны целые последние блоки и хвост самого раннего.
     if (missingBefore) this.energies.length = 0;
     const needed = Math.ceil(this.sampleRate / FFT_SIZE);
@@ -82,6 +93,9 @@ export class NoiseMeter {
       windowComplete, peakHz: full ? this.spectrum(pcm) : null, clipped, missingBefore,
     });
   }
+
+  get sessionPower() { return this.blocks ? this.sumSquares / (this.blocks * FFT_SIZE) : null; }
+  get peakAmplitude() { return this.blocks ? this.samplePeak : null; }
 
   snapshot() {
     const last = this.history.at(-1);
