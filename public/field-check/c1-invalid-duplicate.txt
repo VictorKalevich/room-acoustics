@@ -1,0 +1,5 @@
+# Intentionally invalid test: duplicate frequency.
+20 6
+40 6
+40 6
+1000 0
