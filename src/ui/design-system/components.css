@@ -272,6 +272,9 @@ td.num { text-align: right; }
 .chart__mode--tangential { stroke: var(--tangential); }
 .chart__mode--oblique { stroke: var(--oblique); }
 .chart__degenerate { fill: var(--warn); }
+/* 057: расчётные моды поверх спектра шумомера — тоньше и прозрачнее, выбранная — как на ModeChart */
+.chart__mode.is-overlay { stroke-width: 1.4; opacity: 0.55; }
+.chart__mode.is-overlay.is-selected { stroke-width: 2.8; opacity: 1; }
 .chart__schroeder line { stroke: var(--ink); stroke-dasharray: 3 3; opacity: 0.6; }
 .chart__schroeder text { fill: var(--ink); font-size: var(--text-diagram); opacity: 0.8; }
 /* 045: часть графика ниже полосы оценки */

@@ -4,6 +4,7 @@ import type { Room } from '../core/types';
 import { useProject } from './useProject';
 import { computeReverb } from '../core/reverb';
 import { computeModes } from '../core/modes';
+import { roomSnapshot } from '../core/noiseModes';
 import { RoomScreen } from './screens/RoomScreen';
 import { RoomEditor } from './screens/room/RoomEditor';
 import { ModesScreen } from './screens/ModesScreen';
@@ -80,6 +81,8 @@ export function App() {
   const reverb = useMemo(() => computeReverb(project.room), [project.room]);
   const fMax = Math.min(500, Math.max(200, reverb.schroeder));
   const modes = useMemo(() => computeModes(project.room, fMax), [project.room, fMax]);
+  // 057: шумомер получает тот же список мод, что и экран «Моды», только как сведения о комнате измерения.
+  const noiseRoom = useMemo(() => roomSnapshot(project.room, modes, fMax, reverb.schroeder), [project.room, modes, fMax, reverb.schroeder]);
 
   const r = project.room;
   const roomReady = project.roomReady;
@@ -185,7 +188,7 @@ export function App() {
             onGo={go}
           />,
         )}
-        {tab === 'noise' && guard(TITLES.noise, <NoiseScreen project={roomReady ? { id: project.id, name: project.name } : null} />)}
+        {tab === 'noise' && guard(TITLES.noise, <NoiseScreen project={roomReady ? { id: project.id, name: project.name, room: noiseRoom } : null} />)}
         {roomReady && <RetainedSection active={tab === 'measure'}>
           {guard(TITLES.measure, <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} onPlacement={toPlacement} />)}
         </RetainedSection>}

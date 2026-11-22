@@ -7,6 +7,7 @@ import { ResponseChart } from '../components/Charts';
 import { Panel, SelectField } from '../design-system';
 import { noisePlot } from '../noisePlot';
 import { S } from '../strings';
+import { ModeOverlay, useModeMarks, type ModeSource } from './NoiseModes';
 
 export const levelText = (power?: number | null) =>
   power == null ? '—' : power === 0 ? '−∞' : (10 * Math.log10(power)).toFixed(1);
@@ -31,14 +32,16 @@ const periods = [
   { value: '60', label: 'Среднее за 60 с' }, { value: 'session', label: 'Среднее за сеанс' },
 ];
 
-/** periods — доступные периоды (056: у импорта schema 2/3 только сохранённый в файле). */
-export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod, view, onView, periods: allowed }: {
+/** periods — доступные периоды (056: у импорта schema 2/3 только сохранённый в файле). modes — комната измерения (057), без неё моды не предлагаются. */
+export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod, view, onView, periods: allowed, modes }: {
   meter: NoiseView | null; blocks: number; weight: Weight; period: SpectrumPeriod; onPeriod(v: SpectrumPeriod): void; view: string; onView(v: string): void;
-  periods?: readonly SpectrumPeriod[];
+  periods?: readonly SpectrumPeriod[]; modes?: ModeSource | null;
 }) {
   const [upper, setUpper] = useState('20000');
   const [floor, setFloor] = useState('-120');
   const [smoothing, setSmoothing] = useState('0');
+  const [showModes, setShowModes] = useState('none');
+  const [pickedMode, setPickedMode] = useState('');
   const corrected = !!meter?.profile && view === 'corrected';
   const spectrum = meter?.spectral;
   const average = useMemo(() => blocks ? spectrum?.average(period, weight, corrected) : undefined, [spectrum, blocks, period, weight, corrected]);
@@ -46,6 +49,7 @@ export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod, view, o
   const plot = useMemo(() => average?.seconds && spectrum
     ? noisePlot(average.density, spectrum.binHz, highHz, Number(smoothing)) : null, [average, spectrum, highHz, smoothing]);
   const bands = useMemo(() => average?.seconds && spectrum ? bandPowers(average.density, spectrum.binHz) : [], [average, spectrum]);
+  const { markers, marks } = useModeMarks(modes, showModes, pickedMode, highHz);
   const empty = blocks ? 'Прогрев спектра · ожидаем полное непрерывное окно' : S.noise.empty;
   return <>
     <Panel title={S.noise.spectrum}>
@@ -69,9 +73,12 @@ export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod, view, o
       </div>
       {plot && plot.peakHz != null ? <>
         <ResponseChart label={S.noise.spectrum} lines={[{ ...plot, cls: 'is-measured' }]} fLo={20} fHi={highHz}
-          yRange={[Number(floor), 0]} yTicks={Array.from({ length: 1 - Number(floor) / 20 }, (_, i) => -20 * i)} />
+          yRange={[Number(floor), 0]} yTicks={Array.from({ length: 1 - Number(floor) / 20 }, (_, i) => -20 * i)} marks={marks} />
         <p class="small">PSD ({weight}), dBFS/Гц · пик {plot.peakHz.toFixed(2)} Гц</p>
       </> : <p class="small">{average?.seconds ? 'Нет энергии в выбранном диапазоне' : empty}</p>}
+      {modes && meter && <ModeOverlay source={modes} show={showModes} onShow={setShowModes} picked={pickedMode} onPick={setPickedMode}
+        markers={markers} density={average?.seconds ? average.density : null} binHz={spectrum!.binHz} seconds={average?.seconds ?? 0}
+        sampleRate={meter.sampleRate} highHz={highHz} />}
       {corrected && average && average.seconds > 0 && <p>Уровень по PSD с поправкой ({weight}) за выбранный интервал · {levelText(average.density.reduce((sum, v) => sum + v, 0) * spectrum!.binHz)} dBFS</p>}
       {meter && <p class="small">FFT {SPECTRUM_SIZE} · шаг {spectrum!.binHz.toFixed(3)} Гц · окно {(SPECTRUM_SIZE / meter.sampleRate).toFixed(3)} с
         {' · интервал '}{(SPECTRUM_HOP / meter.sampleRate).toFixed(3)} с · учтено {(average?.seconds ?? 0).toFixed(2)} с</p>}

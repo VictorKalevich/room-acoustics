@@ -1,6 +1,6 @@
 import { audioContext, micOpened, releaseNoiseContext } from './tone';
 import { loadRecorder } from './recorderWorklet';
-import { noiseDiagnostics, type NoiseDiagnostics } from './noiseDiagnostics';
+import { MAX_INPUT_EVENTS, noiseDiagnostics, type InputEvent, type NoiseDiagnostics } from './noiseDiagnostics';
 import type { MicRoute } from '../../core/micCalibration';
 
 export interface Mic {
@@ -46,6 +46,11 @@ export async function openMic(arg?: { deviceId?: string } | StreamOptions): Prom
   let recording = false;
   let closed = false;
   let startupTimer: ReturnType<typeof setTimeout> | undefined;
+  const events: InputEvent[] = [];
+  const openedAt = performance.now();
+  const note = (type: InputEvent['type'], state?: string) => {
+    if (events.length < MAX_INPUT_EVENTS) events.push({ atMs: Math.round(performance.now() - openedAt), type, ...(state ? { state } : {}) });
+  };
   const closePort = () => {
     if (!port) return;
     port.onmessage = null;
@@ -106,10 +111,12 @@ export async function openMic(arg?: { deviceId?: string } | StreamOptions): Prom
     if (options) {
       const listen = { signal: listeners.signal };
       const interruptTrack = () => options.onInterrupt('track');
-      track.addEventListener('mute', () => { if (received) interruptTrack(); }, listen);
-      track.addEventListener('ended', interruptTrack, listen);
-      devices.addEventListener('devicechange', () => options.onInterrupt('device'), listen);
+      track.addEventListener('mute', () => { note('mute'); if (received) interruptTrack(); }, listen);
+      track.addEventListener('unmute', () => note('unmute'), listen);
+      track.addEventListener('ended', () => { note('ended'); interruptTrack(); }, listen);
+      devices.addEventListener('devicechange', () => { note('devicechange'); options.onInterrupt('device'); }, listen);
       ctx.addEventListener('statechange', () => {
+        note('context', ctx.state);
         if (received && ctx.state !== 'running') options.onInterrupt('context');
       }, listen);
     }
@@ -175,7 +182,7 @@ export async function openMic(arg?: { deviceId?: string } | StreamOptions): Prom
             nodes.push(replacement);
             src.connect(replacement);
             replacement.connect(mute);
-            options.onBackendChange?.(noiseDiagnostics(track, ctx.sampleRate, 'ScriptProcessor', fallback));
+            options.onBackendChange?.(noiseDiagnostics(track, ctx.sampleRate, 'ScriptProcessor', fallback, events));
             startupTimer = setTimeout(fail, 4000);
           } catch { fail(); }
         }, 2000);
@@ -185,7 +192,7 @@ export async function openMic(arg?: { deviceId?: string } | StreamOptions): Prom
       sampleRate: ctx.sampleRate,
       label: track.label ?? '',
       route: { deviceId: track.getSettings?.().deviceId ?? '', groupId: track.getSettings?.().groupId ?? null, label: track.label ?? '', sampleRate: ctx.sampleRate },
-      diagnostics: options ? noiseDiagnostics(track, ctx.sampleRate, port ? 'AudioWorklet' : 'ScriptProcessor', fallback) : undefined,
+      diagnostics: options ? noiseDiagnostics(track, ctx.sampleRate, port ? 'AudioWorklet' : 'ScriptProcessor', fallback, events) : undefined,
       running: () => ctx.state === 'running',
       start() {
         chunks.length = 0;

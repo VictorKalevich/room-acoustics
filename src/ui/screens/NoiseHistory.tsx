@@ -14,6 +14,9 @@ import { fmtClock, noiseFileName } from '../format';
 import { S } from '../strings';
 import { BUILD } from '../updates';
 import { NoiseAnalysis, NoiseLevels, levelText } from './NoiseAnalysis';
+import { sameRoom } from '../../core/noiseModes';
+import { roomText, type ModeSource, type NoiseProject } from './NoiseModes';
+import { InputDiagnostics } from './NoiseInput';
 import { NoiseCompare } from './NoiseCompare';
 import { NoiseTimeline } from './NoiseTimeline';
 
@@ -38,7 +41,8 @@ function warningText(w: NoiseWarning) {
 }
 
 /** Библиотека: хранилище, импорт, сравнение и список. Данные записи читаются только при её открытии. */
-export function NoiseLibrary({ state, reload, open }: { state: ReturnType<typeof useNoiseHistory>; reload(): void; open: boolean }) {
+/** project — открытый проект: сравнить снимок комнаты записи с текущими размерами (057). */
+export function NoiseLibrary({ state, reload, open, project = null }: { state: ReturnType<typeof useNoiseHistory>; reload(): void; open: boolean; project?: NoiseProject | null }) {
   const [opened, setOpened] = useState<string | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [note, setNote] = useState<{ text: string; tone: 'good' | 'warn' | 'info' } | null>(null);
@@ -118,7 +122,7 @@ export function NoiseLibrary({ state, reload, open }: { state: ReturnType<typeof
       {headers.map(h => <DetailPanel key={h.id} title={displayName(h)} open={opened === h.id} onOpenChange={v => setOpened(v ? h.id : null)}
         summary={t.line(dateText(h.startedAt ?? h.savedAt), fmtClock(h.activeSeconds), leqLine(h)) +
           (h.source === 'legacy' ? ' · ' + t.source.legacy(h.sourceVersion) : '') + (h.calibration ? ` · ${h.calibration.name} v${h.calibration.version}` : '')}>
-        <NoiseRecordView header={h} open={opened === h.id} onChanged={reload} onRemove={() => setRemoving({ id: h.id, name: displayName(h) })} />
+        <NoiseRecordView header={h} open={opened === h.id} project={project} onChanged={reload} onRemove={() => setRemoving({ id: h.id, name: displayName(h) })} />
       </DetailPanel>)}
       {list?.problems.map(p => <DetailPanel key={'problem-' + p.id} title={t.damaged(p.name)} summary={t.damagedText[p.reason]}>
         <Panel>
@@ -136,17 +140,17 @@ export function NoiseLibrary({ state, reload, open }: { state: ReturnType<typeof
   </>;
 }
 
-function NoiseRecordView({ header, open, onChanged, onRemove }: { header: NoiseRecordHeader; open: boolean; onChanged(): void; onRemove(): void }) {
+function NoiseRecordView({ header, open, project, onChanged, onRemove }: { header: NoiseRecordHeader; open: boolean; project: NoiseProject | null; onChanged(): void; onRemove(): void }) {
   const loaded = useRecord(header.id, open);
   if (!open) return null;
   if (!loaded) return <p class="small">{t.loading}</p>;
   if ('error' in loaded) return <Panel><Note tone="warn">{loaded.error}</Note>
     <button type="button" class="btn btn--danger" onClick={onRemove}>{t.remove}</button></Panel>;
-  return <RecordBody key={header.id} header={header} record={{ ...loaded.record, name: header.name }} view={loaded.view} onChanged={onChanged} onRemove={onRemove} />;
+  return <RecordBody key={header.id} header={header} record={{ ...loaded.record, name: header.name }} view={loaded.view} project={project} onChanged={onChanged} onRemove={onRemove} />;
 }
 
-function RecordBody({ header, record, view, onChanged, onRemove }: {
-  header: NoiseRecordHeader; record: NoiseRecord; view: NoiseView; onChanged(): void; onRemove(): void;
+function RecordBody({ header, record, view, project, onChanged, onRemove }: {
+  header: NoiseRecordHeader; record: NoiseRecord; view: NoiseView; project: NoiseProject | null; onChanged(): void; onRemove(): void;
 }) {
   const legacy = record.content.type === 'legacy' ? record.content.legacy : null;
   const fixed = legacy?.spectrum ?? null;
@@ -171,6 +175,10 @@ function RecordBody({ header, record, view, onChanged, onRemove }: {
   }
   const profile = view.profile;
   const absolute = record.context.absolute;
+  // 057: моды записи — только из её снимка; связанная запись без снимка их не показывает.
+  const room = record.context.room ?? null;
+  const modes: ModeSource | null = record.project && { project: record.project.name, snapshot: room,
+    changed: !!room && project?.id === record.project.id && !sameRoom(room, project.room) };
   return <>
     <Panel title={t.about}>
       <div class="field">
@@ -189,7 +197,7 @@ function RecordBody({ header, record, view, onChanged, onRemove }: {
         {record.imported && <tr><th scope="row">{t.rows.imported}</th><td>{record.imported.file} · {dateText(record.imported.at)}</td></tr>}
         <tr><th scope="row">{t.rows.saved}</th><td>{dateText(header.savedAt)}</td></tr>
         <tr><th scope="row">{t.rows.build}</th><td>{header.build ? `${header.build.sha}${header.build.time ? ' · ' + dateText(header.build.time) : ''}` : t.none}</td></tr>
-        {header.project && <tr><th scope="row">{t.rows.project}</th><td>{header.project.name}</td></tr>}
+        {header.project && <tr><th scope="row">{t.rows.project}</th><td>{header.project.name}{room && ' · ' + t.roomSnapshot(roomText(room))}</td></tr>}
         <tr><th scope="row">{t.rows.stop}</th><td>{stopReason || t.none}</td></tr>
         <tr><th scope="row">{t.rows.manual}</th><td>{S.noise[manual as 'untested' | 'passed' | 'failed'] ?? manual}</td></tr>
       </tbody></table>
@@ -204,7 +212,7 @@ function RecordBody({ header, record, view, onChanged, onRemove }: {
       <NoiseLevels meter={view} weight={weight} />
     </Panel>
     {(!legacy || fixed?.psd) && <NoiseAnalysis meter={view} blocks={snapshot.blocks} weight={weight} period={period} onPeriod={setPeriod}
-      view={repr} onView={setRepr} periods={fixed ? [fixed.period] : undefined} />}
+      view={repr} onView={setRepr} periods={fixed ? [fixed.period] : undefined} modes={modes} />}
     <Panel title={t.rmsHistory}>
       {view.history.length ? <RmsHistoryChart rows={view.history} live={false} /> : <p class="small">{t.none}</p>}
       <p class="small">{S.noise.fullHistory}</p>
@@ -247,6 +255,7 @@ function RecordBody({ header, record, view, onChanged, onRemove }: {
           <Details key={key} summary={S.noise[key]}><ul class="plain-list">
             {Object.entries(capture[key] as Record<string, unknown>).map(([k, v]) => <li key={k}>{k} · {v == null ? S.noise.unknown : typeof v === 'object' ? JSON.stringify(v) : String(v)}</li>)}
           </ul></Details> : null)}
+        <InputDiagnostics capture={capture as Record<string, unknown>} />
       </> : <p class="small">{t.none}</p>}
     </Panel>
     <ExportPanel record={record} view={view} weight={weight} period={period} corrected={repr === 'corrected'} share={share} onError={setProblem} />

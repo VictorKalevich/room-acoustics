@@ -7,7 +7,7 @@ import type { Project } from '../../state/project';
 import type { Measurement, Room, Setup } from '../../core/types';
 import { analyzeSweep, averageRT, clapRT60, logGrid, logSweep, parseCalibration, powerAverage, RT_BANDS, smoothOct, sweepSegment, wav16, type BandRT, type SweepResult } from '../../core/dsp';
 import { afterSmoothing, beforeSmoothing, micKey, type AppliedMic, type LegacyCal } from '../../core/micApply';
-import type { MicRecordCalibration, MicScope } from '../../core/micCalibration';
+import type { MicRecordCalibration, MicRoute, MicScope } from '../../core/micCalibration';
 import { micCatalog } from '../../state/micCatalog';
 import { MicCalibrationPanel, MicStartHint, announceCatalogChange, appliedMic, fromCatalog, micLabel, micLoading, type MicSetup, type MicState } from '../components/MicCalibrationPanel';
 import { setBusy } from '../updates';
@@ -17,7 +17,7 @@ import { getTone, onTone } from '../audio/tone';
 import { useSetupEval } from '../useEval';
 import { ResponseChart } from '../components/Charts';
 import { PlanView, type PlanItem } from '../components/PlanView';
-import { ActionBar, Note, Panel } from '../design-system';
+import { ActionBar, ConfirmSheet, Note, Panel } from '../design-system';
 import { Term } from '../components/Term';
 import { S } from '../strings';
 import { fmt } from '../format';
@@ -116,6 +116,32 @@ function useRouteChange(on: boolean, changed: () => void) {
   }, [on]);
 }
 
+/**
+ * 057: серия точек одного замера (Свип, Хлопок) при любой калибровке. devicechange говорит лишь, что список устройств изменился:
+ * сменился ли вход, браузер надёжно не сообщает. Поэтому точка, которую записывали во время смены, не принимается, вход
+ * открывается заново, а следующая точка непустой серии записывается только после явного подтверждения. Другой deviceId у
+ * заново открытого входа — достоверно другой вход: точки не смешиваются.
+ */
+function useSeriesInput(points: number) {
+  // вход открыт до смены: перед следующей точкой открыть заново; во время записи — точку не принимать
+  const stale = useRef(false);
+  const unconfirmed = useRef(false);
+  const device = useRef<string | null>(null);
+  const [ask, setAsk] = useState(false);
+  useRouteChange(true, () => { stale.current = true; if (points) unconfirmed.current = true; });
+  useEffect(() => { if (!points) { device.current = null; unconfirmed.current = false; setAsk(false); } }, [points]);
+  return {
+    stale, ask,
+    /** Можно ли начинать следующую точку; иначе показать подтверждение. */
+    ready() { if (points && unconfirmed.current) { setAsk(true); return false; } return true; },
+    confirm() { unconfirmed.current = false; setAsk(false); },
+    cancel() { setAsk(false); },
+    /** Тот же вход, что у точек серии, насколько это видно браузеру. */
+    sameInput(route: MicRoute) { return !points || !device.current || !route.deviceId || route.deviceId === device.current; },
+    accepted(route: MicRoute) { device.current ??= route.deviceId || null; },
+  };
+}
+
 function useMicScope(tool: 'rta' | 'sweep' | 'clap', projectId: string) {
   const scope = useMemo<MicScope>(() => ({ tool, projectId }), [tool, projectId]);
   const [state, setState] = useState<MicState>(micLoading);
@@ -142,10 +168,9 @@ function SweepTool({ project, onSetup, onGo, legacy, active }: { project: Projec
   const [msg, setMsg] = useState<{ t: string; tone: 'warn' | 'good' } | null>(null);
   const mic = useRef<Mic | null>(null);
   const openedFor = useRef('');
-  // вход сменился при открытом микрофоне: точку с профилем не принимаем, вход открываем и проверяем заново
-  const stale = useRef(false);
-  const [catalogOpen, setCatalogOpen] = useState(false);
-  useRouteChange(catalogOpen, () => { stale.current = true; });
+  // 057: смена устройств при любой калибровке — точку не принимаем, вход открываем и проверяем заново
+  const series = useSeriesInput(takes.length);
+  const { stale } = series;
   const timer = useRef<number | null>(null);
   useEffect(() => {
     if (!active) {
@@ -166,14 +191,15 @@ function SweepTool({ project, onSetup, onGo, legacy, active }: { project: Projec
     setState('busy');
     setTimeout(() => {
       try {
+        if (stale.current) throw new Error(S.mic.takeDropped);
         const sweep = logSweep(F1, F2, T, m.sampleRate);
         if (rec.length < sweep.length) throw new Error(S.measure.tooShort);
-        if (stale.current && applied.mode === 'catalog') throw new Error(S.noise.device);
         const seg = sweepSegment(rec, sweep.length, m.sampleRate);
         if (!seg) throw new Error(S.measure.cutOff);
         const r = analyzeSweep(seg, sweep, F1, F2, m.sampleRate, applied.mode === 'catalog' ? (f, db) => beforeSmoothing(applied, f, db) : undefined);
         const warn = r.peak > 0.98 ? S.measure.clip : r.peak < 0.01 ? S.measure.quiet : r.snrDb < 20 ? S.measure.noisy(Math.round(r.snrDb)) : null;
         sessionMic.current ??= applied;
+        series.accepted(m.route);
         setTakes((t) => [...t, { ...r, db: afterSmoothing(applied, r.f, r.db) }]);
         setMsg(warn ? { t: warn, tone: 'warn' } : { t: S.measure.takeOk(Math.round(r.snrDb)), tone: 'good' });
       } catch (e) {
@@ -189,6 +215,7 @@ function SweepTool({ project, onSetup, onGo, legacy, active }: { project: Projec
     if (!setup) return;
     const applied = appliedMic(setup, legacy);
     if (sessionMic.current && pinOf(sessionMic.current) !== pinOf(applied)) { setMsg({ t: S.mic.lockedTakes, tone: 'warn' }); return; }
+    if (!series.ready()) return;
     const device = deviceOf(setup);
     setOpening(true);
     try {
@@ -201,7 +228,7 @@ function SweepTool({ project, onSetup, onGo, legacy, active }: { project: Projec
         openedFor.current = device;
       }
       const m = mic.current;
-      setCatalogOpen(applied.mode === 'catalog');
+      if (!series.sameInput(m.route)) { setMsg({ t: S.mic.otherInput, tone: 'warn' }); return; }
       if (!m.running()) { setMsg({ t: S.measure.tapAgain, tone: 'warn' }); return; }
       if (applied.mode === 'catalog') {
         await micCatalog.bindRoute(micSel.scope, setup, m.route);
@@ -308,6 +335,8 @@ function SweepTool({ project, onSetup, onGo, legacy, active }: { project: Projec
           </div>
         </>
       )}
+      {series.ask && <ConfirmSheet tone="primary" title={S.mic.seriesTitle} text={S.mic.seriesText(takes.length)} confirm={S.mic.seriesGo}
+        onCancel={series.cancel} onConfirm={() => { series.confirm(); void record(); }} />}
       {!takes.length && savedCalibration && <p class="muted small">{S.mic.savedRecord(savedCalibration.mode === 'catalog'
         ? savedCalibration.profile.name + ' · v' + savedCalibration.profile.version : S.mic.none)}</p>}
       <MeasureCompare setup={project.current} onSetup={onSetup} rise={project.constraints.houseCurve} />
@@ -327,6 +356,8 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
   const [res, setRes] = useState<BandRT[][]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const mic = useRef<Mic | null>(null);
+  const series = useSeriesInput(res.length);
+  const { stale } = series;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!active) { mic.current?.close(); mic.current = null; if (timer.current) clearTimeout(timer.current); setState('idle'); }
@@ -336,11 +367,12 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
   const go = async () => {
     setMsg(null);
     const setup = micSel.state.setup;
-    if (!setup) return;
+    if (!setup || !series.ready()) return;
     const device = deviceOf(setup);
     setOpening(true);
     try {
-      if (mic.current && openedFor.current !== device) { mic.current.close(); mic.current = null; }
+      if (mic.current && (openedFor.current !== device || stale.current)) { mic.current.close(); mic.current = null; }
+      stale.current = false;
       if (!mic.current) {
         const opened = await openFor(device);
         if (!activeView.current) { opened.close(); return; }
@@ -348,6 +380,7 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
         openedFor.current = device;
       }
       const m = mic.current;
+      if (!series.sameInput(m.route)) { setMsg(S.mic.otherInput); return; }
       if (!m.running()) { setMsg(S.measure.tapAgain); return; }
       m.start();
       setState('rec');
@@ -357,7 +390,9 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
         timer.current = setTimeout(() => {
           let pk = 0;
           for (let i = 0; i < x.length; i++) pk = Math.max(pk, Math.abs(x[i]));
+          if (stale.current) { setMsg(S.mic.takeDropped); setState('idle'); return; }
           if (pk < 0.05) { setMsg(S.measure.noClap); setState('idle'); return; }
+          series.accepted(m.route);
           setRes((r) => [...r, clapRT60(x, m.sampleRate)]);
           setState('idle');
         }, 30);
@@ -402,6 +437,8 @@ function ClapTool({ project, active }: { project: Project; active: boolean }) {
           <button type="button" class="btn btn--ghost btn--small" onClick={() => setRes([])}>{S.measure.clear}</button>
         </>
       )}
+      {series.ask && <ConfirmSheet tone="primary" title={S.mic.seriesTitle} text={S.mic.seriesText(res.length)} confirm={S.mic.seriesGo}
+        onCancel={series.cancel} onConfirm={() => { series.confirm(); void go(); }} />}
     </Panel>
   </>);
 }
@@ -428,10 +465,20 @@ function RtaTool({ project, legacy, active }: { project: Project; legacy: Legacy
   useEffect(() => { legacyRef.current = legacy; });
   const pinned = useRef<{ setup: MicSetup; mic: AppliedMic } | null>(null);
   const { scope: rtaScope, interrupted } = micSel;
-  useRouteChange(on && pinned.current?.mic.mode === 'catalog', () => { setMsg(S.noise.device); setOn(false); interrupted(); });
+  // 057: при любой калибровке — стоп; запомненные кривые остаются, текущая сбрасывается: в ней мог смешаться сигнал двух входов
+  const halted = useRef(false);
+  useRouteChange(on, () => {
+    halted.current = true;
+    setMsg(S.noise.device + ' ' + S.mic.rtaDevice);
+    setCurve(null);
+    setCurveMic(null);
+    setOn(false);
+    if (pinned.current?.mic.mode === 'catalog') interrupted();
+  });
   useEffect(() => {
     const run = pinned.current;
     if (!on || !run) return;
+    halted.current = false;
     let raf = 0, stop = false, last = 0;
     let an: AnalyserNode | null = null;
     let buf: Float32Array | null = null;
@@ -451,7 +498,7 @@ function RtaTool({ project, legacy, active }: { project: Project; legacy: Legacy
         buf = new Float32Array(an.frequencyBinCount);
         const fs = mic.current.sampleRate;
         const loop = (t: number) => {
-          if (stop) return;
+          if (stop || halted.current) return;
           if (t - last > 200 && an && buf) {
             last = t;
             an.getFloatFrequencyData(buf as Float32Array<ArrayBuffer>);
@@ -529,8 +576,8 @@ function RtaTool({ project, legacy, active }: { project: Project; legacy: Legacy
       {!on && <MicStartHint block={micSel.state.block} />}</ActionBar>
       {msg && <Note tone="warn">{msg}</Note>}
       {atTone != null && <p class="rta-big"><strong>{fmt(atTone, 1)}</strong> дБ <span class="muted small">{S.measure.atTone(fmt(tone.f, 1))}</span></p>}
-      {curve && <ResponseChart fLo={15} fHi={250} lines={lines} />}
-      {curve && <p class="muted small">{S.measure.rtaLegend(snaps.length)}{ev ? ` ${S.measure.predLegend}` : ''}</p>}
+      {(curve || snaps.length > 0) && <ResponseChart fLo={15} fHi={250} lines={lines} />}
+      {(curve || snaps.length > 0) && <p class="muted small">{S.measure.rtaLegend(snaps.length)}{ev ? ` ${S.measure.predLegend}` : ''}</p>}
       {curve && mixed && <Note>{S.mic.rtaMixed([...new Set(shown.map((m) => m.label))].join('; '))}</Note>}
       <h3 class="subhead">{S.measure.whereTitle}</h3>
       <p class="muted small">{S.measure.whereHint}</p>

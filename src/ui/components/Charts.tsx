@@ -1,4 +1,4 @@
-import type { ChartCurve, Mode } from '../../core/types';
+import type { ChartCurve, Mode, ModeKind } from '../../core/types';
 import { fmt } from '../format';
 import { S } from '../strings';
 import { modeWhere } from '../../core/modes';
@@ -7,6 +7,8 @@ const TICKS = [20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 400, 500];
 /** Для широкой полосы (голос): реже и до 20 кГц, подписи «1к», «10к». */
 const WIDE_TICKS = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 const hz = (f: number) => (f >= 1000 ? `${f / 1000}к` : String(f));
+/** Доли высоты линии моды по типу — те же, что на ModeChart. */
+const MARK_HEIGHT: Record<ModeKind, number> = { axial: 1, tangential: 0.62, oblique: 0.36 };
 
 function logScale(f0: number, f1: number, x0: number, x1: number) {
   const a = Math.log(f0);
@@ -31,7 +33,10 @@ export function chartCurve(e: { response: { f: number[]; db: number[]; target: n
  * yRange — своя шкала с нулём на 0 дБ (например, голос относительно прямого звука), иначе — по среднему, 33 дБ.
  * scoredFrom — граница оценки (045): ниже неё полоса затенена, шкала центрируется только по оцениваемой части.
  */
-export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks: yt, scoredFrom, label = 'График АЧХ' }: { lines: Line[]; referenceLines?: Line[]; fLo: number; fHi: number; yRange?: [number, number]; yTicks?: number[]; scoredFrom?: number; label?: string }) {
+/** Расчётная мода поверх графика (057): вертикальная линия от оси, высота и цвет — по типу, как на ModeChart. */
+export interface ChartMark { f: number; kind: ModeKind; title: string; selected?: boolean }
+
+export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks: yt, scoredFrom, label = 'График АЧХ', marks }: { lines: Line[]; referenceLines?: Line[]; fLo: number; fHi: number; yRange?: [number, number]; yTicks?: number[]; scoredFrom?: number; label?: string; marks?: ChartMark[] }) {
   const W = 340, H = 210, l = 34, r = 10, t = 12, b = 26;
   const x = logScale(fLo, fHi, l, W - r);
   const from = scoredFrom != null && scoredFrom > fLo ? Math.min(scoredFrom, fHi) : null;
@@ -61,6 +66,12 @@ export function ResponseChart({ lines, referenceLines, fLo, fHi, yRange, yTicks:
         </g>
       ))}
       <text x={W - r} y={H - 8} class="chart__unit" text-anchor="end">Гц</text>
+      {marks?.filter(m => m.f >= fLo && m.f <= fHi).map((m, ki) => (
+        <line key={'m' + ki} class={`chart__mode chart__mode--${m.kind} is-overlay${m.selected ? ' is-selected' : ''}`}
+          x1={x(m.f)} x2={x(m.f)} y1={H - b} y2={H - b - (H - t - b) * MARK_HEIGHT[m.kind]}>
+          <title>{m.title}</title>
+        </line>
+      ))}
       {lines.map((ln, ki) => (
         <polyline key={ki}
           class={`chart__line ${ln.cls}`}
@@ -77,7 +88,7 @@ export function ModeChart({ modes, fMax, schroeder }: { modes: Mode[]; fMax: num
   const W = 340, H = 150, l = 10, r = 10, t = 10, b = 26;
   const x = logScale(15, fMax, l, W - r);
   const base = H - b;
-  const hOf = { axial: base - t, tangential: (base - t) * 0.62, oblique: (base - t) * 0.36 };
+  const hOf = { axial: (base - t) * MARK_HEIGHT.axial, tangential: (base - t) * MARK_HEIGHT.tangential, oblique: (base - t) * MARK_HEIGHT.oblique };
   const ticks = TICKS.filter((f) => f >= 20 && f <= fMax);
   return (
     <svg class="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Распределение мод по частоте">

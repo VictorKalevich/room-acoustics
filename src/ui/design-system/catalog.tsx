@@ -186,6 +186,19 @@ function Catalog() {
       </div>
       <p class="small muted">Затенение — частоты ниже полосы оценки (045): кривая продолжена вниз по модели спада, шкала центрируется по оцениваемой части.</p>
     </Panel>
+    <Panel title="Моды комнаты поверх спектра (057)">
+      <ResponseChart label="Пример спектра с модами" fLo={20} fHi={250} yRange={[-120, 0]} yTicks={[0, -20, -40, -60, -80, -100, -120]}
+        lines={[{ f: [20, 34, 35, 60, 120, 250], db: [-70, -52, -68, -75, -80, -88], cls: 'is-measured' }]}
+        marks={[{ f: 34.3, kind: 'axial', title: '34,3 Гц, осевая', selected: true }, { f: 42.9, kind: 'axial', title: '42,9 Гц, осевая' },
+          { f: 54.9, kind: 'tangential', title: '54,9 Гц, тангенциальная' }, { f: 81, kind: 'oblique', title: '81,0 Гц, косая' }]} />
+      <div class="legend">
+        <span class="legend__item legend__item--measured">спектр</span>
+        <span class="legend__item legend__item--axial">осевая</span>
+        <span class="legend__item legend__item--tangential">тангенциальная</span>
+        <span class="legend__item legend__item--oblique">косая</span>
+      </div>
+      <p class="small muted">Высота и цвет линии — по типу, как на графике «Моды»; выбранная мода ярче и толще. Не больше 24 линий.</p>
+    </Panel>
     <Panel title="История RMS">
       <RmsHistoryChart live={false} rows={[-60, -58, -49, -40, -50, -58].map((rmsDbfs, i) => ({
         endSeconds: i + 1, rmsDbfs, rms1sDbfs: rmsDbfs - 1, windowComplete: i !== 3, missingBefore: i === 3 ? 1 : 0,

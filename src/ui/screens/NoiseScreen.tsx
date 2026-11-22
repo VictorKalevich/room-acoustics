@@ -11,6 +11,7 @@ import type { SpectrumPeriod, Weight } from '../../core/noiseSpectrum';
 import { NoiseAnalysis, NoiseLevels, levelText } from './NoiseAnalysis';
 import { NoiseLibrary } from './NoiseHistory';
 import { NoiseTimeline } from './NoiseTimeline';
+import { InputDiagnostics } from './NoiseInput';
 import { Details, DetailPanel, Note, Panel, SelectField, RmsHistoryChart, Toast } from '../design-system';
 import { S } from '../strings';
 import { BUILD } from '../updates';
@@ -20,6 +21,8 @@ import { loadCal } from '../../state/legacyMicCalibration';
 import { MicCalibrationPanel, MicStartHint, announceCatalogChange, fromCatalog, micLoading, type MicSetup, type MicState } from '../components/MicCalibrationPanel';
 import { AbsoluteReference, matchingAbsolute } from '../components/AbsoluteReference';
 import type { MicScope } from '../../core/micCalibration';
+import { sameRoom } from '../../core/noiseModes';
+import type { ModeSource, NoiseProject } from './NoiseModes';
 
 const noiseScope: MicScope = { tool: 'noise' };
 const t = S.noise;
@@ -41,6 +44,8 @@ const fresh = (): Report => ({
 // Один последний отчёт в памяти вкладки, независимо от проекта. PCM здесь нет.
 let last = fresh();
 let capturedSetup: MicSetup | null = null;
+/** 057: проект и комната на момент начала показанного измерения; связь и моды берутся отсюда, а не из текущей комнаты. */
+let capturedProject: NoiseProject | null = null;
 let lastMeter: NoiseMeter | null = null;
 // 056: один идентификатор записи на сеанс — расширенный JSON и сохранение в историю совпадают.
 const recordIds = new WeakMap<NoiseMeter, string>();
@@ -52,7 +57,7 @@ const describe = (v: unknown): string => {
 };
 const percent = (v?: number | null) => v == null ? '—' : (100 * v).toFixed(1) + ' %';
 
-export function NoiseScreen({ project = null }: { project?: { id: string; name: string } | null }) {
+export function NoiseScreen({ project = null }: { project?: NoiseProject | null }) {
   const [report, render] = useState(last);
   const [label, setLabel] = useState('');
   const [weight, setWeight] = useState<Weight>('Z');
@@ -98,6 +103,7 @@ export function NoiseScreen({ project = null }: { project?: { id: string; name: 
   async function start() {
     if (session.current || !setup) return;
     capturedSetup = setup;
+    capturedProject = project;
     const active = { controller: new AbortController(), meter: null as NoiseMeter | null };
     session.current = active;
     lastMeter = null;
@@ -170,13 +176,15 @@ export function NoiseScreen({ project = null }: { project?: { id: string; name: 
     const id = recordIds.get(meter) ?? newRecordId();
     recordIds.set(meter, id);
     const name = last.name.trim().slice(0, 100), absolute = matchingAbsolute(capturedSetup, last.path);
+    const link = linkProject && project && capturedProject?.id === project.id ? capturedProject : null;
     return {
-      id, name, savedAt: new Date().toISOString(), project: linkProject && project ? { id: project.id, name: project.name } : null, imported: null,
+      id, name, savedAt: new Date().toISOString(), project: link && { id: link.id, name: project!.name }, imported: null,
       context: {
         view: { weight, period, corrected: view === 'corrected' && !!meter.profile },
         input: capturedSetup && { source: capturedSetup.input.source === 'system' ? 'system' : 'selected', confirmedModel: capturedSetup.input.confirmedModel },
         absolute: absolute && { offsetDb: absolute.offsetDb, verifiedAt: absolute.verifiedAt, references: absolute.references!.map(r => ({ ...r })) },
         ranges: { Z: { ...meter.blockPower }, A: { ...meter.spectral.range.A }, C: { ...meter.spectral.range.C } },
+        room: link && link.room,
       },
       content: { type: 'session', session: createNoiseSession(meter, { name, stopReason: last.status, manualCheck: last.manual, build: BUILD },
         last.path, capturedSetup?.input.confirmedModel ?? null) },
@@ -214,6 +222,10 @@ export function NoiseScreen({ project = null }: { project?: { id: string; name: 
   const current = weight === 'Z' ? meter?.blockPower.current : meter?.spectral.range[weight].current;
   const canStore = !busy && !!lastMeter?.history.length;
   const stored = history.list;
+  // Проект показанного измерения; до первого измерения — открытый.
+  const measuredIn = meter ? capturedProject : project;
+  const modes: ModeSource | null = meter && capturedProject ? { project: capturedProject.name, snapshot: capturedProject.room,
+    changed: project?.id === capturedProject.id && !sameRoom(capturedProject.room, project.room) } : null;
   return <div class="screen">
     <Panel title={t.subtitle}>
       <p class="small">{t.raw}</p>
@@ -235,13 +247,13 @@ export function NoiseScreen({ project = null }: { project?: { id: string; name: 
       {!!m?.clipped && <Note tone="warn">{t.clipping}</Note>}
       <DetailPanel title={S.noise.store.title} open={libraryOpen} onOpenChange={setLibraryOpen}
         summary={history.error ?? S.noise.store.summary(stored?.headers.length ?? 0, ((stored?.bytes ?? 0) / 2 ** 20).toFixed(1))}>
-        <NoiseLibrary state={history} reload={history.reload} open={libraryOpen} />
+        <NoiseLibrary state={history} reload={history.reload} open={libraryOpen} project={project} />
       </DetailPanel>
     </Panel>
     <MicCalibrationPanel scope={noiseScope} busy={busy} changed={setMic} routeEpoch={routeEpoch} legacy={legacy} />
     <AbsoluteReference meter={meter} path={path} setup={capturedSetup} next={setup} busy={busy}
       refresh={() => setRouteEpoch(v => v + 1)} />
-    <NoiseAnalysis meter={meter} blocks={m?.blocks ?? 0} weight={weight} period={period} onPeriod={setPeriod} view={view} onView={setView} />
+    <NoiseAnalysis meter={meter} blocks={m?.blocks ?? 0} weight={weight} period={period} onPeriod={setPeriod} view={view} onView={setView} modes={modes} />
     <Panel title={t.history}>
       {report.history.length ? <>
         <RmsHistoryChart rows={report.history} live={busy} />
@@ -263,6 +275,7 @@ export function NoiseScreen({ project = null }: { project?: { id: string; name: 
           <Details key={key} summary={t[key]}><ul class="plain-list">
             {Object.entries(path[key]).map(([name, value]) => <li key={name}>{name} · {describe(value)}</li>)}
           </ul></Details>)}
+        <InputDiagnostics capture={path} />
         <Note>{t.processing}</Note>
       </>}
       <SelectField label={t.manual} value={report.manual} options={(['untested', 'passed', 'failed'] as const)
@@ -275,8 +288,9 @@ export function NoiseScreen({ project = null }: { project?: { id: string; name: 
       </div>
       <button type="button" class="btn" onClick={save}>{t.export}</button>
       {exportError && <Note tone="warn">{t.exportError}</Note>}
-      {project && <label class="check"><input type="checkbox" checked={linkProject} onChange={e => setLinkProject(e.currentTarget.checked)} />
+      {project && measuredIn?.id === project.id && <label class="check"><input type="checkbox" checked={linkProject} onChange={e => setLinkProject(e.currentTarget.checked)} />
         {S.noise.store.link(project.name)}</label>}
+      {meter && capturedProject && capturedProject.id !== project?.id && <p class="small">{S.noise.store.otherProject(capturedProject.name)}</p>}
       <div class="btn-row">
         <button type="button" class="btn btn--tonal" disabled={!canStore} onClick={() => void saveToHistory()}>{S.noise.store.save}</button>
         <button type="button" class="btn" disabled={!canStore} onClick={() => void exportSession()}>{S.noise.store.extended}</button>

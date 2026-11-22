@@ -3,6 +3,7 @@ import { powerGains, validateProfile } from './micCurve';
 import { FFT_SIZE, NoiseBlocks, type NoiseBlocksData, type NoiseRows } from './noise';
 import { checkNoiseSession, noiseSessionBytes, restoreNoiseSession, type NoiseSessionV1 } from './noiseSession';
 import { emptyPowerRange, SPECTRUM_HOP, SPECTRUM_SIZE, weightPower, type PowerRange, type SpectrumPeriod, type Weight } from './noiseSpectrum';
+import { checkRoomSnapshot, type NoiseRoomSnapshot } from './noiseModes';
 import { MAX_SESSION_SECONDS, type NoiseTimeline } from './noiseTimeline';
 
 /**
@@ -54,6 +55,8 @@ export interface NoiseRecordContext {
   absolute: { offsetDb: number; verifiedAt: string; references: { referenceSpl: number; measuredDbfs: number }[] } | null;
   /** Экстремумы RMS блоков (Z) и кадров A/C; из снимка не выводятся. */
   ranges: { Z: PowerRange; A: PowerRange; C: PowerRange } | null;
+  /** 057: комната проекта на момент измерения — только при явной связи с проектом. Нет у записей 056. */
+  room?: NoiseRoomSnapshot | null;
 }
 
 export interface NoiseRecord {
@@ -188,6 +191,7 @@ export function checkContext(c: NoiseRecordContext) {
   if (a !== null && (!a || !finite(a.offsetDb) || !isoOrNull(a.verifiedAt) || !Array.isArray(a.references) ||
       a.references.some(r => !finite(r?.referenceSpl) || !finite(r?.measuredDbfs)))) invalid('неверная абсолютная привязка');
   if (c.ranges !== null && (!c.ranges || !(['Z', 'A', 'C'] as const).every(w => isRange(c.ranges![w])))) invalid('неверные экстремумы');
+  if (c.room != null) try { checkRoomSnapshot(c.room); } catch (e) { invalid((e as Error).message); }
   return c;
 }
 
@@ -199,6 +203,7 @@ export function checkRecord(r: NoiseRecord): NoiseRecord {
   if (r.imported !== null && (!isoOrNull(r.imported?.at) || typeof r.imported?.file !== 'string' || !Number.isSafeInteger(r.imported.schema)))
     invalid('неверные сведения импорта');
   checkContext(r.context);
+  if (r.context.room != null && r.project === null) invalid('снимок комнаты без связи с проектом');
   const c = r.content;
   try {
     if (c?.type === 'session') { checkNoiseSession(c.session); checkTotals(c.session); }

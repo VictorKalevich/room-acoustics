@@ -154,3 +154,41 @@ describe('054 · вход старых инструментов', () => {
     (await openMic()).close();
   });
 });
+
+describe('057 · окружение и события входа', () => {
+  it('журнал событий без идентификаторов; devicechange останавливает захват при любом выборе калибровки', async () => {
+    const { devices, options, track, ctx } = setup();
+    const mic = await openMic(options);
+    expect(mic.diagnostics.environment).toEqual({ displayMode: null, appleStandalone: null });
+    track.dispatchEvent(new Event('mute'));
+    track.dispatchEvent(new Event('unmute'));
+    expect(options.onInterrupt).not.toHaveBeenCalled();
+    ctx.state = 'suspended';
+    ctx.dispatchEvent(new Event('statechange'));
+    devices.dispatchEvent(new Event('devicechange'));
+    expect(options.onInterrupt).toHaveBeenCalledWith('device');
+    expect(mic.diagnostics.events.map(e => e.type + (e.state ? ':' + e.state : ''))).toEqual(['mute', 'unmute', 'context:suspended', 'devicechange']);
+    expect(mic.diagnostics.events.every(e => Number.isInteger(e.atMs) && e.atMs >= 0)).toBe(true);
+    expect(JSON.stringify(mic.diagnostics)).not.toContain('private');
+    // после закрытия события не пишутся
+    mic.close();
+    devices.dispatchEvent(new Event('devicechange'));
+    expect(mic.diagnostics.events).toHaveLength(4);
+  });
+  it('установленное приложение: режим отображения и navigator.standalone', async () => {
+    const { options, devices } = setup();
+    vi.stubGlobal('navigator', { mediaDevices: devices, standalone: true });
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q === '(display-mode: standalone)' }));
+    const mic = await openMic(options);
+    expect(mic.diagnostics.environment).toEqual({ displayMode: 'standalone', appleStandalone: true });
+    mic.close();
+  });
+  it('у старых инструментов без потока — прежний вход без журнала и слушателей', async () => {
+    const { devices } = setup();
+    const add = vi.spyOn(devices, 'addEventListener');
+    const legacy = await openMic();
+    expect('diagnostics' in legacy && legacy.diagnostics).toBeFalsy();
+    expect(add).not.toHaveBeenCalled();
+    legacy.close();
+  });
+});
