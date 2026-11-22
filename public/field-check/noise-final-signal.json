@@ -1,0 +1,214 @@
+{
+  "kind": "room-acoustics/noise-field-signal",
+  "version": 1,
+  "file": "noise-final-signal.wav",
+  "sampleRate": 16000,
+  "bits": 16,
+  "seconds": 615,
+  "referenceDbfs": -18,
+  "fadeSeconds": 0.5,
+  "note": "Синтетический сигнал проверки шумомера Room Acoustics. Уровни — относительные: громкость, динамики, комната и микрофон их сдвигают одинаково для всех отрезков одного спектра.",
+  "segments": [
+    {
+      "id": "S0",
+      "from": 0,
+      "to": 15,
+      "kind": "silence",
+      "check": "фон комнаты до сигнала",
+      "fileRmsDbfs": null
+    },
+    {
+      "id": "P1",
+      "from": 15,
+      "to": 85,
+      "kind": "pink",
+      "levelDb": 0,
+      "bandHz": [
+        40,
+        7000
+      ],
+      "check": "опорное плато: Leq 1/10/60 с, A/C/Z, PSD",
+      "fileRmsDbfs": -18
+    },
+    {
+      "id": "P2",
+      "from": 85,
+      "to": 155,
+      "kind": "pink",
+      "levelDb": -10,
+      "bandHz": [
+        40,
+        7000
+      ],
+      "check": "ступень −10 дБ; окно 60 с через ступень — энергетическое среднее",
+      "fileRmsDbfs": -28
+    },
+    {
+      "id": "P3",
+      "from": 155,
+      "to": 225,
+      "kind": "pink",
+      "levelDb": -20,
+      "bandHz": [
+        40,
+        7000
+      ],
+      "check": "ступень −20 дБ",
+      "fileRmsDbfs": -38.01
+    },
+    {
+      "id": "P4",
+      "from": 225,
+      "to": 285,
+      "kind": "pink",
+      "levelDb": 0,
+      "bandHz": [
+        40,
+        7000
+      ],
+      "check": "возврат к опорному уровню",
+      "fileRmsDbfs": -18
+    },
+    {
+      "id": "G1",
+      "from": 285,
+      "to": 305,
+      "kind": "silence",
+      "check": "пауза сигнала: уровень падает до фона",
+      "fileRmsDbfs": null
+    },
+    {
+      "id": "B1",
+      "from": 305,
+      "to": 325,
+      "kind": "band",
+      "levelDb": -6,
+      "bandHz": [
+        35,
+        55
+      ],
+      "check": "полоса 20–60 Гц (необязательно: слабый бас)",
+      "fileRmsDbfs": -24
+    },
+    {
+      "id": "B2",
+      "from": 325,
+      "to": 345,
+      "kind": "band",
+      "levelDb": 0,
+      "bandHz": [
+        80,
+        200
+      ],
+      "check": "полоса 60–250 Гц; A заметно ниже Z",
+      "fileRmsDbfs": -18
+    },
+    {
+      "id": "B3",
+      "from": 345,
+      "to": 365,
+      "kind": "band",
+      "levelDb": 0,
+      "bandHz": [
+        300,
+        420
+      ],
+      "check": "полоса 250–500 Гц",
+      "fileRmsDbfs": -18
+    },
+    {
+      "id": "B4",
+      "from": 365,
+      "to": 385,
+      "kind": "band",
+      "levelDb": 0,
+      "bandHz": [
+        630,
+        1600
+      ],
+      "check": "полоса 500–2000 Гц; A и C близки к Z",
+      "fileRmsDbfs": -18
+    },
+    {
+      "id": "B5",
+      "from": 385,
+      "to": 405,
+      "kind": "band",
+      "levelDb": 0,
+      "bandHz": [
+        2500,
+        4000
+      ],
+      "check": "полоса 2–5 кГц",
+      "fileRmsDbfs": -18
+    },
+    {
+      "id": "B6",
+      "from": 405,
+      "to": 425,
+      "kind": "band",
+      "levelDb": 0,
+      "bandHz": [
+        5600,
+        7000
+      ],
+      "check": "полоса 5–20 кГц; C ниже Z",
+      "fileRmsDbfs": -18
+    },
+    {
+      "id": "T1",
+      "from": 425,
+      "to": 485,
+      "kind": "tone",
+      "levelDb": -10,
+      "bandHz": [
+        40,
+        7000
+      ],
+      "tonesHz": [
+        90
+      ],
+      "toneDb": -10,
+      "check": "тон 90 Гц в розовом шуме: пик спектра",
+      "fileRmsDbfs": -25.01
+    },
+    {
+      "id": "M1",
+      "from": 485,
+      "to": 515,
+      "kind": "tones",
+      "tonesHz": [
+        250,
+        1000,
+        4000
+      ],
+      "toneDb": -16,
+      "check": "три тона: шкала частот",
+      "fileRmsDbfs": -29.23
+    },
+    {
+      "id": "P5",
+      "from": 515,
+      "to": 600,
+      "kind": "pink",
+      "levelDb": 0,
+      "bandHz": [
+        40,
+        7000
+      ],
+      "check": "опорный уровень в конце: стабильность за 10 мин",
+      "fileRmsDbfs": -18
+    },
+    {
+      "id": "S1",
+      "from": 600,
+      "to": 615,
+      "kind": "silence",
+      "check": "фон комнаты после сигнала",
+      "fileRmsDbfs": null
+    }
+  ],
+  "samples": 9840000,
+  "peakDbfs": -4.18,
+  "sha256": "0919420192857448a6d3fe7daef760e674372e279d1368fe1fccb7e6e2e2fd7d"
+}

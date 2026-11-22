@@ -2,6 +2,8 @@
 // node scripts/check-c2-sweep.mjs <project.roomacoustics.json | -> [--pair=0,1] [--sign=1|-1|0] [--cal=public/field-check/c2-correction.txt]
 // pair: indexes in [current measurement, ...history], newer first. sign: +1 catalog profile vs none,
 // −1 legacy file vs none (legacy subtracts the file), 0 legacy vs its catalog copy.
+// 058: [--zones=30-45,75-115,200-480] [--ref=75-115] — зоны сравнения и зона оценки общего сдвига уровня (поправка там известна).
+// Вариант для слабого баса: --cal=public/field-check/c2-midbass-correction.txt --zones=50-82,122-160,212-480 --ref=122-160.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +14,11 @@ const [newer, older] = option('pair', '0,1').split(',').map(Number);
 const sign = Number(option('sign', '1'));
 const calPath = option('cal', fileURLToPath(new URL('../public/field-check/c2-correction.txt', import.meta.url)));
 const tolerance = 1.5;
+const zoneOf = text => {
+  const [lo, hi] = text.split('-').map(Number);
+  check(Number.isFinite(lo) && Number.isFinite(hi) && hi > lo, 'Неверная зона ' + text + ': нужно «нижняя-верхняя» в Гц.');
+  return [lo, hi];
+};
 function check(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -41,13 +48,15 @@ function verify(saved, cal) {
     'Частотные сетки замеров не совпадают или это не свип приложения.');
   const diff = a.f.map((f, i) => ({ f, d: a.db[i] - b.db[i], c: sign * correctionAt(cal, f) }));
   const zone = (lo, hi) => diff.filter(p => p.f >= lo && p.f <= hi);
-  // Общий сдвиг уровня между записями (громкость, положение) оценивается там, где поправка равна нулю.
-  const offset = median(zone(75, 115).map(p => p.d));
+  // Общий сдвиг уровня между записями (громкость, положение) — в зоне --ref за вычетом её поправки (по умолчанию там 0 дБ).
+  const zones = option('zones', '30-45,75-115,200-480').split(',').map(zoneOf), ref = zoneOf(option('ref', '75-115'));
+  check(zones.every(([lo, hi]) => zone(lo, hi).length) && zone(...ref).length, 'В зоне нет точек сетки свипа.');
+  const offset = median(zone(...ref).map(p => p.d - p.c));
   console.log('Замеры: «%s» (%s) минус «%s» (%s) · знак %d', a.name, a.importedAt, b.name, b.importedAt, sign);
-  console.log('Сдвиг уровня между записями по 75–115 Гц: %s дБ', offset.toFixed(2));
+  console.log('Сдвиг уровня между записями по %s–%s Гц: %s дБ', ref[0], ref[1], offset.toFixed(2));
   console.log('Зона, Гц | медиана разности − сдвиг, дБ | ожидание, дБ | отклонение, дБ');
   let worst = 0;
-  for (const [lo, hi] of [[30, 45], [75, 115], [200, 480]]) {
+  for (const [lo, hi] of zones) {
     const points = zone(lo, hi);
     const got = median(points.map(p => p.d - offset)), want = median(points.map(p => p.c));
     worst = Math.max(worst, Math.abs(got - want));

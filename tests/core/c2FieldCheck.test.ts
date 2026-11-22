@@ -63,3 +63,51 @@ it('скрипт C2 различает поправку каталога, пре
   expect(run([withProfile, { ...none, session: 'catalog' }]).status).toBe(1);
   expect(run([withProfile]).status).toBe(1);
 });
+
+it('058: вариант C2 для слабого баса — те же три знака поправки выше 50 Гц, динамики с завалом баса не влияют на разность', () => {
+  const mid = readFileSync('public/field-check/c2-midbass-correction.txt', 'utf8');
+  const { f, db } = parseMicFile(mid);
+  expect(f).toEqual([15, 90, 115, 170, 200, 500]);
+  expect(db).toEqual([6, 6, 0, 0, -6, -6]);
+  expect(parseCalibration(mid)).toEqual({ f, db });
+  const catalogProfile = { ...profile(db), curve: { kind: 'correction' as const, frequencyHz: f, correctionDb: db } };
+  expect(correctionAt(catalogProfile, [65, 140, 235])).toEqual([6, 0, -6]);
+  const tones = readFileSync('public/field-check/c2-midbass-tones.wav');
+  expect([tones.readUInt16LE(22), tones.readUInt32LE(24), tones.length - 44]).toEqual([1, 24000, 24000 * 30 * 2]);
+  // Динамики без баса: ВЧ-фильтр 2-го порядка 60 Гц на обеих записях.
+  const w = 2 * Math.PI * 60 / fs, c = Math.cos(w), alpha = Math.sin(w) / Math.SQRT2, a0 = 1 + alpha;
+  const highpass = (x: ArrayLike<number>) => {
+    const y = new Float64Array(x.length);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < x.length; i++) {
+      y[i] = ((1 + c) / 2 * x[i] - (1 + c) * x1 + (1 + c) / 2 * x2 + 2 * c * y1 - (1 - alpha) * y2) / a0;
+      x2 = x1; x1 = x[i]; y2 = y1; y1 = y[i];
+    }
+    return y;
+  };
+  const sweep = logSweep(10, 1000, 6, fs);
+  const h = new Float32Array(Math.round(0.4 * fs));
+  h[Math.round(0.3 * fs)] = 0.3; h[Math.round(0.3 * fs) + 300] = 0.12;
+  const take = (mic: AppliedMic, gain: number, session: string) => {
+    const rec = Float32Array.from(highpass(convolve(sweep, h)), v => v * gain);
+    const r = analyzeSweep(rec, sweep, 10, 1000, fs, mic.mode === 'catalog' ? (fr, d) => beforeSmoothing(mic, fr, d) : undefined);
+    return { name: session, importedAt: '2026-11-23T00:00:00Z', f: r.f, db: afterSmoothing(mic, r.f, r.db), points: 1, session };
+  };
+  const none = take({ mode: 'none' }, 1, 'none');
+  const withProfile = take({ mode: 'catalog', profile: catalogProfile }, 1.3, 'catalog');
+  const legacy: AppliedMic = { mode: 'legacy', legacy: { name: 'c2-midbass-correction.txt', f, db } };
+  const withLegacy = take(legacy, 0.8, 'legacy');
+  const double = { ...withProfile, session: 'double', db: afterSmoothing(legacy, withProfile.f, withProfile.db) };
+  const flags = ['--cal=public/field-check/c2-midbass-correction.txt', '--zones=50-82,122-160,212-480', '--ref=122-160'];
+  const run = (list: unknown[], ...extra: string[]) => spawnSync(process.execPath, ['scripts/check-c2-sweep.mjs', '-', ...flags, ...extra], {
+    input: JSON.stringify({ format: 'room-acoustics-project', version: 5, project: { current: { measurement: list[0], history: list.slice(1) } } }),
+    encoding: 'utf8',
+  });
+  const ok = run([withProfile, none]);
+  expect(ok.status, ok.stdout + ok.stderr).toBe(0);
+  expect(ok.stdout).toMatch(/Сдвиг уровня между записями по 122–160 Гц: 2\.2/);
+  expect(ok.stdout).toMatch(/50–82 \| 6\.\d\d \| 6\.00/);
+  expect(run([withLegacy, none], '--sign=-1').status).toBe(0);
+  expect(run([withProfile, none], '--sign=-1').status).toBe(1);
+  expect(run([double, none]).status).toBe(1);
+});

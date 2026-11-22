@@ -18,6 +18,18 @@ const tones = Float32Array.from({ length: rate * seconds }, (_, i) => {
 });
 writeFileSync(`${dir}/c2-bass-tones.wav`, Buffer.from(wav16(tones, rate)));
 
+// 058: вариант для динамиков со слабым басом ниже 50–60 Гц — те же три знака поправки выше: +6 до 90 Гц, 0 в 115–170 Гц, −6 от 200 Гц.
+writeFileSync(`${dir}/c2-midbass-correction.txt`, [
+  '# SYNTHETIC C2 TEST ONLY - not a microphone calibration (limited-bass variant)',
+  '# Select correction. Columns: frequency (Hz), correction (dB)',
+  '15 6', '90 6', '115 0', '170 0', '200 -6', '500 -6', '',
+].join('\n'));
+const midbass = Float32Array.from({ length: rate * seconds }, (_, i) => {
+  const edge = Math.min(1, i / fade, (rate * seconds - 1 - i) / fade);
+  return edge * [65, 140, 235].reduce((sum, f) => sum + 0.25 * Math.sin(2 * Math.PI * f * i / rate), 0);
+});
+writeFileSync(`${dir}/c2-midbass-tones.wav`, Buffer.from(wav16(midbass, rate)));
+
 // Тот же сигнал, что «Скачать сигнал (WAV, 6 с)» в «Свипе».
 writeFileSync(`${dir}/c2-sweep-10-1000Hz-6s.wav`, Buffer.from(wav16(logSweep(10, 1000, 6, 48000), 48000)));
 console.log('Готово:', dir);
