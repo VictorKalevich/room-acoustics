@@ -20,13 +20,14 @@ export const fmtInt = (n: number) => new Intl.NumberFormat('ru-RU').format(Math.
 
 /**
  * Имя файла экспорта шумомера (054, UX-001): название пользователя без префикса, недопустимые символы заменены;
- * без названия — «noise-ГГГГ-ММ-ДД-ЧЧММ» по началу записи.
+ * без названия — «noise-ГГГГ-ММ-ДД-ЧЧММ» по началу записи. Расширенный экспорт и CSV (056) добавляют суффикс вида
+ * («-session», «-spectrum») и своё расширение.
  */
-export function noiseFileName(name: string, startMs: number | null, now = Date.now()) {
-  const safe = name.trim().replace(/\.json$/i, '').replace(/[^\p{L}\p{N}._ -]+/gu, '-').slice(0, 80).replace(/^[.\s-]+|[.\s-]+$/g, '');
-  if (safe) return safe + '.json';
+export function noiseFileName(name: string, startMs: number | null, now = Date.now(), suffix = '', ext: '.json' | '.csv' = '.json') {
+  const safe = name.trim().replace(ext === '.json' ? /\.json$/i : /\.csv$/i, '').replace(/[^\p{L}\p{N}._ -]+/gu, '-').slice(0, 80).replace(/^[.\s-]+|[.\s-]+$/g, '');
+  if (safe) return safe + suffix + ext;
   const d = new Date(startMs ?? now), pad = (n: number) => String(n).padStart(2, '0');
-  return `noise-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  return `noise-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${suffix}${ext}`;
 }
 
 /** Время аудиошкалы шумомера (055): «м:сс» или «ч:мм:сс». */

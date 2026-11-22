@@ -185,7 +185,7 @@ export function App() {
             onGo={go}
           />,
         )}
-        {tab === 'noise' && guard(TITLES.noise, <NoiseScreen />)}
+        {tab === 'noise' && guard(TITLES.noise, <NoiseScreen project={roomReady ? { id: project.id, name: project.name } : null} />)}
         {roomReady && <RetainedSection active={tab === 'measure'}>
           {guard(TITLES.measure, <MeasureScreen project={project} onSetup={onSetup} onRoom={(room: Room) => onRoom(room)} onGo={go} view={route.measure} active={tab === 'measure'} onPlacement={toPlacement} />)}
         </RetainedSection>}

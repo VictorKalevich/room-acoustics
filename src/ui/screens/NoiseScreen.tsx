@@ -1,19 +1,24 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { micCatalog } from '../../state/micCatalog';
-import { maxBoostDb } from '../../core/micCurve';
-import { FFT_SIZE, NoiseMeter, type NoiseRows } from '../../core/noise';
+import { NoiseMeter, type NoiseRows } from '../../core/noise';
+import { exportRecord, legacyReport } from '../../core/noiseFile';
+import { NoiseRecordError, type NoiseRecord } from '../../core/noiseRecord';
+import { createNoiseSession } from '../../core/noiseSession';
+import { noiseHistory } from '../../state/noiseHistory';
 import { openMic, shareFile } from '../audio/mic';
 import type { NoiseDiagnostics } from '../audio/noiseDiagnostics';
-import { SPECTRUM_SIZE, SPECTRUM_HOP, bandPowers, type SpectrumPeriod, type Weight } from '../../core/noiseSpectrum';
+import type { SpectrumPeriod, Weight } from '../../core/noiseSpectrum';
 import { NoiseAnalysis, NoiseLevels, levelText } from './NoiseAnalysis';
+import { NoiseLibrary } from './NoiseHistory';
 import { NoiseTimeline } from './NoiseTimeline';
-import { Details, DetailPanel, Note, Panel, SelectField, RmsHistoryChart } from '../design-system';
+import { Details, DetailPanel, Note, Panel, SelectField, RmsHistoryChart, Toast } from '../design-system';
 import { S } from '../strings';
 import { BUILD } from '../updates';
 import { noiseFileName } from '../format';
+import { displayName, newRecordId, useNoiseHistory } from '../noiseRecords';
 import { loadCal } from '../../state/legacyMicCalibration';
 import { MicCalibrationPanel, MicStartHint, announceCatalogChange, fromCatalog, micLoading, type MicSetup, type MicState } from '../components/MicCalibrationPanel';
-import { AbsoluteReference } from '../components/AbsoluteReference';
+import { AbsoluteReference, matchingAbsolute } from '../components/AbsoluteReference';
 import type { MicScope } from '../../core/micCalibration';
 
 const noiseScope: MicScope = { tool: 'noise' };
@@ -37,6 +42,9 @@ const fresh = (): Report => ({
 let last = fresh();
 let capturedSetup: MicSetup | null = null;
 let lastMeter: NoiseMeter | null = null;
+// 056: один идентификатор записи на сеанс — расширенный JSON и сохранение в историю совпадают.
+const recordIds = new WeakMap<NoiseMeter, string>();
+const savedMeters = new WeakSet<NoiseMeter>();
 const describe = (v: unknown): string => {
   if (v == null) return t.unknown;
   if (typeof v === 'boolean') return v ? t.yes : t.no;
@@ -44,7 +52,7 @@ const describe = (v: unknown): string => {
 };
 const percent = (v?: number | null) => v == null ? '—' : (100 * v).toFixed(1) + ' %';
 
-export function NoiseScreen() {
+export function NoiseScreen({ project = null }: { project?: { id: string; name: string } | null }) {
   const [report, render] = useState(last);
   const [label, setLabel] = useState('');
   const [weight, setWeight] = useState<Weight>('Z');
@@ -57,6 +65,11 @@ export function NoiseScreen() {
   const setup = micState.setup;
   const [legacy] = useState(loadCal);
   const [routeEpoch, setRouteEpoch] = useState(0);
+  const history = useNoiseHistory();
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [linkProject, setLinkProject] = useState(false);
+  const [storeNote, setStoreNote] = useState<string | null>(null);
+  const [toast, setToast] = useState({ text: '', n: 0 });
   const session = useRef<{ controller: AbortController; meter: NoiseMeter | null } | null>(null);
   const update = (changes: Partial<Report>) => { last = { ...last, ...changes }; render(last); };
 
@@ -90,6 +103,7 @@ export function NoiseScreen() {
     lastMeter = null;
     update({ ...fresh(), name: last.status === t.idle ? last.name : '', status: t.pending });
     setExportError(false);
+    setStoreNote(null);
     setLabel('');
     let nextRefresh = 0;
     let verified = false;
@@ -145,46 +159,61 @@ export function NoiseScreen() {
 
   async function save() {
     const meter = session.current?.meter ?? lastMeter;
-    const spectrum = meter?.spectral.average(period, weight);
-    const corrected = meter?.profile ? meter.spectral.average(period, weight, true) : null;
-    const measurement = meter?.snapshot() ?? last.measurement;
-    const origin = meter?.audioStartMs ?? last.audioStartMs;
-    const name = last.name.trim();
-    const data = {
-      ...(meter?.profile && corrected ? { calibration: {
-        profile: meter.profile, model: capturedSetup?.input.confirmedModel, maxBoostDb: meter.profile.maxBoostDb ?? maxBoostDb, outsideRange: 'uncorrected',
-        correctedSpectrum: { period, weight, seconds: corrected.seconds, units: 'FS²/Hz',
-          psd: corrected.seconds ? Array.from(corrected.density) : null,
-          meanSquare: corrected.seconds ? corrected.density.reduce((sum, v) => sum + v, 0) * meter.spectral.binHz : null,
-          bands: corrected.seconds ? bandPowers(corrected.density, meter.spectral.binHz) : [] },
-      } } : {}),
-      schema: meter?.profile ? 3 : 2, build: BUILD, mode: 'raw', units: 'dBFS', fftSize: FFT_SIZE,
-      window: 'periodic Hann', spectrum: 'one-sided peak amplitude per bin', rmsWindowSamples: FFT_SIZE,
-      secureContext: window.isSecureContext, microphoneApi: !!navigator.mediaDevices?.getUserMedia,
-      ...last, name, measurement, rmsAverageSeconds: 1, audioStartMs: origin,
-      spectralAnalysis: meter && spectrum && {
-        fftSize: SPECTRUM_SIZE, hopSamples: SPECTRUM_HOP, binHz: meter.spectral.binHz, weight, period,
-        validSpectralSeconds: spectrum.seconds, psdUnits: 'FS²/Hz',
-        psd: spectrum.seconds ? Array.from(spectrum.density) : null,
-        bands: spectrum.seconds ? bandPowers(spectrum.density, meter.spectral.binHz) : [],
-        bandPowerUnits: 'FS²', leqPower: weight === 'Z' ? meter.sessionPower : meter.spectral.leqPower(weight),
-        leqSeconds: weight === 'Z' ? meter.history.length * FFT_SIZE / meter.sampleRate : meter.spectral.weightedSeconds,
-        rmsWindowSamples: weight === 'Z' ? FFT_SIZE : SPECTRUM_SIZE,
-        rmsPower: weight === 'Z' ? meter.blockPower : meter.spectral.range[weight],
-        sessionPeakAmplitude: meter.peakAmplitude,
-      },
-      history: Array.from({ length: (meter?.history ?? last.history).length }, (_, i) => {
-        const point = (meter?.history ?? last.history).at(i)!;
-        return { ...point, timestamp: new Date(origin! + point.endSeconds * 1000).toISOString() };
-      }),
-    };
-    try { await shareFile(JSON.stringify(data), noiseFileName(name, origin), 'application/json'); }
+    const data = legacyReport(meter, last, { weight, period, model: capturedSetup?.input.confirmedModel, build: BUILD,
+      secureContext: window.isSecureContext, microphoneApi: !!navigator.mediaDevices?.getUserMedia });
+    try { await shareFile(JSON.stringify(data), noiseFileName(last.name.trim(), meter?.audioStartMs ?? last.audioStartMs), 'application/json'); }
     catch { setExportError(true); }
+  }
+
+  /** 056: запись истории из завершённого сеанса; суммы — снимок NoiseSessionV1, PCM не входит. */
+  function sessionRecord(meter: NoiseMeter): NoiseRecord {
+    const id = recordIds.get(meter) ?? newRecordId();
+    recordIds.set(meter, id);
+    const name = last.name.trim().slice(0, 100), absolute = matchingAbsolute(capturedSetup, last.path);
+    return {
+      id, name, savedAt: new Date().toISOString(), project: linkProject && project ? { id: project.id, name: project.name } : null, imported: null,
+      context: {
+        view: { weight, period, corrected: view === 'corrected' && !!meter.profile },
+        input: capturedSetup && { source: capturedSetup.input.source === 'system' ? 'system' : 'selected', confirmedModel: capturedSetup.input.confirmedModel },
+        absolute: absolute && { offsetDb: absolute.offsetDb, verifiedAt: absolute.verifiedAt, references: absolute.references!.map(r => ({ ...r })) },
+        ranges: { Z: { ...meter.blockPower }, A: { ...meter.spectral.range.A }, C: { ...meter.spectral.range.C } },
+      },
+      content: { type: 'session', session: createNoiseSession(meter, { name, stopReason: last.status, manualCheck: last.manual, build: BUILD },
+        last.path, capturedSetup?.input.confirmedModel ?? null) },
+    };
+  }
+  async function saveToHistory() {
+    const meter = lastMeter;
+    if (!meter || session.current || !meter.history.length) return;
+    if (savedMeters.has(meter)) { setStoreNote(S.noise.store.already); return; }
+    const persisting = noiseHistory.persist();
+    try {
+      const record = sessionRecord(meter);
+      await noiseHistory.save(record);
+      savedMeters.add(meter);
+      setStoreNote(null);
+      setToast(v => ({ text: S.noise.store.saved(displayName({ name: record.name, startedAt: null, savedAt: record.savedAt })), n: v.n + 1 }));
+    } catch (e) {
+      if (e instanceof NoiseRecordError && e.code === 'conflict') { savedMeters.add(meter); setStoreNote(S.noise.store.already); }
+      else setStoreNote((e as Error).message);
+    }
+    await persisting;
+    history.reload();
+  }
+  async function exportSession() {
+    const meter = lastMeter;
+    if (!meter || session.current || !meter.history.length) return;
+    try {
+      const record = sessionRecord(meter);
+      await shareFile(exportRecord(record, BUILD), noiseFileName(record.name, meter.audioStartMs, Date.now(), '-session'), 'application/json');
+    } catch { setExportError(true); }
   }
   const { measurement: m, path } = report;
   const busy = !!session.current;
   const meter = session.current?.meter ?? lastMeter;
   const current = weight === 'Z' ? meter?.blockPower.current : meter?.spectral.range[weight].current;
+  const canStore = !busy && !!lastMeter?.history.length;
+  const stored = history.list;
   return <div class="screen">
     <Panel title={t.subtitle}>
       <p class="small">{t.raw}</p>
@@ -204,6 +233,10 @@ export function NoiseScreen() {
       <NoiseLevels meter={meter} weight={weight} />
       <p class="small">{t.time} · {m?.activeSeconds.toFixed(1) ?? '0'} с</p>
       {!!m?.clipped && <Note tone="warn">{t.clipping}</Note>}
+      <DetailPanel title={S.noise.store.title} open={libraryOpen} onOpenChange={setLibraryOpen}
+        summary={history.error ?? S.noise.store.summary(stored?.headers.length ?? 0, ((stored?.bytes ?? 0) / 2 ** 20).toFixed(1))}>
+        <NoiseLibrary state={history} reload={history.reload} open={libraryOpen} />
+      </DetailPanel>
     </Panel>
     <MicCalibrationPanel scope={noiseScope} busy={busy} changed={setMic} routeEpoch={routeEpoch} legacy={legacy} />
     <AbsoluteReference meter={meter} path={path} setup={capturedSetup} next={setup} busy={busy}
@@ -242,6 +275,15 @@ export function NoiseScreen() {
       </div>
       <button type="button" class="btn" onClick={save}>{t.export}</button>
       {exportError && <Note tone="warn">{t.exportError}</Note>}
+      {project && <label class="check"><input type="checkbox" checked={linkProject} onChange={e => setLinkProject(e.currentTarget.checked)} />
+        {S.noise.store.link(project.name)}</label>}
+      <div class="btn-row">
+        <button type="button" class="btn btn--tonal" disabled={!canStore} onClick={() => void saveToHistory()}>{S.noise.store.save}</button>
+        <button type="button" class="btn" disabled={!canStore} onClick={() => void exportSession()}>{S.noise.store.extended}</button>
+      </div>
+      <p class="small">{S.noise.store.saveHint}</p>
+      {storeNote && <Note tone="warn">{storeNote}</Note>}
     </Panel>
+    <Toast message={toast.text} trigger={toast.n} />
   </div>;
 }

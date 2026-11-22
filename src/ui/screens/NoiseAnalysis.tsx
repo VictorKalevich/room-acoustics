@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'preact/hooks';
 import { maxBoostDb } from '../../core/micCurve';
-import { FFT_SIZE, type NoiseMeter } from '../../core/noise';
+import { FFT_SIZE } from '../../core/noise';
+import type { NoiseView } from '../../core/noiseRecord';
 import { bandPowers, SPECTRUM_HOP, SPECTRUM_SIZE, type SpectrumPeriod, type Weight } from '../../core/noiseSpectrum';
 import { ResponseChart } from '../components/Charts';
 import { Panel, SelectField } from '../design-system';
@@ -10,7 +11,7 @@ import { S } from '../strings';
 export const levelText = (power?: number | null) =>
   power == null ? '—' : power === 0 ? '−∞' : (10 * Math.log10(power)).toFixed(1);
 
-export function NoiseLevels({ meter, weight }: { meter: NoiseMeter | null; weight: Weight }) {
+export function NoiseLevels({ meter, weight }: { meter: NoiseView | null; weight: Weight }) {
   const range = weight === 'Z' ? meter?.blockPower : meter?.spectral.range[weight];
   const power = weight === 'Z' ? meter?.sessionPower : meter?.spectral.leqPower(weight);
   const interval = weight === 'Z' ? FFT_SIZE : SPECTRUM_SIZE;
@@ -30,8 +31,10 @@ const periods = [
   { value: '60', label: 'Среднее за 60 с' }, { value: 'session', label: 'Среднее за сеанс' },
 ];
 
-export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod, view, onView }: {
-  meter: NoiseMeter | null; blocks: number; weight: Weight; period: SpectrumPeriod; onPeriod(v: SpectrumPeriod): void; view: string; onView(v: string): void;
+/** periods — доступные периоды (056: у импорта schema 2/3 только сохранённый в файле). */
+export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod, view, onView, periods: allowed }: {
+  meter: NoiseView | null; blocks: number; weight: Weight; period: SpectrumPeriod; onPeriod(v: SpectrumPeriod): void; view: string; onView(v: string): void;
+  periods?: readonly SpectrumPeriod[];
 }) {
   const [upper, setUpper] = useState('20000');
   const [floor, setFloor] = useState('-120');
@@ -54,7 +57,8 @@ export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod, view, o
         <p class="small">Поправка в диапазоне {meter.profile.validRangeHz.join('–')} Гц, усиление до +{meter.profile.maxBoostDb ?? maxBoostDb} дБ. За границами сохранена исходная энергия.</p>
       </>}
       <div class="grid-2">
-        <SelectField label="Спектр и полосы" value={period} options={periods} onChange={v => onPeriod(v as SpectrumPeriod)} />
+        <SelectField label="Спектр и полосы" value={period} options={allowed ? periods.filter(p => allowed.includes(p.value as SpectrumPeriod)) : periods}
+          onChange={v => onPeriod(v as SpectrumPeriod)} />
         <SelectField label="Диапазон частот" value={upper} onChange={setUpper} options={[
           { value: '20000', label: '20 Гц – 20 кГц' }, { value: '250', label: '20–250 Гц' },
         ]} />

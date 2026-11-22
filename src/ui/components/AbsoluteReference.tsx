@@ -7,6 +7,16 @@ import { Details, Note, Panel } from '../design-system';
 import type { MicSetup } from './MicCalibrationPanel';
 
 const verifiedNow = () => new Date().toISOString();
+const routeOf = (setup: MicSetup, path: NoiseDiagnostics) =>
+  JSON.stringify([setup.input.confirmedModel, path.backend, path.sampleRate, path.settings, path.constraintsFallback]);
+
+/** Привязка, действительная для этого физического входа и тракта (056: сохраняется в истории как сведения). */
+export function matchingAbsolute(setup: MicSetup | null, path: NoiseDiagnostics | null) {
+  if (!setup || !path || setup.input.source === 'system') return null;
+  const stored = setup.input.absoluteCalibration;
+  return stored?.physicalInput === setup.input.source.localDeviceId && stored.captureMode === routeOf(setup, path) &&
+    stored.references?.length === 2 ? stored : null;
+}
 
 export function AbsoluteReference({ meter, setup, next, path, busy, refresh }: {
   meter: NoiseMeter | null; setup: MicSetup | null; next: MicSetup | null; path: NoiseDiagnostics | null;
@@ -17,12 +27,11 @@ export function AbsoluteReference({ meter, setup, next, path, busy, refresh }: {
   const [message, setMessage] = useState('');
   if (!meter || !setup || !path || setup.input.source === 'system') return null;
   const device = setup.input.source.localDeviceId;
-  const route = JSON.stringify([setup.input.confirmedModel, path.backend, path.sampleRate, path.settings, path.constraintsFallback]);
+  const route = routeOf(setup, path);
   const level = !busy && path.settings.autoGainControl !== true ? referenceLevel(meter) : null;
   const previous = first?.device === device && first.route === route ? first : null;
-  const stored = setup.input.absoluteCalibration;
-  const matching = stored?.physicalInput === device && stored.captureMode === route && stored.references?.length === 2;
-  const inRange = matching && level !== null && level >= Math.min(...stored.references!.map(r => r.measuredDbfs)) - 1 &&
+  const stored = matchingAbsolute(setup, path);
+  const inRange = stored !== null && level !== null && level >= Math.min(...stored.references!.map(r => r.measuredDbfs)) - 1 &&
     level <= Math.max(...stored.references!.map(r => r.measuredDbfs)) + 1;
   async function record() {
     try {

@@ -384,6 +384,25 @@ export class NoiseTimeline {
     return { power, coverage, width, tier, columnSeconds: (tier === 'fine' ? this.hop : COARSE_SECONDS * this.sampleRate) / this.sampleRate };
   }
 
+  /** Исходные столбцы яруса, пересекающие [t0, t1) (056, экспорт): границы, доля времени с данными и средняя мощность полос; NaN — нет данных. */
+  spectrogramColumns(t0: number, t1: number, v: number, tier = this.tierFor(t0)) {
+    const B = this.bandCount, stride = B * this.variants, out: { start: number; end: number; coverage: number; power: Float64Array }[] = [];
+    if (tier === 'fine') {
+      for (let i = 0; i < this.fineCount; i++) {
+        const slot = this.fineSlot(i), e = this.fineEnds[slot], at = slot * stride + v * B;
+        if (e > t0 && e - this.hop < t1) out.push({ start: e - this.hop, end: e, coverage: 1, power: Float64Array.from(this.fine.subarray(at, at + B)) });
+      }
+      return out;
+    }
+    const span = COARSE_SECONDS * this.sampleRate;
+    for (let m = Math.max(0, Math.floor(t0 / span)); m < this.coarseCount && m * span < t1; m++) {
+      const s = m * span, e = Math.min((m + 1) * span, Math.max(this.end, s)), spec = this.coarseSpec[m], at = m * stride + v * B;
+      if (e <= s) continue;
+      out.push({ start: s, end: e, coverage: spec / (e - s), power: Float64Array.from(this.coarse.subarray(at, at + B), x => spec ? x / spec : NaN) });
+    }
+    return out;
+  }
+
   /** Полосы спектрограммы в момент t из самого точного доступного столбца. */
   spectrumAt(t: number, v: number) {
     const B = this.bandCount, stride = B * this.variants;

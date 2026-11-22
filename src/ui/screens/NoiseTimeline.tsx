@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { FFT_SIZE, type NoiseMeter } from '../../core/noise';
+import { FFT_SIZE } from '../../core/noise';
+import type { NoiseView } from '../../core/noiseRecord';
 import type { Weight } from '../../core/noiseSpectrum';
-import type { LevelMetric, WindowValue } from '../../core/noiseTimeline';
+import type { LevelMetric, NoiseTimeline as Timeline, WindowValue } from '../../core/noiseTimeline';
 import { LevelHistoryChart, Note, NumberField, Panel, Segmented, SelectField, Spectrogram } from '../design-system';
 import { plotWidth } from '../design-system/timeAxis';
 import { fmtClock, fmtHz } from '../format';
@@ -32,9 +33,10 @@ function windowText(w: WindowValue, fs: number) {
   return levelText(w.power) + (w.complete ? '' : ' · ' + t.incomplete((w.valid / fs).toFixed(2)));
 }
 
-/** Подэкран 055: спектрограмма, история уровней и полос, значение в выбранный момент. Считает только когда открыт. */
-export function NoiseTimeline({ meter, busy, open, weight, onWeight, corrected, onCorrected }: {
-  meter: NoiseMeter; busy: boolean; open: boolean; weight: Weight; onWeight(w: Weight): void; corrected: boolean; onCorrected(v: boolean): void;
+/** Подэкран 055: спектрограмма, история уровней и полос, значение в выбранный момент. Считает только когда открыт.
+ * meter — живой шумомер или сохранённый сеанс (056). */
+export function NoiseTimeline({ meter, busy, open, weight, onWeight, corrected, onCorrected, status }: {
+  meter: NoiseView & { timeline: Timeline }; busy: boolean; status?: string; open: boolean; weight: Weight; onWeight(w: Weight): void; corrected: boolean; onCorrected(v: boolean): void;
 }) {
   const [span, setSpan] = useState('auto');
   const [from, setFrom] = useState(0);
@@ -115,7 +117,7 @@ export function NoiseTimeline({ meter, busy, open, weight, onWeight, corrected, 
     </tr>)}</tbody></table>;
   return <>
     <Panel title={t.session}>
-      <p class="small">{busy ? t.live : t.done}</p>
+      <p class="small">{status ?? (busy ? t.live : t.done)}</p>
       <p class="small">{t.recorded(fmtClock(total), fmtClock(history.activeSeconds), fmtClock(history.missing * FFT_SIZE / fs))}</p>
       <Note>{t.scale}</Note>
       <Segmented label={t.weight} value={weight} options={(['Z', 'A', 'C'] as const).map(value => ({ value, label: value }))} onChange={onWeight} />
