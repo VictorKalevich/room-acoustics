@@ -98,7 +98,8 @@ export function NoiseTimeline({ meter, busy, open, weight, onWeight, corrected, 
   const at = tl.interval(c, c + 1, weight, v);
   const leqAll = tl.series('leqAll', weight, c, c + 1).power[0];
   const peak = tl.peakAt(c);
-  const point = tl.spectrumAt((c + 0.5) * fs, v);
+  // Секунда без спектральных данных (пропуск, прогрев) — «нет данных», без соседних средних.
+  const point = at.spectralSamples ? tl.spectrumIn(c * fs, (c + 1) * fs, v) : null;
   let pick: number | null = row != null && row >= b0 && row < b1 ? row : null;
   if (point && pick == null) {
     let best = -1;
@@ -163,7 +164,7 @@ export function NoiseTimeline({ meter, busy, open, weight, onWeight, corrected, 
         <tr><th scope="row">{t.metrics.leqAll} ({weight})</th><td>{levelText(leqAll)}</td></tr>
         <tr><th scope="row">{t.metrics.peak}</th><td>{levelText(peak == null ? null : peak * peak)}</td></tr>
         <tr><th scope="row">{row != null && pick === row ? t.spectrumAt : t.strongest}</th>
-          <td>{point && pick != null ? `${bandHz(pick)} · ${levelText(point.power[pick] / (edges[pick + 1] - edges[pick]), t.colourUnit)}` : t.none}</td></tr>
+          <td>{point && pick != null ? `${bandHz(pick)} · ${levelText(point.power[pick] / (edges[pick + 1] - edges[pick]), t.colourUnit)}${point.tier === 'coarse' ? ' · ' + t.coarseAt : ''}` : t.none}</td></tr>
       </tbody></table>
       <p class="small">{t.bandsAt} ({weight}{corrected && meter.profile ? ', ' + t.corrected.toLowerCase() : ''})</p>
       {bandTable(at.bands, at.spectralSamples)}

@@ -11,7 +11,7 @@ export type LevelMetric = 'leq1' | 'leq10' | 'leq60' | 'leqAll' | 'peak';
 /** Вариант представления: вес + 3, если с поправкой профиля. Поправка есть только у сеанса с профилем. */
 export const variantOf = (weight: Weight, corrected: boolean) => WEIGHTS.indexOf(weight) + (corrected ? 3 : 0);
 
-/** Полосы спектрограммы: 1/12 октавы, центры 1000·2^(n/12) Гц, n = −68…51 (19,6 Гц – 19,6 кГц), не выше Найквиста. */
+/** Полосы спектрограммы: 1/12 октавы, центры 1000·2^(n/12) Гц, n = −68…51: центры 19,7 Гц – 19,0 кГц, границы 19,1 Гц – 19,6 кГц; не выше Найквиста. */
 export function spectrogramEdges(sampleRate: number) {
   const edges: number[] = [];
   for (let n = -68; n <= 51; n++) {
@@ -403,7 +403,8 @@ export class NoiseTimeline {
     return out;
   }
 
-  /** Полосы спектрограммы в момент t из самого точного доступного столбца. */
+  /** Полосы спектрограммы в момент t из самого точного доступного столбца. Внутри последних 10 мин пропуск
+   * и прогрев — null: среднее за 10 с туда не подставляется (058). */
   spectrumAt(t: number, v: number) {
     const B = this.bandCount, stride = B * this.variants;
     if (this.fineTotal && t >= this.fineFrom) {
@@ -412,11 +413,27 @@ export class NoiseTimeline {
         if (e - this.hop <= t && t < e) return { start: e - this.hop, end: e, tier: 'fine' as const, power: this.fine.slice(slot * stride + v * B, slot * stride + v * B + B) };
         if (e <= t) break;
       }
+      return null;
     }
     const span = COARSE_SECONDS * this.sampleRate, m = Math.floor(t / span);
     if (m < 0 || m >= this.coarseCount || !this.coarseSpec[m]) return null;
     const power = this.coarse.slice(m * stride + v * B, m * stride + v * B + B).map(e => e / this.coarseSpec[m]);
     return { start: m * span, end: Math.min((m + 1) * span, this.end), tier: 'coarse' as const, power };
+  }
+
+  /** Столбец для интервала [t0, t1): как spectrumAt в середине. Если середина в последних 10 мин не покрыта кадром
+   * (неполная последняя секунда, край пропуска) — кадр с наибольшим перекрытием интервала; без кадров — null. */
+  spectrumIn(t0: number, t1: number, v: number) {
+    const mid = (t0 + t1) / 2, at = this.spectrumAt(mid, v);
+    if (at || !this.fineTotal || mid < this.fineFrom) return at;
+    let best = 0, pick = -1;
+    for (let i = this.fineCount - 1; i >= 0; i--) {
+      const e = this.fineEnds[this.fineSlot(i)];
+      if (e <= t0) break;
+      const overlap = Math.min(e, t1) - Math.max(e - this.hop, t0);
+      if (overlap > best) { best = overlap; pick = i; }
+    }
+    return pick < 0 ? null : this.spectrumAt(this.fineEnds[this.fineSlot(pick)] - this.hop, v);
   }
 
   /** Объём выделенных массивов, байты. */

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { micCatalog } from '../../state/micCatalog';
 import { NoiseMeter, type NoiseRows } from '../../core/noise';
 import { exportRecord, legacyReport } from '../../core/noiseFile';
@@ -14,7 +14,7 @@ import { NoiseTimeline } from './NoiseTimeline';
 import { InputDiagnostics } from './NoiseInput';
 import { Details, DetailPanel, Note, Panel, SelectField, RmsHistoryChart, Toast } from '../design-system';
 import { S } from '../strings';
-import { BUILD } from '../updates';
+import { BUILD, setBusy } from '../updates';
 import { noiseFileName } from '../format';
 import { displayName, newRecordId, useNoiseHistory } from '../noiseRecords';
 import { loadCal } from '../../state/legacyMicCalibration';
@@ -49,7 +49,8 @@ let capturedProject: NoiseProject | null = null;
 let lastMeter: NoiseMeter | null = null;
 // 056: один идентификатор записи на сеанс — расширенный JSON и сохранение в историю совпадают.
 const recordIds = new WeakMap<NoiseMeter, string>();
-const savedMeters = new WeakSet<NoiseMeter>();
+/** 058: остановленное и не сохранённое в историю измерение есть только в памяти вкладки — перезапуск на новую версию ждёт сохранения или сброса, как точки Свипа. */
+const holdSession = (on: boolean) => setBusy('noise-session', on);
 const describe = (v: unknown): string => {
   if (v == null) return t.unknown;
   if (typeof v === 'boolean') return v ? t.yes : t.no;
@@ -82,6 +83,8 @@ export function NoiseScreen({ project = null }: { project?: NoiseProject | null 
     const active = session.current;
     if (!active) return;
     session.current = null;
+    // До освобождения микрофона: иначе отложенное обновление перезагрузило бы страницу между флагами.
+    holdSession(!!active.meter?.history.length);
     active.controller.abort();
     lastMeter = active.meter;
     lastMeter?.spectral.releasePcm();
@@ -193,16 +196,15 @@ export function NoiseScreen({ project = null }: { project?: NoiseProject | null 
   async function saveToHistory() {
     const meter = lastMeter;
     if (!meter || session.current || !meter.history.length) return;
-    if (savedMeters.has(meter)) { setStoreNote(S.noise.store.already); return; }
+    if (saved) { setStoreNote(S.noise.store.already); return; }
     const persisting = noiseHistory.persist();
     try {
       const record = sessionRecord(meter);
       await noiseHistory.save(record);
-      savedMeters.add(meter);
       setStoreNote(null);
       setToast(v => ({ text: S.noise.store.saved(displayName({ name: record.name, startedAt: null, savedAt: record.savedAt })), n: v.n + 1 }));
     } catch (e) {
-      if (e instanceof NoiseRecordError && e.code === 'conflict') { savedMeters.add(meter); setStoreNote(S.noise.store.already); }
+      if (e instanceof NoiseRecordError && e.code === 'conflict') setStoreNote(S.noise.store.already);
       else setStoreNote((e as Error).message);
     }
     await persisting;
@@ -222,6 +224,11 @@ export function NoiseScreen({ project = null }: { project?: NoiseProject | null 
   const current = weight === 'Z' ? meter?.blockPower.current : meter?.spectral.range[weight].current;
   const canStore = !busy && !!lastMeter?.history.length;
   const stored = history.list;
+  // Сохранено — пока запись с идентификатором сеанса есть в истории; после её удаления сеанс можно сохранить снова.
+  const savedId = lastMeter && recordIds.get(lastMeter);
+  const saved = !!savedId && !!stored?.headers.some(h => h.id === savedId);
+  const unsaved = canStore && !saved;
+  useEffect(() => holdSession(unsaved), [unsaved]);
   // Проект показанного измерения; до первого измерения — открытый.
   const measuredIn = meter ? capturedProject : project;
   const modes: ModeSource | null = meter && capturedProject ? { project: capturedProject.name, snapshot: capturedProject.room,
@@ -295,6 +302,7 @@ export function NoiseScreen({ project = null }: { project?: NoiseProject | null 
         <button type="button" class="btn btn--tonal" disabled={!canStore} onClick={() => void saveToHistory()}>{S.noise.store.save}</button>
         <button type="button" class="btn" disabled={!canStore} onClick={() => void exportSession()}>{S.noise.store.extended}</button>
       </div>
+      {!canStore && <p class="small">{busy ? S.noise.store.whileRunning : S.noise.store.nothing}</p>}
       <p class="small">{S.noise.store.saveHint}</p>
       {storeNote && <Note tone="warn">{storeNote}</Note>}
     </Panel>

@@ -70,6 +70,9 @@ test('056 · запись в историю, перезапуск, просмо�
   const timeline = await openDetail(page, 'Спектрограмма и история уровней');
   await expect(timeline.getByText(/Сохранённое измерение/)).toBeVisible();
   await expect(timeline.getByRole('img', { name: 'Спектрограмма (A)' })).toBeVisible();
+  // Последняя неполная секунда может остаться без кадра спектра («нет данных», 058): момент — целая секунда после прогрева.
+  await timeline.getByLabel(/Момент на шкале времени/).fill('3');
+  await expect(timeline.getByRole('row', { name: /^В выбранный момент/ })).toContainText('0:03–0:04');
   await expect(timeline.getByRole('row', { name: /^Наибольшая полоса/ })).toContainText(/1(,0)? кГц/);
   await page.setViewportSize({ width: 320, height: 640 });
   expect(await fitsWidth(page)).toBe(true);

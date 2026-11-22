@@ -7,7 +7,10 @@ import { useSectionVisible } from '../components/SectionVisibility';
 export function DetailPanel({ title, summary, children, open: controlled, onOpenChange }: { title: string; summary?: string; children: ComponentChildren; open?: boolean; onOpenChange?: (open: boolean) => void }) {
   const [local, setLocal] = useState(false);
   const open = controlled ?? local;
-  const setOpen = useCallback((value: boolean) => { setLocal(value); onOpenChange?.(value); }, [onOpenChange]);
+  // Свежий обработчик без перезапуска эффекта фокуса: иначе каждая перерисовка родителя возвращала бы фокус на «Назад».
+  const change = useRef(onOpenChange);
+  useLayoutEffect(() => { change.current = onOpenChange; });
+  const setOpen = useCallback((value: boolean) => { setLocal(value); change.current?.(value); }, []);
   const visible = useSectionVisible();
   const active = open && visible;
   const id = useId();

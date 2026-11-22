@@ -24,7 +24,7 @@ const profile: MicProfile = { id: 'p', name: 'Поправка', version: 1, ori
   curve: { kind: 'correction', frequencyHz: [20, 20000], correctionDb: [6, 6] } };
 
 describe('спектрограмма: полосы, время и частота', () => {
-  it('полосы 1/12 октавы с центрами 1000·2^(n/12), 19,6 Гц – 19,6 кГц, не выше Найквиста', () => {
+  it('полосы 1/12 октавы с центрами 1000·2^(n/12): центры 19,7 Гц – 19,0 кГц, границы 19,1 Гц – 19,6 кГц, не выше Найквиста', () => {
     const edges = spectrogramEdges(48000);
     expect(edges).toHaveLength(121);
     expect(edges[0]).toBeCloseTo(1000 * 2 ** (-137 / 24), 9);
@@ -304,4 +304,49 @@ describe('600 с синтетического сигнала, 48 кГц, пол�
     expect(stored).toBeLessThan(6 * 2 ** 20);
     expect(restoreNoiseSession(session).timeline.series('leqAll', 'Z', tl.levelCount - 1, tl.levelCount).power[0]).toBe(tl.series('leqAll', 'Z', tl.levelCount - 1, tl.levelCount).power[0]);
   }, 300_000);
+});
+
+describe('058: момент на шкале времени без спектральных данных', () => {
+  // Малая сетка, как в тесте 12 ч: кадр — каждые полсекунды, первый полукадр каждого отрезка — прогрев без кадра.
+  function session(seconds: number, gaps: [number, number][]) {
+    const fs = 4096, hop = 2048, bins = 33, psd = new Float64Array(bins).fill(1e-6);
+    const tl = new NoiseTimeline({ sampleRate: fs, binHz: fs / 64, bins, hop, gains: [null, null, null] });
+    const block = new Float32Array(4096).fill(0.01);
+    const gap = (s: number) => gaps.some(([a, b]) => s >= a && s < b);
+    for (let s = 0; s < seconds; s++) {
+      if (gap(s)) continue;
+      tl.addBlock(block, s * fs);
+      if (s && !gap(s - 1)) tl.addFrame((s + 0.5) * fs, psd, 1e-6, 1e-6);
+      tl.addFrame((s + 1) * fs, psd, 1e-6, 1e-6);
+    }
+    return { tl, fs };
+  }
+  it('внутри последних 10 мин пропуск и прогрев — null, среднее за 10 с не подставляется', () => {
+    const { tl, fs } = session(30, [[10, 12]]);
+    expect(tl.fineFrom).toBe(0);
+    expect(tl.spectrumAt(11 * fs, 0)).toBeNull();
+    expect(tl.spectrumAt(0.25 * fs, 0)).toBeNull();
+    expect(tl.spectrumAt(12.25 * fs, 0)).toBeNull();
+    expect(tl.spectrumAt(12.75 * fs, 0)?.tier).toBe('fine');
+    expect(tl.interval(11, 12, 'Z', 0).spectralSamples).toBe(0);
+  });
+  it('старше 10 мин — столбец 10 с (ярус помечен), в секунде пропуска спектральных отсчётов нет', () => {
+    const { tl, fs } = session(800, [[100, 103], [750, 753]]);
+    expect(tl.fineFrom).toBeGreaterThan(103 * fs);
+    expect(tl.spectrumAt(751.5 * fs, 0)).toBeNull();
+    expect(tl.spectrumAt(753.25 * fs, 0)).toBeNull();
+    expect(tl.spectrumAt(753.75 * fs, 0)?.tier).toBe('fine');
+    expect(tl.spectrumAt(101.5 * fs, 0)?.tier).toBe('coarse');
+    expect(tl.interval(101, 102, 'Z', 0).spectralSamples).toBe(0);
+  });
+  it('секунда с кадром, но без кадра в середине (неполная последняя), — кадр с наибольшим перекрытием', () => {
+    const { tl, fs } = session(30, [[10, 12]]);
+    tl.addBlock(new Float32Array(4096).fill(0.01), 30 * fs);
+    tl.addFrame(30.5 * fs, new Float64Array(33).fill(2e-6), 1e-6, 1e-6);
+    expect(tl.interval(30, 31, 'Z', 0).spectralSamples).toBe(fs / 2);
+    expect(tl.spectrumAt(30.5 * fs, 0)).toBeNull();
+    expect(tl.spectrumIn(30 * fs, 31 * fs, 0)).toMatchObject({ start: 30 * fs, end: 30.5 * fs, tier: 'fine' });
+    expect(tl.spectrumIn(20 * fs, 21 * fs, 0)).toEqual(tl.spectrumAt(20.5 * fs, 0));
+    expect(tl.spectrumIn(11 * fs, 12 * fs, 0)).toBeNull();
+  });
 });

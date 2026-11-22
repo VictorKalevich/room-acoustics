@@ -1,7 +1,7 @@
 // Подтверждение действия: шторка снизу, как у пояснений терминов.
 // 021: своя подпись отмены, третье действие («Не сохранять»), основной тон и содержимое (например, список).
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { useSheetLock } from '../sheetLock';
 
 interface Props {
@@ -23,12 +23,15 @@ export function ConfirmSheet({ title, text, confirm, onConfirm, onCancel, cancel
   const cancelRef = useRef<HTMLButtonElement>(null);
   const bd = useRef<HTMLDivElement>(null), sh = useRef<HTMLDivElement>(null);
   useSheetLock(bd, sh);
+  // Фокус на отмене — только при открытии: новый обработчик при перерисовке его не переносит.
+  const cancelNow = useRef(onCancel);
+  useLayoutEffect(() => { cancelNow.current = onCancel; });
   useEffect(() => {
     cancelRef.current?.focus();
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') cancelNow.current(); };
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
-  }, [onCancel]);
+  }, []);
   return (
     <div class="sheet-backdrop" ref={bd} onClick={onCancel}>
       <div class="sheet" ref={sh} role="alertdialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
