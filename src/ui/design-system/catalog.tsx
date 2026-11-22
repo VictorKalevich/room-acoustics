@@ -8,7 +8,7 @@ import '@fontsource/golos-text/latin-400.css';
 import '@fontsource/golos-text/latin-500.css';
 import '@fontsource/golos-text/latin-600.css';
 import '../../styles.css';
-import { ActionBar, DetailPanel, ActionMenu, CalculationStatus, ConfirmSheet, Details, FailurePanel, Note, NumberField, Panel, SectionNav, Segmented, SelectField, Toast } from './index';
+import { ActionBar, DetailPanel, ActionMenu, CalculationStatus, ConfirmSheet, Details, FailurePanel, LevelHistoryChart, Note, NumberField, Panel, SectionNav, Segmented, SelectField, Spectrogram, Toast } from './index';
 import { RmsHistoryChart } from './RmsHistoryChart';
 import { componentFamilies } from './registry';
 import { WallView } from '../components/WallView';
@@ -33,6 +33,22 @@ const sampleChart = (() => {
   const f = Array.from({ length: 73 }, (_, i) => 20 * Math.pow(10, i / 72));
   const target = f.map((x) => -10 * Math.log10(1 + Math.pow(30 / x, 8)));
   return { f, target, db: target.map((v, i) => v + 4 * Math.sin(i / 4) + (f[i] < 45 ? 3 : 0)) };
+})();
+
+/** Пример 055 без расчётов: 60 с, тон около 1 кГц после 10 с, пропуск 30–35 с. */
+const sampleSpectrogram = (() => {
+  const columns = 60, rows = 40, edgesHz = Array.from({ length: rows + 1 }, (_, i) => 20 * 1000 ** (i / rows));
+  const values = new Float32Array(columns * rows), coverage = new Float32Array(columns);
+  for (let x = 0; x < columns; x++) {
+    coverage[x] = x >= 30 && x < 35 ? 0 : x === 35 ? 0.4 : 1;
+    for (let r = 0; r < rows; r++) values[x * rows + r] = coverage[x] ? -110 - r / 2 + (x >= 10 && r === 20 ? 50 : 0) : NaN;
+  }
+  return { values, columns, rows, coverage, edgesHz, start: 0, end: 60, range: [-130, -60] as const };
+})();
+const sampleLevels = (() => {
+  const db = Float64Array.from({ length: 60 }, (_, i) => i >= 30 && i < 35 ? NaN : i < 10 ? -62 : -41 + Math.sin(i / 3));
+  const valid = Float64Array.from(db, v => Number.isNaN(v) ? 0 : 48000);
+  return { start: 0, step: 1, db, valid, complete: Uint8Array.from(db, (_, i) => i < 35 || i >= 45 ? 1 : 0) };
 })();
 
 function Catalog() {
@@ -175,6 +191,16 @@ function Catalog() {
         endSeconds: i + 1, rmsDbfs, rms1sDbfs: rmsDbfs - 1, windowComplete: i !== 3, missingBefore: i === 3 ? 1 : 0,
         peakHz: 996, clipped: false,
       }))} />
+    </Panel>
+    <Panel title="Спектрограмма и история уровня (055)">
+      <Spectrogram label="Пример спектрограммы" unit="dBFS/Гц" view={sampleSpectrogram} cursor={{ seconds: 20.5, row: 20 }} />
+      <LevelHistoryChart label="Пример истории уровня" unit="dBFS" series={sampleLevels} start={0} end={60} cursor={20.5} />
+      <div class="legend">
+        <span class="legend__item legend__item--room">полное окно</span>
+        <span class="legend__item legend__item--baseline">неполное окно</span>
+        <span class="legend__item legend__item--gap">нет данных</span>
+      </div>
+      <p class="small muted">Пропуск 30–35 с не закрашен и затенён; полоса под осью — доля времени столбца с данными. Цвет — viridis, шкала подписана единицами.</p>
     </Panel>
     <Panel title="Реестр визуальных семейств">
       <dl class="glossary">{componentFamilies.map(([name, api]) => <div key={name}><dt>{name}</dt><dd class="small text-code">{api}</dd></div>)}</dl>

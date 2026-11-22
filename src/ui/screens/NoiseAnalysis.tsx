@@ -30,13 +30,12 @@ const periods = [
   { value: '60', label: 'Среднее за 60 с' }, { value: 'session', label: 'Среднее за сеанс' },
 ];
 
-export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod }: {
-  meter: NoiseMeter | null; blocks: number; weight: Weight; period: SpectrumPeriod; onPeriod(v: SpectrumPeriod): void;
+export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod, view, onView }: {
+  meter: NoiseMeter | null; blocks: number; weight: Weight; period: SpectrumPeriod; onPeriod(v: SpectrumPeriod): void; view: string; onView(v: string): void;
 }) {
   const [upper, setUpper] = useState('20000');
   const [floor, setFloor] = useState('-120');
   const [smoothing, setSmoothing] = useState('0');
-  const [view, setView] = useState('corrected');
   const corrected = !!meter?.profile && view === 'corrected';
   const spectrum = meter?.spectral;
   const average = useMemo(() => blocks ? spectrum?.average(period, weight, corrected) : undefined, [spectrum, blocks, period, weight, corrected]);
@@ -48,7 +47,7 @@ export function NoiseAnalysis({ meter, blocks, weight, period, onPeriod }: {
   return <>
     <Panel title={S.noise.spectrum}>
       {meter?.profile && <>
-        <SelectField label="Представление спектра" value={view} onChange={setView} options={[
+        <SelectField label="Представление спектра" value={view} onChange={onView} options={[
           { value: 'corrected', label: 'С поправкой · ' + meter.profile.name + ' · v' + meter.profile.version },
           { value: 'raw', label: 'Исходный спектр' },
         ]} />

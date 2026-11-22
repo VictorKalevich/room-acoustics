@@ -1,12 +1,12 @@
 import { useMemo } from 'preact/hooks';
-import type { NoisePoint } from '../../core/noise';
+import type { NoiseRows } from '../../core/noise';
 import { S } from '../strings';
 
 const left = 38, right = 328, top = 12, bottom = 142;
 const y = (v: number) => top + Math.max(0, Math.min(100, -v)) / 100 * (bottom - top);
 
 /** В одном пикселе сохраняем оба экстремума. Пропущенные интервалы разрывают линию. */
-function trace(rows: readonly NoisePoint[], first: number, start: number, end: number, averaged: boolean) {
+function trace(rows: NoiseRows, first: number, start: number, end: number, averaged: boolean) {
   let path = '', previousX = -1, low = 0, high = 0, lowFirst = true, move = true;
   function flush() {
     if (previousX < 0) return;
@@ -17,7 +17,7 @@ function trace(rows: readonly NoisePoint[], first: number, start: number, end: n
     previousX = -1;
   }
   for (let i = first; i < rows.length; i++) {
-    const point = rows[i];
+    const point = rows.at(i)!;
     if (point.missingBefore || (averaged && !point.windowComplete)) {
       flush();
       move = true;
@@ -36,13 +36,13 @@ function trace(rows: readonly NoisePoint[], first: number, start: number, end: n
   return path;
 }
 
-export function RmsHistoryChart({ rows, live }: { rows: readonly NoisePoint[]; live: boolean }) {
+export function RmsHistoryChart({ rows, live }: { rows: NoiseRows; live: boolean }) {
   const end = Math.max(1, rows.at(-1)?.endSeconds ?? 0);
   const start = live ? Math.max(0, end - 60) : 0;
   const count = rows.length;
   const paths = useMemo(() => {
     let first = count;
-    while (first && rows[first - 1].endSeconds >= start) first--;
+    while (first && rows.at(first - 1)!.endSeconds >= start) first--;
     return [trace(rows, first, start, end, false), trace(rows, first, start, end, true)];
   }, [rows, count, start, end]);
   return <>

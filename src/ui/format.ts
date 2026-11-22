@@ -28,3 +28,10 @@ export function noiseFileName(name: string, startMs: number | null, now = Date.n
   const d = new Date(startMs ?? now), pad = (n: number) => String(n).padStart(2, '0');
   return `noise-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
 }
+
+/** Время аудиошкалы шумомера (055): «м:сс» или «ч:мм:сс». */
+export function fmtClock(seconds: number) {
+  const s = Math.max(0, Math.round(seconds)), pad = (n: number) => String(n).padStart(2, '0');
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}

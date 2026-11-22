@@ -35,6 +35,9 @@ export function recordPower(range: PowerRange, power: number) {
   range.max = Math.max(range.max ?? power, power);
 }
 
+/** Получатель каждого полного кадра (055): конец hop в отсчётах, PSD и мощности A/C кадра. Массив PSD переиспользуется. */
+export type FrameSink = (end: number, psd: Float64Array, powerA: number, powerC: number) => void;
+
 interface Frame { end: number; psd: Float64Array }
 interface SecondBucket {
   second: number;
@@ -48,8 +51,9 @@ interface SecondBucket {
 export class NoiseSpectrum {
   readonly binHz: number;
   readonly range = { A: emptyPowerRange(), C: emptyPowerRange() };
+  sink: FrameSink | null = null;
   private readonly weightedSums = { A: 0, C: 0 };
-  private readonly gain: Record<'A' | 'C', Float64Array>;
+  readonly gain: Readonly<Record<'A' | 'C', Float64Array>>;
   private readonly pcm = new Float32Array(SPECTRUM_SIZE);
   private readonly re = new Float64Array(SPECTRUM_SIZE);
   private readonly im = new Float64Array(SPECTRUM_SIZE);
@@ -60,7 +64,7 @@ export class NoiseSpectrum {
   private end = 0;
   private frames = 0;
 
-  private readonly calibration: Float64Array | null;
+  readonly calibration: Float64Array | null;
 
   constructor(readonly sampleRate: number, profile: MicProfile | null = null) {
     this.binHz = sampleRate / SPECTRUM_SIZE;
@@ -118,6 +122,7 @@ export class NoiseSpectrum {
     this.weightedSums.C += c * this.binHz;
     this.latest = frame;
     this.frames++;
+    this.sink?.(end, psd, a * this.binHz, c * this.binHz);
   }
 
   releasePcm() {
@@ -127,6 +132,7 @@ export class NoiseSpectrum {
   }
 
   get weightedSeconds() { return this.frames * SPECTRUM_HOP / this.sampleRate; }
+  get frameCount() { return this.frames; }
 
   leqPower(weight: 'A' | 'C') {
     return this.frames ? this.weightedSums[weight] / this.frames : null;
@@ -165,20 +171,46 @@ export class NoiseSpectrum {
   }
 }
 
+export interface BandCells {
+  lo: number;
+  hi: number;
+  /** Бины, чья физическая ячейка пересекает полосу; width — ширина пересечения, span — ширина ячейки, Гц. */
+  bins: Int32Array;
+  width: Float64Array;
+  span: Float64Array;
+}
+
+const cellCache = new Map<string, BandCells[]>();
 /** Делим всю мощность бина между частями его физической ячейки, включая
- * половинные ячейки DC и Nyquist. Знаменатель долей ограничен выбранной полосой. */
-export function bandPowers(psd: Float64Array, step: number, edges: readonly number[] = bandEdges) {
-  const nyquist = (psd.length - 1) * step;
-  const bands = edges.slice(1).map((upper, i) => {
+ * половинные ячейки DC и Nyquist. Общая геометрия для долей полос и истории (055). */
+export function bandCells(step: number, length: number, edges: readonly number[] = bandEdges): BandCells[] {
+  const key = step + ':' + length + ':' + edges.join(',');
+  const cached = cellCache.get(key);
+  if (cached) return cached;
+  const nyquist = (length - 1) * step;
+  const cells = edges.slice(1).map((upper, i) => {
     const lo = edges[i], hi = Math.min(upper, nyquist);
-    let power = 0;
-    for (let k = Math.max(0, Math.ceil(lo / step - 0.5)); k <= Math.min(psd.length - 1, Math.floor(hi / step + 0.5)); k++) {
+    const ks: number[] = [], width: number[] = [], span: number[] = [];
+    for (let k = Math.max(0, Math.ceil(lo / step - 0.5)); k <= Math.min(length - 1, Math.floor(hi / step + 0.5)); k++) {
       const left = Math.max(0, (k - 0.5) * step), right = Math.min(nyquist, (k + 0.5) * step);
-      const width = Math.max(0, Math.min(hi, right) - Math.max(lo, left));
-      power += psd[k] * step * width / (right - left);
+      ks.push(k);
+      width.push(Math.max(0, Math.min(hi, right) - Math.max(lo, left)));
+      span.push(right - left);
     }
-    return { lo, hi, power };
+    return { lo, hi, bins: Int32Array.from(ks), width: Float64Array.from(width), span: Float64Array.from(span) };
   }).filter(b => b.hi > b.lo);
+  if (cellCache.size > 8) cellCache.clear();
+  cellCache.set(key, cells);
+  return cells;
+}
+
+/** Знаменатель долей ограничен выбранной полосой. */
+export function bandPowers(psd: Float64Array, step: number, edges: readonly number[] = bandEdges) {
+  const bands = bandCells(step, psd.length, edges).map(cell => {
+    let power = 0;
+    for (let i = 0; i < cell.bins.length; i++) power += psd[cell.bins[i]] * step * cell.width[i] / cell.span[i];
+    return { lo: cell.lo, hi: cell.hi, power };
+  });
   const total = bands.reduce((sum, b) => sum + b.power, 0);
   return bands.map(b => ({ ...b, percent: total ? 100 * b.power / total : null }));
 }

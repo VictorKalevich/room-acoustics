@@ -43,7 +43,7 @@ describe('raw PCM', () => {
       for (let i = 0; i < 20; i++) {
         const end = (i + 1) * FFT_SIZE;
         meter.push(input.subarray(end - FFT_SIZE, end), i);
-        const row = meter.history[i];
+        const row = meter.history.at(i)!;
         expect(row.windowComplete).toBe(end >= fs);
         if (end >= fs) {
           const energy = input.subarray(end - fs, end).reduce((sum, x) => sum + x * x, 0);
@@ -66,7 +66,7 @@ describe('raw PCM', () => {
     expect(meter.history.map(r => [r.endSeconds, r.clipped, r.missingBefore, r.windowComplete])).toEqual([
       [0.5,true,0,false], [1,false,0,true], [2.5,false,2,false], [3,false,0,true],
     ]);
-    expect(meter.history[3].rms1sDbfs).toBeNull();
+    expect(meter.history.at(3)!.rms1sDbfs).toBeNull();
     expect(meter.snapshot().activeSeconds).toBe(2);
   });
   it('шумомер начинает без коррекции, прежние инструменты сохраняют legacy', () => {

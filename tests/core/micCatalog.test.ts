@@ -4,7 +4,7 @@ import type { MicProfile, MicScope } from '../../src/core/micCalibration';
 import { checkCurve, correctionFunction, parseMicFile, powerGains } from '../../src/core/micCurve';
 import { defaultInput, micCatalog } from '../../src/state/micCatalog';
 import { absoluteOffset, referenceLevel } from '../../src/core/micReference';
-import { NoiseMeter } from '../../src/core/noise';
+import { NoiseMeter, type NoisePoint } from '../../src/core/noise';
 import { calAt, parseCalibration } from '../../src/core/dsp';
 
 const profile: MicProfile = {
@@ -92,7 +92,8 @@ it('keeps absolute context scoped to an explicitly selected physical input', asy
 });
 
 it('rejects unstable, short, discontinuous or nonlinear 1 kHz reference readings', () => {
-  const meter = new NoiseMeter(48000);
+  // Точки A как в history: проверяется только отбор последних 5 с.
+  const meter = { sampleRate: 48000, history: [] as NoisePoint[] };
   const row = { endSeconds:0, rmsDbfs:-40, rms1sDbfs:-40, windowComplete:true, peakHz:996, clipped:false, missingBefore:0 };
   expect(referenceLevel(meter)).toBeNull();
   meter.history.push(...Array.from({length:60}, () => ({...row})));

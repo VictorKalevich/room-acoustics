@@ -1,7 +1,7 @@
-import { FFT_SIZE, type NoiseMeter } from './noise';
+import { FFT_SIZE, type NoisePoint } from './noise';
 
 /** Last five seconds of accepted raw blocks, including continuity, peak and drift checks. */
-export function referenceLevel(meter: NoiseMeter) {
+export function referenceLevel(meter: { sampleRate: number; history: { slice(start: number): NoisePoint[] } }) {
   const count = Math.ceil(5 * meter.sampleRate / FFT_SIZE);
   const blocks = meter.history.slice(-count);
   if (blocks.length !== count || blocks.some(p => p.clipped || p.missingBefore || p.peakHz === null ||

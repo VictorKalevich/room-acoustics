@@ -265,3 +265,58 @@ test('C1 · копирование legacy, новая версия и архив
   await expect(start(page)).toBeEnabled();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('ra-mic-cal')!))).toEqual({name:'Исходная',f:[100,1000,8000],db:[-3,0,2]});
 });
+
+test('055 · спектрограмма и история уровней: тон 1 кГц, вес, интервал, курсор, просмотр после остановки, 320 px', async ({ page }) => {
+  await page.goto('/#noise');
+  const hasVirtualInput = await installInput(page, 'tone');
+  const link = page.getByRole('button', { name: /Спектрограмма и история уровней/ });
+  await start(page).click();
+  if (!hasVirtualInput) {
+    // WebKit без виртуального входа: данных нет, перехода к истории тоже нет.
+    await expect(page.getByRole('status').filter({ hasText: /Safari|микрофон/i })).toBeVisible();
+    await expect(link).toHaveCount(0);
+    return;
+  }
+  await expect(page.getByRole('img', { name: 'История RMS' })).toBeVisible();
+  await link.click();
+  const dialog = page.getByRole('dialog', { name: 'Спектрограмма и история уровней' });
+  await expect(dialog.getByText(/Идёт измерение/)).toBeVisible();
+  await expect(dialog.getByRole('img', { name: 'Спектрограмма (Z)' })).toBeVisible();
+  await expect(dialog.getByRole('img', { name: 'История уровня: Leq 1 с (Z)' })).toBeVisible();
+  await expect(dialog.getByText('Шкала цифровая: dBFS, не дБ SPL', { exact: false })).toBeVisible();
+  const strongest = dialog.getByRole('row', { name: /Наибольшая полоса/ });
+  await expect(strongest).toContainText(/1(,0)? кГц/, { timeout: 10000 });
+  await expect(strongest).toContainText('dBFS/Гц');
+  await expect(dialog.getByRole('row', { name: /^Leq 1 с \(Z\)/ })).toContainText(/-9\.[0-2] dBFS/);
+  // Вес общий с основным экраном: A на 1 кГц — 0 дБ.
+  await dialog.getByRole('radio', { name: 'A', exact: true }).click();
+  await expect(dialog.getByRole('img', { name: 'Спектрограмма (A)' })).toBeVisible();
+  await expect(dialog.getByRole('row', { name: /^Leq 10 с \(A\)/ })).toContainText(/-9\.[0-2] dBFS/, { timeout: 10000 });
+  await dialog.getByLabel('Показатель').selectOption('peak');
+  await expect(dialog.getByRole('img', { name: 'История уровня: Пик за 1 с (Z)' })).toBeVisible();
+  await expect(dialog.getByRole('row', { name: /^Пик за 1 с/ })).toContainText(/-6\.0 dBFS/);
+  await dialog.getByLabel('Шкала цвета').selectOption('manual');
+  await expect(dialog.getByLabel('Нижняя граница')).toBeVisible();
+  await dialog.getByLabel('Частоты').selectOption('low');
+  await expect(dialog.getByText(/^Интервал старше|^Столбец изображения/)).toBeVisible();
+  await page.setViewportSize({ width: 320, height: 640 });
+  expect(await fitsWidth(page)).toBe(true);
+  await dialog.getByRole('button', { name: '← Назад' }).click();
+  await expect(page.getByLabel('Частотное взвешивание')).toHaveValue('A');
+  // Не меньше 4 с принятого сигнала, чтобы выбранная ниже секунда была после прогрева спектра.
+  await expect(page.getByText(/Время принятого сигнала · ([4-9]|\d\d)\.\d с/)).toBeVisible({ timeout: 15000 });
+  await page.getByRole('button', { name: 'Остановить' }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-closed', '1');
+  // После остановки — те же данные в памяти, весь сеанс, выбор момента.
+  await link.click();
+  await expect(dialog.getByText(/Сеанс завершён/)).toBeVisible();
+  await dialog.getByLabel('Частоты').selectOption('full');
+  await dialog.getByLabel('Интервал', { exact: true }).selectOption('all');
+  await expect(dialog.getByRole('row', { name: /^Интервал/ })).toContainText(/0:00–\d+:\d\d/);
+  const cursor = dialog.getByLabel(/Момент на шкале времени/);
+  await cursor.fill('3');
+  await expect(dialog.getByRole('row', { name: /^В выбранный момент/ })).toContainText('0:03–0:04');
+  await expect(dialog.getByRole('row', { name: /^Наибольшая полоса/ })).toContainText(/1(,0)? кГц/);
+  expect(await fitsWidth(page)).toBe(true);
+  await expect(page.locator('body')).toHaveAttribute('data-requests', '1');
+});

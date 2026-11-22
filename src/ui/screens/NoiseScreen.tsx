@@ -1,12 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { micCatalog } from '../../state/micCatalog';
 import { maxBoostDb } from '../../core/micCurve';
-import { FFT_SIZE, NoiseMeter, type NoisePoint } from '../../core/noise';
+import { FFT_SIZE, NoiseMeter, type NoiseRows } from '../../core/noise';
 import { openMic, shareFile } from '../audio/mic';
 import type { NoiseDiagnostics } from '../audio/noiseDiagnostics';
 import { SPECTRUM_SIZE, SPECTRUM_HOP, bandPowers, type SpectrumPeriod, type Weight } from '../../core/noiseSpectrum';
 import { NoiseAnalysis, NoiseLevels, levelText } from './NoiseAnalysis';
-import { Details, Note, Panel, SelectField, RmsHistoryChart } from '../design-system';
+import { NoiseTimeline } from './NoiseTimeline';
+import { Details, DetailPanel, Note, Panel, SelectField, RmsHistoryChart } from '../design-system';
 import { S } from '../strings';
 import { BUILD } from '../updates';
 import { noiseFileName } from '../format';
@@ -26,7 +27,7 @@ interface Report {
   manual: string;
   name: string;
   audioStartMs: number | null;
-  history: readonly NoisePoint[];
+  history: NoiseRows;
 }
 const fresh = (): Report => ({
   date: new Date().toISOString(), status: t.idle, error: null, path: null, measurement: null, manual: 'untested',
@@ -48,6 +49,9 @@ export function NoiseScreen() {
   const [label, setLabel] = useState('');
   const [weight, setWeight] = useState<Weight>('Z');
   const [period, setPeriod] = useState<SpectrumPeriod>('now');
+  // Общие для спектра, полос и подэкрана истории (055).
+  const [view, setView] = useState('corrected');
+  const [timelineOpen, setTimelineOpen] = useState(false);
   const [exportError, setExportError] = useState(false);
   const [micState, setMic] = useState<MicState>(micLoading);
   const setup = micState.setup;
@@ -100,6 +104,7 @@ export function NoiseScreen() {
           if (session.current !== active || !verified || !last.path) return;
           active.meter ??= new NoiseMeter(last.path.sampleRate, setup.profile);
           active.meter.push(pcm, sequence);
+          if (active.meter.limitReached) { stop(t.limit); return; }
           const now = performance.now();
           if (now < nextRefresh) return;
           nextRefresh = now + (last.path.backend === 'AudioWorklet' ? 150 : 350);
@@ -168,9 +173,10 @@ export function NoiseScreen() {
         rmsPower: weight === 'Z' ? meter.blockPower : meter.spectral.range[weight],
         sessionPeakAmplitude: meter.peakAmplitude,
       },
-      history: (meter?.history ?? last.history).map(point => ({
-        ...point, timestamp: new Date(origin! + point.endSeconds * 1000).toISOString(),
-      })),
+      history: Array.from({ length: (meter?.history ?? last.history).length }, (_, i) => {
+        const point = (meter?.history ?? last.history).at(i)!;
+        return { ...point, timestamp: new Date(origin! + point.endSeconds * 1000).toISOString() };
+      }),
     };
     try { await shareFile(JSON.stringify(data), noiseFileName(name, origin), 'application/json'); }
     catch { setExportError(true); }
@@ -202,11 +208,15 @@ export function NoiseScreen() {
     <MicCalibrationPanel scope={noiseScope} busy={busy} changed={setMic} routeEpoch={routeEpoch} legacy={legacy} />
     <AbsoluteReference meter={meter} path={path} setup={capturedSetup} next={setup} busy={busy}
       refresh={() => setRouteEpoch(v => v + 1)} />
-    <NoiseAnalysis meter={meter} blocks={m?.blocks ?? 0} weight={weight} period={period} onPeriod={setPeriod} />
+    <NoiseAnalysis meter={meter} blocks={m?.blocks ?? 0} weight={weight} period={period} onPeriod={setPeriod} view={view} onView={setView} />
     <Panel title={t.history}>
       {report.history.length ? <>
         <RmsHistoryChart rows={report.history} live={busy} />
         <p class="small">{busy ? t.liveHistory : t.fullHistory}</p>
+        {meter && <DetailPanel title={t.timeline.title} summary={t.timeline.summary} open={timelineOpen} onOpenChange={setTimelineOpen}>
+          <NoiseTimeline meter={meter} busy={busy} open={timelineOpen} weight={weight} onWeight={setWeight}
+            corrected={view === 'corrected'} onCorrected={v => setView(v ? 'corrected' : 'raw')} />
+        </DetailPanel>}
       </> : <p class="small">{t.empty}</p>}
     </Panel>
     <Panel title={t.diagnostics}>

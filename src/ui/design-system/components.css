@@ -286,6 +286,17 @@ td.num { text-align: right; }
 .legend__item--target::before { background: repeating-linear-gradient(90deg, var(--ink) 0 4px, transparent 4px 7px); opacity: 0.6; }
 .legend__item--baseline::before { background: var(--muted); opacity: 0.5; }
 .legend__item--unscored::before { width: 12px; height: 12px; background: var(--muted); opacity: 0.3; }
+/* 055: спектрограмма и история уровней шумомера. Изображение лежит под осями точно в поле графика 44…328 × 10…176 из 340 × 210. */
+.spectrogram__plot { position: relative; }
+.spectrogram__plot .chart { position: relative; }
+.spectrogram__image { position: absolute; left: calc(44 / 340 * 100%); top: calc(10 / 210 * 100%); width: calc(284 / 340 * 100%); height: calc(166 / 210 * 100%); image-rendering: pixelated; background: var(--paper); }
+.chart__frame { fill: none; stroke: var(--line-strong); stroke-width: 1; }
+.chart__gap { fill: var(--warn); opacity: 0.18; }
+.chart__cursor { stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 3 2; }
+.chart__pick { fill: none; stroke: var(--ink); stroke-width: 1; }
+.color-scale { width: 100%; height: auto; display: block; }
+.color-scale text { fill: var(--muted); font-size: var(--text-diagram); }
+.legend__item--gap::before { width: 12px; height: 12px; background: var(--warn); opacity: 0.3; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

@@ -82,7 +82,7 @@ describe('PSD и временные окна шумомера', () => {
       const offset = seq % 8 * BLOCK;
       meter.push(tone.subarray(offset, offset + BLOCK), seq);
       expect(meter.history).toHaveLength(seq + 1);
-      expect(meter.history[seq].endSeconds).toBe((seq + 1) * BLOCK / fs);
+      expect(meter.history.at(seq)!.endSeconds).toBe((seq + 1) * BLOCK / fs);
       expect(meter.spectral.weightedSeconds).toBe((seq < 7 ? 0 : seq < 11 ? 1 : 2) * HOP / fs);
     }
     meter.push(tone.subarray(0, BLOCK), 1000);
