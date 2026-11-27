@@ -5,12 +5,12 @@ import {
   Badge, Button, Card, NumberField, Notice, SegmentedControl, SelectField, Switch, useToast,
 } from '../../design-system';
 import { FURNITURE_ORDER } from '../../../core/furniture';
-import { FURNISHING_LABEL, MATERIALS } from '../../../core/materials';
+import { FURNISHING_LABEL } from '../../../core/materials';
 import { PRECISIONS, type Precision } from '../../../core/precision';
 import { SURFACES, type AcousticModel, type Extension, type Furnishing, type Leakage, type SubZone, type WallId } from '../../../core/types';
 import {
-  FURNITURE_LABEL, SURFACE_LABEL, TREATMENT_LABEL, WALL_LABEL, addCovering, addFurniture, addListener, addSource, addTreatment, newOpening, newTreatment,
-  newZone, removeZone, setDimensions, setLayout, setSlope, setSurface, upsertOpening, upsertZone, type EditRef, type TreatmentKind,
+  FURNITURE_LABEL, TREATMENT_LABEL, WALL_LABEL, addCovering, addFurniture, addListener, addSource, addTreatment, newOpening, newTreatment,
+  newZone, removeZone, setDimensions, setLayout, setSlope, upsertOpening, upsertZone, type EditRef, type TreatmentKind,
 } from '../../application/editing';
 import { hiddenOverrides, resetParams, visibleAt } from '../../domain/complexity';
 import type { Complexity, RoomConfiguration, SystemLayout } from '../../domain/model';
@@ -19,6 +19,7 @@ import { useApp } from '../../shared/context';
 import type { RoomHandle } from '../rooms/useRoom';
 import { CORNER_LABEL, NameField, Properties } from './Properties';
 import { ScanCard } from './ScanCard';
+import { SurfaceField, useMaterials } from './ProfileBlocks';
 import { ShapeCard } from './ShapeCard';
 import type { ConfigEdit } from './useConfig';
 
@@ -69,6 +70,7 @@ export function GeometrySection({ edit, level }: SectionProps) {
   const toast = useToast();
   const { clock } = useApp();
   const [wall, setWall] = useState<WallId>('back');
+  const materials = useMaterials();
   const c = edit.config;
   if (c.geometry.kind !== 'rect') return <Notice tone="warning">Произвольный контур пока редактируется только в legacy-версии.</Notice>;
   const g = c.geometry;
@@ -96,10 +98,7 @@ export function GeometrySection({ edit, level }: SectionProps) {
       {visibleAt('advanced', level) && <SlopeCard edit={edit} />}
       <Card title="Поверхности" subtitle="Материал задаёт поглощение по октавам; ковры, шторы и обработка добавляются поверх.">
         <div class="al-grid">
-          {SURFACES.map((s) => (
-            <SelectField key={s} label={SURFACE_LABEL[s]} value={c.surfaces[s].material} onChange={(v) => edit.apply((x) => setSurface(x, s, v), `Материал: ${SURFACE_LABEL[s].toLowerCase()}`)}
-              options={MATERIALS.map((m) => ({ value: m.id, label: m.name }))} />
-          ))}
+          {SURFACES.map((s) => <SurfaceField key={s} c={c} s={s} edit={edit} materials={materials} />)}
         </div>
       </Card>
       <Card title="Двери, окна и проёмы" subtitle="Закрытые двери и окна учитываются как часть стены, открытые и постоянные проёмы — как выход звука из комнаты.">

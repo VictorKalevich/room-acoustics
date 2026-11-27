@@ -5,7 +5,8 @@
 //   полоса −3 дБ = f/Q (spec analysis §1: «T60 ≈ 2,2·Q/f0» для изолированного слабо затухающего резонанса);
 // - задержка отражения — разность путей отражённого и прямого звука, делённая на скорость звука ядра;
 // - ослабление отражения — только расхождение (20·lg отношения путей) и поглощение материала поверхности на 1 кГц.
-import { alphaAt, getMaterial } from '../../core/materials';
+import { alphaAt } from '../../core/materials';
+import { surfaceAlpha } from './profiles';
 import { modeWhere } from '../../core/modes';
 import type { ModeDecay } from '../../core/overview';
 import { speedOfSound } from '../../core/physics';
@@ -143,7 +144,7 @@ export function reflectionPaths(c: RoomConfiguration): ReflectionPath[] {
     const a = dist(s, r.point), b = dist(r.point, l), direct = dist(s, l);
     const ax = NORMAL_AXIS[r.surface];
     const incidence = deg(Math.acos(Math.min(1, Math.abs(r.point[ax] - l[ax]) / b)));
-    const alpha = alphaAt(getMaterial(c.surfaces[r.surface].material).alpha, 1000);
+    const alpha = alphaAt(surfaceAlpha(c.surfaces[r.surface]), 1000);
     const levelDb = 20 * Math.log10(direct / (a + b)) + 10 * Math.log10(Math.max(1e-6, 1 - alpha));
     return {
       sourceId: r.speakerId, surface: r.surface, point: r.point, path: a + b, direct, delayMs: ((a + b - direct) / v) * 1000,
@@ -249,8 +250,8 @@ export function flutterRisk(c: RoomConfiguration): FlutterPair[] {
   const len: Record<string, number> = { front: g.depth, left: g.width, floor: g.height };
   const out: FlutterPair[] = [];
   for (const [a, b] of PAIRS) {
-    const alphaA = alphaAt(getMaterial(c.surfaces[a].material).alpha, 2000);
-    const alphaB = alphaAt(getMaterial(c.surfaces[b].material).alpha, 2000);
+    const alphaA = alphaAt(surfaceAlpha(c.surfaces[a]), 2000);
+    const alphaB = alphaAt(surfaceAlpha(c.surfaces[b]), 2000);
     if (alphaA < 0.1 && alphaB < 0.1 && !covered(a) && !covered(b) && !(a === 'floor' && c.interior.furnishing !== 'empty')) {
       out.push({ a, b, distance: len[a], alphaA, alphaB, repeatMs: ((2 * len[a]) / v) * 1000 });
     }

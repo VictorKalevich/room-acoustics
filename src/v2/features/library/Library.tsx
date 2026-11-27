@@ -1,7 +1,9 @@
 // «Мои данные» (V2-020): девять категорий, списки записей, экспорт записи в JSON и удаление с подтверждением.
 // Управление хранилищем и резервная копия — в настройках.
 import { useCallback, useEffect, useState } from 'preact/hooks';
-import { ConfirmDialog, EmptyState, ErrorState, Icon, IconButton, LoadingState, buttonClass, useToast } from '../../design-system';
+import { Button, ConfirmDialog, EmptyState, ErrorState, Icon, IconButton, LoadingState, buttonClass, useToast } from '../../design-system';
+import type { EquipmentProfile, MaterialProfile } from '../../domain/profiles';
+import { EquipmentEditor, MaterialEditor } from './ProfileEditors';
 import { CATEGORY_INFO, LIBRARY_CATEGORIES, countCategories, deleteEntry, getEntry, listCategory, type LibraryCategory, type LibraryEntry } from '../../storage/library';
 import { useApp } from '../../shared/context';
 import { downloadText, safeFileName } from '../../shared/files';
@@ -52,6 +54,10 @@ function CategoryView({ category }: { category: LibraryCategory }) {
   const [items, setItems] = useState<LibraryEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<LibraryEntry | null>(null);
+  /** Профиль в редакторе (V2-047): null — новый, undefined — редактор закрыт. */
+  const [editing, setEditing] = useState<EquipmentProfile | MaterialProfile | null | undefined>(undefined);
+  const profiles = category === 'equipment' || category === 'materials';
+  const openEditor = async (e: LibraryEntry) => setEditing((await getEntry<EquipmentProfile | MaterialProfile>(db, category, e.id)) ?? undefined);
   const load = useCallback(() => { listCategory(db, category).then(setItems, (e) => setError(String(e?.message ?? e))); }, [db, category]);
   useEffect(load, [load]);
 
@@ -64,8 +70,13 @@ function CategoryView({ category }: { category: LibraryCategory }) {
     <Screen title={info.title} context="Мои данные" backHref={href({ name: 'library' })}>
       <div class="al-stack al-stack--16">
         <p class="al-text-secondary">{info.text}</p>
+        {profiles && (
+          <div class="al-row">
+            <Button icon="plus" variant="primary" small onClick={() => setEditing(null)}>{category === 'equipment' ? 'Новый профиль оборудования' : 'Новый материал'}</Button>
+          </div>
+        )}
         {error ? <ErrorState text={error} onRetry={load} /> : !items ? <LoadingState /> : items.length === 0 ? (
-          <EmptyState icon="library" title="Пока пусто" text="Записи появятся, когда вы сохраните их в инструменте или комнате." />
+          <EmptyState icon="library" title="Пока пусто" text={profiles ? 'Создайте профиль кнопкой выше или сохраните параметры объекта комнаты как профиль в его свойствах.' : 'Записи появятся, когда вы сохраните их в инструменте или комнате.'} />
         ) : (
           <ul class="al-list" aria-label={info.title}>
             {items.map((e) => (
@@ -79,6 +90,7 @@ function CategoryView({ category }: { category: LibraryCategory }) {
                   </span>
                 </span>
                 <span class="al-row al-row--nowrap">
+                  {profiles && <IconButton icon="edit" small label={`Изменить «${e.name}»`} onClick={() => void openEditor(e)} />}
                   <IconButton icon="download" small label={`Сохранить «${e.name}» в файл`} onClick={() => exportOne(e)} />
                   <IconButton icon="trash" small variant="danger-ghost" label={`Удалить «${e.name}»`} onClick={() => setRemoving(e)} />
                 </span>
@@ -87,6 +99,12 @@ function CategoryView({ category }: { category: LibraryCategory }) {
           </ul>
         )}
       </div>
+      {editing !== undefined && category === 'equipment' && (
+        <EquipmentEditor key={editing?.id ?? 'new'} profile={editing as EquipmentProfile | null} onClose={() => setEditing(undefined)} onSaved={(p) => { setEditing(p); load(); }} />
+      )}
+      {editing !== undefined && category === 'materials' && (
+        <MaterialEditor key={editing?.id ?? 'new'} profile={editing as MaterialProfile | null} onClose={() => setEditing(undefined)} onSaved={(p) => { setEditing(p); load(); }} />
+      )}
       {removing && (
         <ConfirmDialog title={`Удалить «${removing.name}»?`} text="Запись будет удалена с устройства. Расчёты и отчёты, которые на неё ссылались, сохранят свои данные." confirmLabel="Удалить" danger
           onCancel={() => setRemoving(null)} onConfirm={async () => {

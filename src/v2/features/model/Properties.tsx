@@ -11,6 +11,7 @@ import {
 import { visibleAt } from '../../domain/complexity';
 import type { Complexity, DiffuserItem, OpeningState, ResonatorItem, RoomConfiguration, TreatmentItem } from '../../domain/model';
 import { isKnown } from '../../domain/units';
+import { EquipmentBlock } from './ProfileBlocks';
 import type { ConfigEdit } from './useConfig';
 
 const WALLS: WallId[] = ['front', 'back', 'left', 'right'];
@@ -105,6 +106,7 @@ function SourceProps({ c, id, edit, level }: { c: RoomConfiguration; id: string;
           )}
         </div>
       )}
+      {visibleAt('advanced', level) && <EquipmentBlock s={s} edit={edit} />}
       {pair && <Button small icon="copy" onClick={() => edit.apply((x) => mirrorSource(x, id), 'Зеркало')}>Зеркально для «{pair.name}»</Button>}
     </>
   );

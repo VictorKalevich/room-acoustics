@@ -1,11 +1,12 @@
 // Эксперимент и история (V2-026–V2-030): снимки, восстановление в эксперимент, применение предложений только к
 // эксперименту, перечень различий двух конфигураций. Сравнение — просмотр двух конфигураций, третьей не создаётся.
-import { MATERIAL_BY_ID, FURNISHING_LABEL } from '../../core/materials';
+import { FURNISHING_LABEL } from '../../core/materials';
 import { SURFACES } from '../../core/types';
 import type { MeasurementKind } from '../domain/measurement';
 import type { ConfigSnapshot, Room, RoomConfiguration } from '../domain/model';
 import { createExperiment, updateConfig, type IdFactory } from '../domain/operations';
 import { SURFACE_LABEL, WALL_LABEL } from './editing';
+import { surfaceName } from './profiles';
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -69,8 +70,7 @@ export function diffConfigs(a: RoomConfiguration, b: RoomConfiguration): ConfigC
   if (!same(a.zones, b.zones)) push('geometry', `Смежные зоны: ${a.zones.length} → ${b.zones.length}${a.zones.length === b.zones.length ? ' (изменены)' : ''}`);
 
   for (const s of SURFACES) {
-    const ma = a.surfaces[s].material, mb = b.surfaces[s].material;
-    if (ma !== mb) push('surfaces', `${SURFACE_LABEL[s]}: ${MATERIAL_BY_ID[ma]?.name ?? ma} → ${MATERIAL_BY_ID[mb]?.name ?? mb}`);
+    if (!same(a.surfaces[s], b.surfaces[s])) push('surfaces', `${SURFACE_LABEL[s]}: ${surfaceName(a.surfaces[s])} → ${surfaceName(b.surfaces[s])}`);
   }
 
   const byId = <T extends { id: string }>(xs: readonly T[]) => new Map(xs.map((x) => [x.id, x]));

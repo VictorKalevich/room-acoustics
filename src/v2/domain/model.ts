@@ -45,7 +45,12 @@ export interface RoomShape {
 }
 
 /** Материал поверхности — ссылка на профиль: встроенный материал ядра или версия профиля библиотеки. */
-export interface SurfaceMaterial { material: string; profileVersion?: number }
+/**
+ * Свой материал поверхности (V2-047): копия версии профиля библиотеки. Ядро знает только справочник: в его расчёт идёт
+ * ближайший справочный материал `material`, о чём сообщает адаптер; расчёты v2 берут α профиля.
+ */
+export interface SurfaceProfile { id: string; version: number; name: string; alpha: number[]; uncertainty: number | null; source: string }
+export interface SurfaceMaterial { material: string; profileVersion?: number; profile?: SurfaceProfile }
 export type Surfaces = Record<SurfaceId, SurfaceMaterial>;
 
 /**
@@ -85,6 +90,12 @@ export interface SourceCapabilities {
 /** Ссылка экземпляра на версию профиля оборудования (V2-047). */
 export interface ProfileRef { id: string; version: number }
 
+/**
+ * Направленность источника (V2-047): всенаправленная или параметрическая — выше `aboveHz` ширина диаграммы `beamDeg`
+ * по уровню −6 дБ. Ядро считает источники всенаправленными; параметрическую учитывают расчёты отражений v2.
+ */
+export type Directivity = { kind: 'omni' } | { kind: 'parametric'; aboveHz: number; beamDeg: number };
+
 export interface Source {
   id: string;
   kind: SourceKind;
@@ -104,6 +115,7 @@ export interface Source {
   /** Размеры корпуса (ширина, высота, глубина), если известны. */
   box?: Maybe<{ w: Meters; h: Meters; d: Meters }>;
   profile?: ProfileRef;
+  directivity?: Directivity;
   locked?: boolean;
 }
 

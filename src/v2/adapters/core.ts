@@ -4,6 +4,7 @@ import type { Constraints, Room as CoreRoom, Opening as CoreOpening, Setup, Sour
 import type { Precision } from '../../core/precision';
 import type { VoiceSettings } from '../../core/voice';
 import type { Opening, RoomConfiguration, Source, SourceCapabilities, SystemLayout } from '../domain/model';
+import { materialLimitations } from './materials';
 
 export interface CoreInputs {
   room: CoreRoom;
@@ -55,6 +56,10 @@ export function toCore(c: RoomConfiguration): CoreConversion {
   const porous = c.treatment.items.filter((t): t is Treatment => t.kind === 'corner' || t.kind === 'panel' || t.kind === 'cloud');
   if (c.treatment.enabled && porous.length < c.treatment.items.filter((t) => t.enabled !== false).length) {
     limitations.push('Диффузоры и резонаторы в расчёт ядра не входят: учтено только пористое поглощение.');
+  }
+  limitations.push(...materialLimitations(c));
+  if (c.audio.sources.some((s) => s.directivity?.kind === 'parametric')) {
+    limitations.push('Направленность источников в расчёт ядра не входит: ядро считает их всенаправленными (на басу это обычно допустимо).');
   }
   if (c.shape) limitations.push('Сложная форма: части комнаты учитывает волновая модель баса; реверберация, отражения и расстояния до стен считаются по основной части.');
   if (c.listening.listeners.length > 1) limitations.push('Ядро оценивает основное место и ряд мест вокруг него; другие слушатели учитываются отдельно.');
