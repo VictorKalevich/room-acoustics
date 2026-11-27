@@ -76,26 +76,32 @@ function Report({ d }: { d: AdviceData }) {
     void listCategory(db, 'reports').then((l) => alive && setSaved((l as RoomReportEntry[]).filter((e) => e.kind === 'room-report' && e.roomId === room.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))), () => undefined);
     return () => { alive = false; };
   }, [db, room.id, tick]);
+  /** Сохранённая в конфигурации коррекция, иначе подобранная в этом сеансе для той же ревизии. */
+  const sessionEq = () => {
+    if (c.dsp) return { filters: c.dsp.filters, source: c.dsp.source, preamp: c.dsp.preamp, configId: c.id, revision: c.revision };
+    const eq = lastEq.get(room.id);
+    return eq && eq.configId === c.id && eq.revision === c.revision ? eq : null;
+  };
   const build = () => {
     const now = clock.now();
     const a = d.state.status === 'ready' ? d.state.value : null;
-    const eq = lastEq.get(room.id);
+    const eq = sessionEq();
     return {
       now,
       text: roomReport({
         room, config: c, label: d.label, now, recs: d.recs ?? [], plan: d.plan, runs: d.records?.optimizations ?? [], measurements: d.records?.measurements ?? [],
         analysis: a ? { score: a.ev.score, rt60: a.reverb.tMid, volume: a.reverb.volume, problems: a.overview.problems.map((p) => p.title), limitations: [...a.provenance.limitations, ...a.provenance.warnings] } : null,
-        eq: eq && eq.configId === c.id && eq.revision === c.revision ? eq : null,
+        eq,
       }),
     };
   };
   const file = (at: string) => `${safeFileName(room.name)}_отчёт_${at.slice(0, 10)}.md`;
-  const eq = lastEq.get(room.id);
+  const eq = sessionEq();
   return (
     <Block title="Отчёт по комнате" subtitle="Markdown: комната, расчёт, замеры, рекомендации с причинами и проверкой, план работ, подбор и эквалайзер. Расчёт помечен расчётом, замеры — измерением.">
       <KeyValue items={[
         ['Конфигурация', `${d.label}, ревизия ${c.revision}`], ['Рекомендаций', String(d.recs?.length ?? 0)], ['Пунктов плана', String(d.plan.items.length)],
-        ['Эквалайзер', eq && eq.configId === c.id && eq.revision === c.revision ? `${eq.filters.filter((p) => p.enabled).length} фильтров` : 'не подбирался в этом сеансе'],
+        ['Эквалайзер', eq ? `${eq.filters.filter((p) => p.enabled).length} фильтров${c.dsp ? ', сохранён в конфигурации' : ''}` : 'не подбирался в этом сеансе и не сохранён'],
       ]} />
       <div class="al-row">
         <Button small icon="download" disabled={!d.recs} onClick={() => { const r = build(); downloadText(file(r.now), r.text, 'text/markdown'); }}>Скачать отчёт</Button>

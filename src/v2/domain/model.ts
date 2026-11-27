@@ -216,6 +216,23 @@ export interface SimulationSettings {
   placement: PlacementRules;
 }
 
+/**
+ * Коррекция комнаты, сохранённая в конфигурации (V2-049): фильтры, загруженные (или подготовленные к загрузке) во
+ * внешний эквалайзер или DSP. Приложение звук системы не обрабатывает; расчёты модели показывают комнату без неё.
+ */
+export type DspFilterType = 'peaking' | 'lowshelf' | 'highshelf' | 'lowpass' | 'highpass' | 'bandpass' | 'notch' | 'allpass';
+export interface DspFilter { id: string; type: DspFilterType; f: number; gainDb: number; q: number; enabled: boolean }
+
+export interface RoomDsp {
+  filters: DspFilter[];
+  /** Предусилитель против перегрузки, дБ (≤ 0). */
+  preamp: number;
+  /** По чему подобрано: «замеру …», «модели», «среднему N замеров». */
+  source: string;
+  scenario: string;
+  savedAt: string;
+}
+
 export interface RoomConfiguration {
   id: string;
   role: ConfigRole;
@@ -241,6 +258,8 @@ export interface RoomConfiguration {
   voice: VoiceSettings | null;
   /** Сведения о применённом скане — как их хранит ядро скана; v2 их не толкует. */
   scan: unknown;
+  /** Сохранённая коррекция комнаты; нет — не сохранялась. */
+  dsp?: RoomDsp | null;
 }
 
 /** Неизменяемый исторический вариант (сохранённая расстановка legacy или результат поиска). */

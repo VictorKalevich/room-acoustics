@@ -36,7 +36,11 @@ registerProcessor('v2-capture', V2Capture);
 `;
 
 type Ctor = typeof AudioContext;
+type SinkContext = AudioContext & { setSinkId?: (id: string) => Promise<void> };
 let ctx: AudioContext | null = null;
+/** Выбранные устройства (V2-049) на время сеанса; null — устройство системы по умолчанию. */
+let inputId: string | null = null;
+let outputId: string | null = null;
 let worklet: Promise<void> | null = null;
 let active: (() => void) | null = null;
 
@@ -52,6 +56,32 @@ function context(): AudioContext {
     worklet = null;
   }
   return ctx;
+}
+
+export interface AudioDevice { id: string; label: string }
+export interface AudioDevices { inputs: AudioDevice[]; outputs: AudioDevice[]; canChooseOutput: boolean }
+
+/** Устройства ввода и вывода. Названия браузер показывает после разрешения микрофона. */
+export async function listDevices(): Promise<AudioDevices> {
+  const all = (await globalThis.navigator?.mediaDevices?.enumerateDevices?.()) ?? [];
+  const pick = (kind: MediaDeviceKind, what: string) => all.filter((d) => d.kind === kind && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
+    .map((d, i) => ({ id: d.deviceId, label: d.label || `${what} ${i + 1}` }));
+  const C = (globalThis as { AudioContext?: Ctor }).AudioContext;
+  return { inputs: pick('audioinput', 'Микрофон'), outputs: pick('audiooutput', 'Выход'), canChooseOutput: !!C && typeof (C.prototype as SinkContext).setSinkId === 'function' };
+}
+
+export const chosenDevices = () => ({ input: inputId, output: outputId });
+
+/** Выбрать устройства записи и воспроизведения; выход меняется, только если браузер это умеет. */
+export async function chooseDevices(input: string | null, output: string | null): Promise<void> {
+  inputId = input;
+  outputId = output;
+  if (ctx && ctx.state !== 'closed') await applyOutput(ctx);
+}
+
+async function applyOutput(c: AudioContext): Promise<void> {
+  const s = c as SinkContext;
+  if (typeof s.setSinkId === 'function') await s.setSinkId(outputId ?? '');
 }
 
 /** Частота дискретизации, с которой будут играться и записываться сигналы. */
@@ -75,6 +105,7 @@ export interface Playback { stop: () => void; ended: Promise<void> }
 /** Воспроизвести каналы [левый, правый]; loop — по кругу до «Стоп». */
 export async function play(channels: readonly Float32Array[], fs: number, loop: boolean): Promise<Playback> {
   const c = context();
+  await applyOutput(c);
   await c.resume();
   const buf = c.createBuffer(channels.length, channels[0].length, fs);
   channels.forEach((ch, i) => buf.copyToChannel(ch as Float32Array<ArrayBuffer>, i));
@@ -106,8 +137,9 @@ const SPEECH: [keyof MediaTrackSettings, string][] = [['echoCancellation', 'эх
 export async function openCapture(onBlock: (pcm: Float32Array, sequence: number) => void): Promise<Capture> {
   if (!audioSupport().input) throw new Error('Браузер не даёт доступ к микрофону. Откройте приложение по HTTPS в Safari или Chrome.');
   const c = context();
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, ...(inputId ? { deviceId: { exact: inputId } } : {}) } });
   try {
+    await applyOutput(c);
     await c.resume();
     if (!worklet) {
       const url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));

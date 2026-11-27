@@ -138,6 +138,10 @@ export function diffConfigs(a: RoomConfiguration, b: RoomConfiguration): ConfigC
   if (pa.model !== pb.model) push('simulation', 'Модель расчёта баса');
   if ((pa.precision ?? 'standard') !== (pb.precision ?? 'standard')) push('simulation', 'Точность расчёта');
   if (!same(pa.calibration, pb.calibration)) push('simulation', pb.calibration ? 'Подстройка по замеру' : 'Подстройка по замеру сброшена');
+  if (!same(a.dsp ?? null, b.dsp ?? null)) {
+    const on = (d: RoomConfiguration['dsp']) => d?.filters.filter((f) => f.enabled).length ?? 0;
+    push('audio', !b.dsp ? 'Коррекция комнаты убрана' : a.dsp ? `Коррекция комнаты изменена: фильтров ${on(a.dsp)} → ${on(b.dsp)}` : `Сохранена коррекция комнаты: фильтров ${on(b.dsp)}`);
+  }
   if (!same(pa.placement, pb.placement)) push('simulation', 'Правила расстановки');
   if (!same(pa.objective, pb.objective) || pa.houseCurve !== pb.houseCurve) push('simulation', 'Цель подбора мест');
   return out;

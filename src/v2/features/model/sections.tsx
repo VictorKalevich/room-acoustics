@@ -18,6 +18,7 @@ import { DIM_LABEL, DIM_LIMITS } from '../../domain/validation';
 import { useApp } from '../../shared/context';
 import type { RoomHandle } from '../rooms/useRoom';
 import { CORNER_LABEL, NameField, Properties } from './Properties';
+import { resetCalibration } from '../../application/measure';
 import { ScanCard } from './ScanCard';
 import { SurfaceField, useMaterials } from './ProfileBlocks';
 import { ShapeCard } from './ShapeCard';
@@ -400,7 +401,7 @@ export function SimulationSection({ edit, level }: SectionProps) {
                 options={PRECISIONS.map((k) => ({ value: k, label: PRECISION_LABEL[k] }))} />
             </div>
             {sp.calibration
-              ? <Notice title="Модель подстроена по замеру" action={<Button small onClick={() => set({ calibration: null }, 'Сброс подстройки')}>Сбросить подстройку</Button>}>Подстройка получена из измерения и меняет поглощение модели. Новая подстройка делается в разделе измерений.</Notice>
+              ? <Notice title="Модель подстроена по замеру" action={<Button small onClick={() => edit.apply(resetCalibration, 'Сброс подстройки')}>Сбросить подстройку</Button>}>Подстройка получена из измерения и меняет поглощение модели; сброс возвращает и прежнюю герметичность. Новая подстройка делается в разделе анализа «Измерения».</Notice>
               : <p class="al-text-small al-text-secondary">Подстройки по замеру нет.</p>}
           </div>
         </Card>

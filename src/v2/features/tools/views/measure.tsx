@@ -16,7 +16,7 @@ import { bandPowers, type SpectrumPeriod, type Weight } from '../../../../core/n
 import { variantOf } from '../../../../core/noiseTimeline';
 import { DEFAULT_SIGNAL, exceeded, synth } from '../../../application/signals';
 import type { ToolMeasurement } from '../../../application/measure';
-import { audioSupport, openCapture, outputRate, playAndRecord, stopAudio, useStopOnLeave, type Capture } from '../../../shared/audio';
+import { audioSupport, chooseDevices, chosenDevices, listDevices, openCapture, outputRate, playAndRecord, stopAudio, useStopOnLeave, type AudioDevices, type Capture } from '../../../shared/audio';
 import { downloadText } from '../../../shared/files';
 import { Block, Inputs, SaveToRoom, hz, n0, n1, n2, num } from './common';
 import { FileSweep } from './offline';
@@ -505,6 +505,30 @@ export function SweepTool() {
   );
 }
 
+/** Выбор микрофона и выхода (V2-049): на время сеанса; выход — где браузер это умеет (Chrome, Edge). */
+function Devices({ output }: { output: boolean }) {
+  const [list, setList] = useState<AudioDevices | null>(null);
+  const [sel, setSel] = useState(chosenDevices());
+  const load = () => void listDevices().then(setList, () => setList({ inputs: [], outputs: [], canChooseOutput: false }));
+  useEffect(load, []);
+  if (!list || !audioSupport().input) return null;
+  const choose = (input: string | null, out: string | null) => { setSel({ input, output: out }); void chooseDevices(input, out); };
+  return (
+    <div class="al-stack al-stack--8">
+      <div class="al-row al-row--bottom">
+        <SelectField label="Микрофон" value={sel.input ?? ''} onChange={(v) => choose(v || null, sel.output)}
+          options={[{ value: '', label: 'По умолчанию' }, ...list.inputs.map((d) => ({ value: d.id, label: d.label }))]} />
+        {output && list.canChooseOutput && (
+          <SelectField label="Выход" value={sel.output ?? ''} onChange={(v) => choose(sel.input, v || null)}
+            options={[{ value: '', label: 'По умолчанию' }, ...list.outputs.map((d) => ({ value: d.id, label: d.label }))]} />
+        )}
+        <Button small variant="ghost" onClick={load}>Обновить список</Button>
+      </div>
+      <p class="al-text-small al-text-secondary">{`Названия устройств браузер показывает после разрешения микрофона.${output && !list.canChooseOutput ? ' Выход здесь выбирает система; чтобы играть через другое устройство, скачайте свип в генераторе и обработайте запись в режиме «Из файла WAV».' : ''}`}</p>
+    </div>
+  );
+}
+
 function MicSweep() {
   const [level, setLevel] = useState(-12);
   const [ch, setCh] = useState<Ch>('both');
@@ -548,6 +572,7 @@ function MicSweep() {
       {!audioSupport().input && <NoInput />}
       <Notice tone="warning" title="Начните с малой громкости">{`Свип ${R.short} длится ${seconds} с и запускается только кнопкой. Поставьте микрофон на место слушателя.`}</Notice>
       <Block title="Измерение АЧХ свипом" subtitle="Деконволюция записи, окно 1 с после прямого звука, сглаживание 1/24 октавы">
+        <Devices output />
         <Inputs>
           <SelectField label="Диапазон свипа" value={range} options={(Object.keys(SWEEP_RANGES) as SweepRange[]).map((k) => ({ value: k, label: SWEEP_RANGES[k].label }))} onChange={setRange} />
           <SelectField label="Длительность свипа" value={String(seconds)} options={SWEEP_SECONDS.map((v) => ({ value: String(v), label: `${v} с` }))} onChange={(v) => setSeconds(Number(v))} />
@@ -645,6 +670,7 @@ export function DecayTool() {
     <div class="al-stack al-stack--16">
       {!audioSupport().input && <NoInput />}
       <Block title="Время реверберации" subtitle="Кривая Шрёдера с поправкой на шум, октавы 125 Гц – 4 кГц">
+        <Devices output={method === 'sweep'} />
         <SegmentedControl label="Источник звука" value={method} onChange={(v) => { setMethod(v); setTakes([]); }} options={[{ value: 'clap', label: 'Хлопок' }, { value: 'sweep', label: 'Свип через колонки' }]} />
         {method === 'sweep' && <Inputs><NumberField label="Уровень свипа" unit="дБFS" value={level} min={-40} max={-6} decimals={0} onCommit={setLevel} /></Inputs>}
         <p class="al-text-secondary">{method === 'clap' ? `После нажатия запись идёт ${CLAP_SECONDS} секунды: хлопните один раз громко и замрите.` : 'Свип 20 Гц – 20 кГц, 6 секунд: начните с малой громкости усилителя.'}</p>

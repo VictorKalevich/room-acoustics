@@ -3,6 +3,7 @@
 // интерференция прямого и отражённого звука, сумма двух источников, фильтры RBJ Audio EQ Cookbook, LP Баттерворта
 // через HP ядра, звуковое давление по чувствительности, направленность поршня в бесконечном экране, частоты
 // Гельмгольца, перфорированной панели и мембраны, глубины ячеек QRD.
+import type { DspFilterType } from '../domain/model';
 import { butterworthHp } from '../../core/deepBass';
 import { biquad as peakBiquad } from '../../core/eq';
 import { speedOfSound } from '../../core/physics';
@@ -128,7 +129,7 @@ export function crossoverResponse(family: CrossoverFamily, order: number, fc: nu
 
 // ---------- Эквалайзер: биквады RBJ ----------
 
-export type EqType = 'peaking' | 'lowshelf' | 'highshelf' | 'lowpass' | 'highpass' | 'bandpass' | 'notch' | 'allpass';
+export type EqType = DspFilterType;
 export const EQ_TYPES: readonly EqType[] = ['peaking', 'lowshelf', 'highshelf', 'lowpass', 'highpass', 'bandpass', 'notch', 'allpass'];
 export const EQ_HAS_GAIN: Record<EqType, boolean> = { peaking: true, lowshelf: true, highshelf: true, lowpass: false, highpass: false, bandpass: false, notch: false, allpass: false };
 

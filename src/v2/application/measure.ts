@@ -2,7 +2,9 @@
 // конфигурации на момент записи. Запись не изменяется; снимок — в историю комнаты (причина «измерение»).
 // Запись из файла (V2-049) сделана раньше и не здесь: снимок не создаётся, привязка — поздняя.
 import type { MeasurementData, MeasurementKind, MeasurementPoint, MeasurementRecord, MeasurementTiming } from '../domain/measurement';
-import type { Listener, Room, RoomConfiguration } from '../domain/model';
+import { DAMPING_MODEL } from '../../core/types';
+import type { CalibrationResult } from '../../core/measure';
+import type { Listener, Room, RoomConfiguration, RoomDsp } from '../domain/model';
 import { addMeasurement } from '../storage/history';
 import type { V2Db } from '../storage/db';
 import { takeSnapshot } from './experiment';
@@ -27,6 +29,24 @@ export interface ToolMeasurement {
 
 /** Где и что измерялось (V2-049): задаётся при сохранении или позже. */
 export interface Binding { point?: MeasurementPoint; sourceIds?: string[] }
+
+/**
+ * Подстройка модели по замеру (ядро `calibrate`): множитель затухания мод и герметичность. Герметичность до первой
+ * подстройки запоминается — её возвращает сброс.
+ */
+export function applyCalibration(c: RoomConfiguration, r: CalibrationResult, source: string): RoomConfiguration {
+  const leakageBefore = c.simulation.calibration?.leakageBefore ?? c.simulation.leakage;
+  return { ...c, simulation: { ...c.simulation, leakage: r.leakage, calibration: { dampingScale: r.dampingScale, model: DAMPING_MODEL, source, leakageBefore } } };
+}
+
+/** Сброс подстройки: множитель убирается, герметичность — как до подстройки. */
+export function resetCalibration(c: RoomConfiguration): RoomConfiguration {
+  const before = c.simulation.calibration?.leakageBefore;
+  return { ...c, simulation: { ...c.simulation, calibration: null, ...(before ? { leakage: before } : {}) } };
+}
+
+/** Сохранить коррекцию комнаты в конфигурации (null — убрать). */
+export const setRoomDsp = (c: RoomConfiguration, dsp: RoomDsp | null): RoomConfiguration => ({ ...c, dsp });
 
 /** Точка микрофона на месте слушателя. */
 export const listenerPoint = (l: Listener): MeasurementPoint => ({ label: l.name, position: { ...l.position }, listenerId: l.id });

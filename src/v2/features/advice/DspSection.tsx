@@ -2,6 +2,7 @@
 // четырёх сценариях с пределами частот, Gain, Q и числа фильтров; сравнение до и после, отключение фильтров,
 // предусилитель против перегрузки; экспорт в Equalizer APO, REW, miniDSP, CamillaDSP, JSON и CSV и пресет для
 // инструмента «Эквалайзер». Приложение звук системы не обрабатывает.
+// V2-049: подобранная коррекция сохраняется в конфигурации (для текущей — через эксперимент) и попадает в отчёт.
 import { useEffect, useState } from 'preact/hooks';
 import { Button, FrequencyChart, KeyValue, Notice, NumberField, SegmentedControl, SelectField, Switch, buttonClass, useToast, type Series } from '../../design-system';
 import { exportCamillaDSP } from '../../../core/camilla';
@@ -16,6 +17,10 @@ import type { MeasurementData } from '../../domain/measurement';
 import { measurementData } from '../../storage/history';
 import { DEFAULT_LIMITS, EQ_SCENARIOS, EQ_SCENARIO_LABEL, autoEq, averageOnGrid, limitIssues, preampFor, toPeq, withFilters, type AutoEqResult, type EqLimits, type EqScenario } from '../../application/autoeq';
 import { exportApo, type EqFilter } from '../../application/tools';
+import { applyProposal } from '../../application/experiment';
+import { setRoomDsp } from '../../application/measure';
+import type { RoomDsp } from '../../domain/model';
+import { dateTime } from '../../shared/format';
 import { useApp } from '../../shared/context';
 import { downloadBlob, downloadText, safeFileName } from '../../shared/files';
 import { href } from '../../shared/router';
@@ -92,8 +97,15 @@ function DspBody({ d }: { d: AdviceData }) {
     { id: 't', label: 'Цель', kind: 'target', x: res.f, y: res.target },
   ] : [];
   const set = (patch: Partial<EqLimits>) => { setL({ ...l, ...patch }); setRes(null); };
+  const exp = d.edit.role === 'experimental';
+  const store = async (dsp: RoomDsp | null, label: string) => {
+    const op = (x: typeof c) => setRoomDsp(x, dsp);
+    const ok = exp || !dsp ? await d.edit.apply(op, label) : await d.h.edit((r) => applyProposal(r, op, clock.newId, clock.now()), label);
+    if (ok) toast.show(!dsp ? 'Коррекция убрана из конфигурации' : exp ? 'Коррекция сохранена в эксперименте' : 'Коррекция сохранена в эксперимент: подтвердите его, когда загрузите фильтры в DSP');
+  };
   return (
     <div class="al-stack al-stack--24">
+      {c.dsp && <StoredDsp dsp={c.dsp} name={name} onRemove={() => void store(null, 'Коррекция комнаты убрана')} />}
       <Block title="Автоматическая эквализация" subtitle={`${d.label} конфигурация. Точные Gain и Q даёт только замер: по модели фильтры — начальная оценка.`}>
         {d.measured
           ? !multi && <SegmentedControl label="По чему подбирать" value={source} onChange={(v) => { setSource(v); setRes(null); }} options={[{ value: 'measured', label: 'По замеру' }, { value: 'model', label: 'По модели' }]} />
@@ -124,6 +136,13 @@ function DspBody({ d }: { d: AdviceData }) {
             {res.notes.map((x) => <p key={x} class="al-text-small al-text-secondary">{x}</p>)}
           </Block>
           <Block title="Фильтры" subtitle="Пиковые фильтры RBJ; порядок не влияет на результат. Выключенный фильтр не экспортируется.">
+            {filters.length > 0 && (
+              <div class="al-row">
+                <Button small variant="primary" icon="download" onClick={() => void store({ filters, preamp, source: sourceText, scenario, savedAt: clock.now() }, 'Коррекция комнаты')}>
+                  {exp ? 'Сохранить в эксперименте' : 'Сохранить в эксперимент'}
+                </Button>
+              </div>
+            )}
             {!filters.length ? <p class="al-text-secondary">Корректировать нечего: пиков выше порога нет.</p> : (
               <ol role="list" class="al-stack al-stack--8" aria-label="Фильтры коррекции">
                 {filters.map((p, k) => (
@@ -169,4 +188,21 @@ function DspBody({ d }: { d: AdviceData }) {
 function std(a: readonly number[]): number {
   const m = a.reduce((x, y) => x + y, 0) / a.length;
   return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length);
+}
+
+/** Коррекция, сохранённая в конфигурации (V2-049). */
+function StoredDsp({ dsp, name, onRemove }: { dsp: RoomDsp; name: string; onRemove: () => void }) {
+  const on = dsp.filters.filter((p) => p.enabled);
+  return (
+    <Block title="Коррекция в конфигурации" subtitle={`Подобрана по ${dsp.source}, сохранена ${dateTime(dsp.savedAt)}. Это фильтры вашего эквалайзера или DSP; расчёты модели показывают комнату без них.`}>
+      <ol role="list" class="al-stack al-stack--8" aria-label="Сохранённые фильтры">
+        {on.map((p, k) => <li key={p.id} class="al-text-small">{`Фильтр ${k + 1}: ${hz(p.f)}, ${p.gainDb > 0 ? '+' : ''}${n1(p.gainDb)} дБ, Q ${n2(p.q)}`}</li>)}
+      </ol>
+      <KeyValue items={[['Фильтров', String(on.length)], ['Предусилитель', `${n1(dsp.preamp)} дБ`]]} />
+      <div class="al-row">
+        <Button small icon="download" onClick={() => downloadText(`${name}_EqualizerAPO.txt`, exportApo(on, dsp.preamp), 'text/plain')}>Equalizer APO</Button>
+        <Button small variant="ghost" icon="trash" onClick={onRemove}>Убрать из конфигурации</Button>
+      </div>
+    </Block>
+  );
 }

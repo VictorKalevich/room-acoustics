@@ -3,20 +3,25 @@
 // V2-049: точка и источники замера, поздняя привязка, среднее по точкам, время прихода по петле.
 import { useEffect, useState } from 'preact/hooks';
 import { Badge, BarChart, Button, Checkbox, DataTable, Dialog, EmptyState, FrequencyChart, KeyValue, LoadingState, Notice, SelectField, buttonClass, useToast, type Series } from '../../design-system';
-import type { Comparison } from '../../../core/measure';
+import type { CalibrationResult, Comparison } from '../../../core/measure';
 import { toCore } from '../../adapters/core';
 import { MEASUREMENT_KIND, configOf } from '../../application/experiment';
 import type { MeasurementData, MeasurementRecord } from '../../domain/measurement';
 import { hashInputs } from '../../domain/provenance';
 import { setupKey } from '../../adapters/calculations';
 import { addMeasurement, measurementData, roomRecords, updateMeasurement } from '../../storage/history';
-import { pointOptions } from '../../application/measure';
+import { applyCalibration, pointOptions, resetCalibration } from '../../application/measure';
+import { applyProposal } from '../../application/experiment';
+import { visibleAt } from '../../domain/complexity';
 import { alignment, averagePoints, averageRecord, rebind, type PointAverage } from '../../application/offline';
 import type { Room } from '../../domain/model';
 import { useApp } from '../../shared/context';
 import { dateTime } from '../../shared/format';
 import { href } from '../../shared/router';
 import { Block, analysisStatus, hz, n1, n2, type AnalysisProps } from './common';
+import type { Leakage } from '../../../core/types';
+
+const LEAK: Record<Leakage, string> = { sealed: 'закрыта наглухо', typical: 'обычная, двери закрыты', door: 'открытая дверь', open: 'открытая планировка' };
 import { useJob } from './useJob';
 
 export function MeasurementsSection(p: AnalysisProps) {
@@ -62,7 +67,8 @@ export function MeasurementsSection(p: AnalysisProps) {
 }
 
 function MeasurementView({ p, m }: { p: AnalysisProps; m: MeasurementRecord }) {
-  const { db, compute } = useApp();
+  const { db, compute, clock } = useApp();
+  const toast = useToast();
   const [data, setData] = useState<MeasurementData | null | undefined>(undefined);
   useEffect(() => {
     let alive = true;
@@ -78,6 +84,12 @@ function MeasurementView({ p, m }: { p: AnalysisProps; m: MeasurementRecord }) {
     if (!conv.ok || !data) return Promise.reject(new Error('Нет данных замера.'));
     const i = conv.inputs;
     return compute().run('compare', { room: i.room, sources: i.sources, constraints: i.constraints, setup: i.setup, measurement: { name: m.name, importedAt: m.recordedAt ?? '', f: data.f, db: data.db, points: m.points } }, { onProgress });
+  });
+  const calKey = canCompare ? hashInputs({ method: 'calibrate', measurement: m.id, input: setupKey(conv.inputs) }) : null;
+  const [cal, startCal] = useJob<CalibrationResult>(calKey, (onProgress) => {
+    if (!conv.ok || !data) return Promise.reject(new Error('Нет данных замера.'));
+    const i = conv.inputs;
+    return compute().run('calibrate', { room: i.room, sources: i.sources, constraints: i.constraints, setup: i.setup, measurement: { name: m.name, importedAt: m.recordedAt ?? '', f: data.f, db: data.db, points: m.points } }, { onProgress });
   });
   if (data === undefined) return <LoadingState />;
   if (data === null) return <Notice tone="warning">Исходные данные замера не найдены.</Notice>;
@@ -105,6 +117,40 @@ function MeasurementView({ p, m }: { p: AnalysisProps; m: MeasurementRecord }) {
                   ['Среднее расхождение (RMS)', `${n1(job.value.rms)} дБ`],
                   ['Модель', job.value.averaged ? 'среднее по точкам' : 'в одной точке'],
                 ]} />
+              </>
+            )}
+          </div>
+        )}
+        {m.kind === 'frequency-response' && conv.ok && visibleAt('advanced', p.level) && (
+          <div class="al-stack al-stack--12">
+            <h3 class="al-text-lead">Подстройка модели по замеру</h3>
+            <p class="al-text-small al-text-secondary">Ядро подбирает множитель затухания мод (0,3–3,2) и, в прямоугольной модели, герметичность так, чтобы модель на месте слушателя ближе совпала с замером. Подстройка меняет поглощение модели, а не геометрию; применяется к эксперименту, текущая конфигурация не меняется.</p>
+            {m.point && m.point.listenerId !== c.listening.listeners.find((x) => x.primary)?.id && <Notice tone="warning">{`Замер сделан не на основном месте («${m.point.label}»), а модель сравнивается на основном: подстройка может быть неверной.`}</Notice>}
+            {c.simulation.calibration && (
+              <Notice title="Модель уже подстроена" action={<Button small onClick={() => void p.edit.apply(resetCalibration, 'Сброс подстройки')}>Сбросить подстройку</Button>}>
+                {`${c.simulation.calibration.source ? `По замеру «${c.simulation.calibration.source}». ` : ''}Множитель затухания ×${n2(c.simulation.calibration.dampingScale)}.`}
+              </Notice>
+            )}
+            {cal.status !== 'ready' ? analysisStatus(cal, startCal, 'Подстройка считается по запросу: несколько расчётов модели в фоне.') : (
+              <>
+                <KeyValue items={[
+                  ['Множитель затухания', `×${n2(cal.value.dampingScale)}`],
+                  ['Герметичность', LEAK[cal.value.leakage]],
+                  ['Расхождение до', `${n1(cal.value.rmsBefore)} дБ`],
+                  ['Расхождение после', `${n1(cal.value.rmsAfter)} дБ`],
+                ]} />
+                {(cal.value.dampingScale <= 0.32 || cal.value.dampingScale >= 3.1) && <Notice tone="warning">Множитель у границы диапазона: замер, вероятно, плохо соответствует модели — другое место микрофона, другая комната или сильное сглаживание. Проверьте модель, прежде чем применять.</Notice>}
+                {cal.value.rmsAfter >= cal.value.rmsBefore - 0.2
+                  ? <Notice>Подстройка почти не уменьшает расхождение: применять её незачем. Расхождение, вероятно, из-за геометрии, положения или замера.</Notice>
+                  : (
+                    <div class="al-row">
+                      <Button variant="primary" onClick={() => void (async () => {
+                        const apply = (x: typeof c) => applyCalibration(x, cal.value, m.name);
+                        const ok = p.h.role === 'experimental' ? await p.edit.apply(apply, 'Подстройка по замеру') : await p.h.edit((r) => applyProposal(r, apply, clock.newId, clock.now()), 'Подстройка по замеру');
+                        if (ok) toast.show(p.h.role === 'experimental' ? 'Подстройка применена к эксперименту' : 'Подстройка применена в эксперимент: сравните его с текущей');
+                      })()}>{p.h.role === 'experimental' ? 'Применить к эксперименту' : 'Применить в эксперимент'}</Button>
+                    </div>
+                  )}
               </>
             )}
           </div>
