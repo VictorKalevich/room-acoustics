@@ -65,3 +65,4 @@ button.al-list__item[aria-pressed='true'] { background: var(--al-color-accent-so
 .al-changes__group { display: flex; flex-direction: column; gap: var(--al-space-4); }
 .al-changes__area { font-size: var(--al-text-caption); font-weight: var(--al-weight-medium); color: var(--al-color-text-secondary); }
 .al-changes__item { margin: 0; font-size: var(--al-text-small); overflow-wrap: anywhere; }
+.al-steps { display: flex; flex-direction: column; gap: var(--al-space-4); margin: 0; padding-left: var(--al-space-24); font-size: var(--al-text-small); overflow-wrap: anywhere; }

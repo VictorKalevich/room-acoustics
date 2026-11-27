@@ -30,3 +30,8 @@ export async function addMeasurement(db: V2Db, rec: MeasurementRecord, data: Mea
 export async function measurementData(db: V2Db, id: string): Promise<MeasurementData | null> {
   return db.run('measurementData', 'readonly', async (tx) => ((await req(tx.objectStore('measurementData').get(id))) as MeasurementData | undefined) ?? null);
 }
+
+/** Сохранить результат поиска как отчёт прогона (не третья конфигурация). */
+export async function addOptimizationRun(db: V2Db, run: OptimizationRun): Promise<void> {
+  await db.run('optimizationRuns', 'readwrite', (tx) => req(tx.objectStore('optimizationRuns').put(JSON.parse(JSON.stringify(run)))));
+}

@@ -5,6 +5,7 @@ import { EmptyState, ErrorState, LoadingState, Notice, TabPanel, Tabs, buttonCla
 import { useApp } from '../../shared/context';
 import { ROOM_TABS, href, navigate, roomHref, type RoomTab } from '../../shared/router';
 import { Screen } from '../../shared/Screen';
+import { AdviceTab } from '../advice/AdviceTab';
 import { AnalysisTab } from '../analysis/AnalysisTab';
 import { ConfigBar } from '../experiment/ConfigBar';
 import { ModelTab } from '../model/ModelTab';
@@ -44,5 +45,5 @@ export function RoomPage({ id, tab, section }: { id: string; tab: RoomTab; secti
 function RoomTabContent({ h, tab, section }: { h: RoomHandle; tab: RoomTab; section?: string }) {
   if (tab === 'model') return <ModelTab h={h} section={section} />;
   if (tab === 'analysis') return <AnalysisTab h={h} section={section} />;
-  return <EmptyState icon="advice" title={TAB_LABEL[tab]} text="Раздел подключается на следующих этапах редизайна." />;
+  return <AdviceTab h={h} section={section} />;
 }

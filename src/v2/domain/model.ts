@@ -258,6 +258,9 @@ export interface Goals {
     maxDepthM: Maybe<Meters>;
     canMoveFurniture: boolean;
     canMoveEquipment: boolean;
+    /** Мягкие ограничения (V2-042): сохранить полезную площадь пола, важен внешний вид. Нет — не важно. */
+    keepArea?: boolean;
+    looks?: boolean;
   };
 }
 
