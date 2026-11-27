@@ -19,6 +19,7 @@ import type { ToolMeasurement } from '../../../application/measure';
 import { audioSupport, openCapture, outputRate, playAndRecord, stopAudio, useStopOnLeave, type Capture } from '../../../shared/audio';
 import { downloadText } from '../../../shared/files';
 import { Block, Inputs, SaveToRoom, hz, n0, n1, n2, num } from './common';
+import { FileSweep } from './offline';
 
 const db10 = (p: number | null | undefined) => (p && p > 0 ? 10 * Math.log10(p) : null);
 const dbText = (v: number | null) => (v === null ? '—' : n1(v));
@@ -493,7 +494,18 @@ const CHANNEL_OPTS = [{ value: 'both', label: 'Обе колонки' }, { value
 type Ch = (typeof CHANNEL_OPTS)[number]['value'];
 const route = (x: Float32Array, ch: Ch): Float32Array[] => { const z = new Float32Array(x.length); return ch === 'left' ? [x, z] : ch === 'right' ? [z, x] : [x, x]; };
 
+/** Свип: запись микрофоном в приложении или обработка файла записи (V2-049). */
 export function SweepTool() {
+  const [mode, setMode] = useState<'mic' | 'file'>('mic');
+  return (
+    <div class="al-stack al-stack--16">
+      <SegmentedControl label="Источник записи" value={mode} onChange={setMode} options={[{ value: 'mic', label: 'Микрофон' }, { value: 'file', label: 'Из файла WAV' }]} />
+      {mode === 'mic' ? <MicSweep /> : <FileSweep />}
+    </div>
+  );
+}
+
+function MicSweep() {
   const [level, setLevel] = useState(-12);
   const [ch, setCh] = useState<Ch>('both');
   const [range, setRange] = useState<SweepRange>('low');

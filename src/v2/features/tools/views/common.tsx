@@ -3,7 +3,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { Button, Card, SelectField, useToast } from '../../../design-system';
-import { saveToRoom, type ToolMeasurement } from '../../../application/measure';
+import { pointOptions, saveToRoom, type ToolMeasurement } from '../../../application/measure';
 import type { Room, RoomConfiguration } from '../../../domain/model';
 import { putEntry } from '../../../storage/library';
 import { useApp } from '../../../shared/context';
@@ -57,6 +57,8 @@ export function SaveToRoom({ build }: { build: () => ToolMeasurement | null }) {
   const [id, setId] = useState('');
   const [role, setRole] = useState<'current' | 'experimental'>('current');
   const [busy, setBusy] = useState(false);
+  const [point, setPoint] = useState('');
+  const [src, setSrc] = useState('');
   useEffect(() => {
     let alive = true;
     void Promise.all([rooms.list(), rooms.active()]).then(([l, a]) => { if (alive) { setList(l.rooms); setId(a?.id ?? l.rooms[0]?.id ?? ''); } }, () => alive && setList([]));
@@ -65,13 +67,17 @@ export function SaveToRoom({ build }: { build: () => ToolMeasurement | null }) {
   if (!list) return null;
   if (!list.length) return <p class="al-text-secondary">Создайте комнату, чтобы сохранять замеры с привязкой к ней.</p>;
   const room = list.find((r) => r.id === id) ?? null;
+  const config = room ? (role === 'experimental' && room.experimental ? room.experimental : room.current) : null;
+  const points = config ? pointOptions(config) : [];
   const save = async () => {
     const m = build();
     if (!m || !room) return;
     setBusy(true);
     try {
       const fresh = (await rooms.open(room.id)) ?? room;
-      await saveToRoom(db, rooms, clock, fresh, role === 'experimental' && fresh.experimental ? 'experimental' : 'current', m);
+      const p = points.find((x) => x.listenerId === point);
+      const sourceIds = src === 'all' ? config!.audio.sources.map((s) => s.id) : src ? [src] : [];
+      await saveToRoom(db, rooms, clock, fresh, role === 'experimental' && fresh.experimental ? 'experimental' : 'current', m, { point: p, sourceIds });
       toast.show(`Замер сохранён в комнату «${fresh.name}»`, { action: { label: 'Открыть', run: () => navigate({ name: 'room', id: fresh.id, tab: 'analysis', section: 'measurements' }) } });
     } catch (e) {
       toast.show(`Не удалось сохранить: ${(e as Error).message}`, { tone: 'error' });
@@ -83,6 +89,8 @@ export function SaveToRoom({ build }: { build: () => ToolMeasurement | null }) {
     <div class="al-row al-row--bottom">
       <SelectField label="Комната" value={id} options={list.map((r) => ({ value: r.id, label: r.name }))} onChange={setId} />
       {room?.experimental && <SelectField label="Конфигурация" value={role} options={[{ value: 'current', label: 'Текущая' }, { value: 'experimental', label: 'Эксперимент' }]} onChange={setRole} />}
+      {config && <SelectField label="Точка микрофона" value={point} onChange={setPoint} options={[{ value: '', label: 'Не указана' }, ...points.map((x) => ({ value: x.listenerId!, label: x.label }))]} />}
+      {config && <SelectField label="Что звучало" value={src} onChange={setSrc} options={[{ value: '', label: 'Не указано' }, { value: 'all', label: 'Все источники' }, ...config.audio.sources.map((s) => ({ value: s.id, label: s.name }))]} />}
       <Button variant="primary" small icon="download" busy={busy} onClick={() => void save()}>Сохранить в комнату</Button>
     </div>
   );

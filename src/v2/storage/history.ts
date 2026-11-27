@@ -1,5 +1,6 @@
 // История комнаты (V2-030, V2-035): измерения и прогоны подбора, привязанные к комнате, и исходные данные измерения.
-// Записи не меняются: новое измерение инструмента добавляется вместе с исходными данными (V2-036).
+// Исходные данные не меняются: новое измерение инструмента добавляется вместе с ними (V2-036); описание меняет только
+// поздняя привязка (V2-049).
 import type { MeasurementData, MeasurementRecord, OptimizationRun } from '../domain/measurement';
 import { req, type V2Db } from './db';
 
@@ -23,6 +24,15 @@ export async function addMeasurement(db: V2Db, rec: MeasurementRecord, data: Mea
   await db.run(['measurements', 'measurementData'], 'readwrite', (tx) => {
     tx.objectStore('measurements').add(rec);
     tx.objectStore('measurementData').add(data);
+  });
+}
+
+/** Описание измерения после поздней привязки (V2-049): исходные данные не трогаются. */
+export async function updateMeasurement(db: V2Db, rec: MeasurementRecord): Promise<void> {
+  await db.run('measurements', 'readwrite', async (tx) => {
+    const store = tx.objectStore('measurements');
+    if (!(await req(store.get(rec.id)))) throw new Error('Замер не найден.');
+    await req(store.put(JSON.parse(JSON.stringify(rec))));
   });
 }
 

@@ -1,6 +1,6 @@
 // Записи измерений и результатов поиска v2 (data-model): исходные данные неизменяемы и хранятся отдельно от описания;
 // снимок модели на момент записи есть только у записей, сделанных с ним, — при переносе он не выдумывается.
-import type { PlacementResult } from '../../core/types';
+import type { PlacementResult, Vec3 } from '../../core/types';
 import type { DbRef, Hertz } from './units';
 import type { Provenance } from './provenance';
 
@@ -9,7 +9,15 @@ export type MeasurementKind = 'frequency-response' | 'impulse-response' | 'rt60'
 export type MeasurementSource =
   | { kind: 'legacy-project'; projectId: string; setupId: string; setupName: string; slot: 'current' | 'history' }
   | { kind: 'file'; fileName: string; format: string }
-  | { kind: 'app'; device: string; session?: string };
+  | { kind: 'app'; device: string; session?: string }
+  /** Расчёт из других замеров (среднее по точкам, V2-049). */
+  | { kind: 'derived'; from: string[]; method: string };
+
+/** Где стоял микрофон (V2-049): подпись, положение (null — не указано) и место слушателя, если это оно. */
+export interface MeasurementPoint { label: string; position: Vec3 | null; listenerId?: string }
+
+/** Время прихода звука (V2-049): по петле — время пролёта от колонки, по файлу — от начала записи. */
+export interface MeasurementTiming { arrivalMs: number; ref: 'loopback' | 'file-start'; distance: number | null }
 
 export interface MeasurementRecord {
   id: string;
@@ -30,6 +38,12 @@ export interface MeasurementRecord {
   session?: string;
   /** Вариант архива, с которым сделано измерение. */
   archiveId?: string;
+  /** Точка микрофона, звучавшие источники и время прихода (V2-049); нет — не указано. */
+  point?: MeasurementPoint;
+  sourceIds?: string[];
+  timing?: MeasurementTiming;
+  /** Когда привязка изменена после записи. */
+  boundAt?: string;
   summary: { fMin: Hertz; fMax: Hertz; count: number };
 }
 
