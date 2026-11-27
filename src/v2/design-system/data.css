@@ -97,6 +97,12 @@
 .al-plan__heat-cell--2 { fill: color-mix(in srgb, var(--al-color-experimental) 35%, var(--al-color-warning)); }
 .al-plan__heat-cell--3 { fill: var(--al-color-warning); }
 .al-plan__heat-cell--4 { fill: var(--al-color-danger); }
+/* Двухцветная шкала без оценки (V2-051): синий — ниже, янтарный — выше, середина — нейтральная */
+.al-plan__heat-cell--d0 { fill: var(--al-color-measured); }
+.al-plan__heat-cell--d1 { fill: color-mix(in srgb, var(--al-color-measured) 55%, var(--al-color-surface-muted)); }
+.al-plan__heat-cell--d2 { fill: var(--al-color-surface-muted); }
+.al-plan__heat-cell--d3 { fill: color-mix(in srgb, var(--al-plan-bass-trap) 55%, var(--al-color-surface-muted)); }
+.al-plan__heat-cell--d4 { fill: var(--al-plan-bass-trap); }
 .al-plan__path path { fill: none; stroke: var(--al-color-current); stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .al-plan__path-point { fill: var(--al-color-current); }
 .al-plan__path--selected path { stroke: var(--al-color-accent); stroke-width: 3; stroke-dasharray: none; }

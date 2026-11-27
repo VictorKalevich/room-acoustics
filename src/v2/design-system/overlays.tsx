@@ -26,33 +26,45 @@ export interface HeatGrid {
   min: number;
   max: number;
   lowerIsBetter?: boolean;
+  /** Шаг по y, если не равен шагу по x (V2-051). */
+  stepY?: number;
+  /** Двухцветная шкала без оценки «лучше/хуже» (уровень поля, форма моды, разница): ступени d0–d4. */
+  diverging?: boolean;
 }
 
 /** Тепловая карта на плане сверху: ячейка вокруг узла сетки окрашена ступенью шкалы. */
 export function PlanHeat({ map, grid }: { map: PlanMap; grid: HeatGrid }) {
   const cells = [];
-  const s = grid.step * map.scale;
+  const sy = grid.stepY ?? grid.step;
+  // по x плана — y комнаты, по y плана — x комнаты (вид сверху); размер ячейки — по обеим осям
+  const [ax, ay] = map.at({ x: 0, y: 0 }), [bx, by] = map.at({ x: grid.step, y: sy });
+  const w = Math.max(Math.abs(bx - ax), 0.5), h = Math.max(Math.abs(by - ay), 0.5);
   for (let ix = 0; ix < grid.nx; ix++) {
     for (let iy = 0; iy < grid.ny; iy++) {
       const v = grid.values[ix * grid.ny + iy];
       if (!Number.isFinite(v)) continue;
-      const [cx, cy] = map.at({ x: grid.x0 + ix * grid.step, y: grid.y0 + iy * grid.step });
-      cells.push(<rect key={`${ix}-${iy}`} class={`al-plan__heat-cell al-plan__heat-cell--${heatLevel(v, grid.min, grid.max, grid.lowerIsBetter ?? true)}`} x={cx - s / 2} y={cy - s / 2} width={s} height={s} />);
+      const [cx, cy] = map.at({ x: grid.x0 + ix * grid.step, y: grid.y0 + iy * sy });
+      const level = heatLevel(v, grid.min, grid.max, grid.diverging ? true : grid.lowerIsBetter ?? true);
+      cells.push(<rect key={`${ix}-${iy}`} class={`al-plan__heat-cell al-plan__heat-cell--${grid.diverging ? 'd' : ''}${level}`} x={cx - w / 2} y={cy - h / 2} width={w} height={h} />);
     }
   }
   return <g class="al-plan__heat" aria-hidden="true">{cells}</g>;
 }
 
-/** Шкала тепловой карты: пять ступеней с границами значений. */
-export function HeatLegend({ min, max, unit, lowerIsBetter = true, title }: { min: number; max: number; unit: string; lowerIsBetter?: boolean; title: string }) {
+/**
+ * Шкала тепловой карты: пять ступеней с границами значений. `diverging` — двухцветная шкала без оценки, подписи краёв
+ * задаёт экран (например, «тише среднего» и «громче среднего»).
+ */
+export function HeatLegend({ min, max, unit, lowerIsBetter = true, title, diverging }: { min: number; max: number; unit: string; lowerIsBetter?: boolean; title: string; diverging?: { low: string; high: string } }) {
   const step = (max - min) / HEAT_LEVELS;
   const items = Array.from({ length: HEAT_LEVELS }, (_, k) => {
     const lo = min + k * step, hi = lo + step;
-    return { level: heatLevel(lo + step / 2, min, max, lowerIsBetter), text: `${fmt(lo)}–${fmt(hi)} ${unit}` };
+    return { level: heatLevel(lo + step / 2, min, max, diverging ? true : lowerIsBetter), text: `${fmt(lo)}–${fmt(hi)} ${unit}` };
   }).sort((a, b) => a.level - b.level);
+  const edge = (level: number) => (diverging ? (level === 0 ? ` · ${diverging.low}` : level === HEAT_LEVELS - 1 ? ` · ${diverging.high}` : '') : level === 0 ? ' · лучше' : level === HEAT_LEVELS - 1 ? ' · хуже' : '');
   return (
     <ul class="al-heat-legend" role="list" aria-label={title}>
-      {items.map((it) => <li key={it.level}><span class={`al-heat-legend__swatch al-plan__heat-cell--${it.level}`} aria-hidden="true" />{it.text}{it.level === 0 ? ' · лучше' : it.level === HEAT_LEVELS - 1 ? ' · хуже' : ''}</li>)}
+      {items.map((it) => <li key={it.level}><span class={`al-heat-legend__swatch al-plan__heat-cell--${diverging ? 'd' : ''}${it.level}`} aria-hidden="true" />{it.text}{edge(it.level)}</li>)}
     </ul>
   );
 }

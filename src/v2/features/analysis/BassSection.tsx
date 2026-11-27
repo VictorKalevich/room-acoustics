@@ -1,11 +1,14 @@
 // Раздел «Качество баса» (V2-031): отклик в месте слушателя (выбранная конфигурация, вторая для сравнения, цель),
 // моды прямоугольной комнаты с длиной волны, затуханием отдельного резонанса, добротностью и полосой; пропорции.
+// Экспертный уровень (V2-051): карты поля и форм мод, сравнение моделей — BassExpert.
 import { useMemo, useState } from 'preact/hooks';
 import { Badge, DataTable, FrequencyChart, KeyValue, Switch, type Series } from '../../design-system';
 import { bonelloCheck, proportionsNotes } from '../../../core/modes';
 import { coreInputs } from '../../adapters/core';
 import { modeRows, type ModeRow } from '../../application/analysis';
+import { visibleAt } from '../../domain/complexity';
 import { roomHref } from '../../shared/router';
+import { BassExpert } from './BassExpert';
 import { Block, Gate, Limits, hz, metres, n1, n2, type AnalysisProps } from './common';
 import type { Analysis } from './useAnalysis';
 
@@ -67,6 +70,8 @@ function Bass({ p, a }: { p: AnalysisProps; a: Analysis }) {
           Добротность и полоса — по затуханию изолированного резонанса: Q = π·f·T60/6,91 (≈ T60·f/2,2), полоса = f/Q. Для близко расположенных мод это приближение. Допуск — больше из допуска EBU Tech 3276 для объёма комнаты и порога заметности затянутой моды.
         </p>
       </Block>
+
+      {visibleAt('expert', p.level) && <BassExpert p={p} a={a} rows={rows} />}
 
       <Block title="Пропорции комнаты">
         {notes.length ? <ul>{notes.map((n) => <li key={n}>{n}</li>)}</ul> : <p class="al-text-small al-text-secondary">Кратных и почти равных размеров нет.</p>}
