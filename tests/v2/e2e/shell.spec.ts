@@ -66,6 +66,7 @@ test('059 · оболочка v2: экран запуска без действ�
     databases: [], caches: [], legacyCss: false,
   });
   expect(font).not.toMatch(/Golos/);
+  expect(font).toMatch(/^"?Inter Variable/);
   expect(requests.filter((u) => !u.startsWith(baseURL!) && !u.startsWith('data:'))).toEqual([]);
   expect(errors).toEqual([]);
 });

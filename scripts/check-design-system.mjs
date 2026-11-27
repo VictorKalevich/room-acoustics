@@ -31,18 +31,24 @@ for (const file of cssFiles) {
     }
   }
 }
-// Public modules are the ones re-exported by the design-system entry; each lives in one place only.
-const publicModules = new Set([...read('src/ui/design-system/index.ts').matchAll(/from ['"]\.\/([\w-]+)['"]/g)].map(m => m[1]));
-if (!publicModules.size) errors.push('src/ui/design-system/index.ts: no public modules found');
+// Public modules are the ones re-exported by a design-system entry; each lives in one place only, within its own system.
+const publicOf = index => { try { return new Set([...read(index).matchAll(/from ['"]\.\/([\w-]+)['"]/g)].map(m => m[1])); } catch { return new Set(); } };
+const publicModules = new Map([[scopes.legacy, publicOf('src/ui/design-system/index.ts')], [scopes.v2, publicOf('src/v2/design-system/index.ts')]]);
+if (!publicModules.get(scopes.legacy).size) errors.push('src/ui/design-system/index.ts: no public modules found');
+// Acoustic Lab: класс al-… из разметки v2 должен быть определён в стилях v2
+const v2Classes = new Set(cssFiles.filter(p => scopeOf(p) === scopes.v2).flatMap(p => [...read(p).matchAll(/\.(al-[\w-]+)/g)].map(m => m[1])));
 for (const file of files.filter(p => /\.[jt]sx?$/.test(p))) {
   const text = read(file);
   if (/style=\{\{[^}]*\b(?:fontSize|fontWeight|fontFamily|lineHeight|letterSpacing|margin\w*|padding\w*|gap)\s*:/s.test(text)) {
     errors.push(file + ': presentation typography/spacing belongs in the design system');
   }
-  const path = file.replaceAll('\\', '/');
+  const path = file.replaceAll('\\', '/'), scope = scopeOf(file);
   const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.[jt]sx?$/, '');
-  if (!path.startsWith('src/ui/design-system/') && publicModules.has(name)) {
+  if (!path.startsWith(scope.dir) && publicModules.get(scope).has(name)) {
     errors.push(file + ': ' + name + ' is a design-system module; import it from design-system instead of keeping a second copy');
+  }
+  if (scope === scopes.v2 && file.endsWith('x')) {
+    for (const [, cls] of text.matchAll(/(?<![\w-])(al-[a-z0-9_-]*[a-z0-9])(?![\w-]|\$\{)/g)) if (!v2Classes.has(cls)) errors.push(file + ': class ' + cls + ' is not defined in Acoustic Lab styles');
   }
 }
 if (!read('src/styles.css').includes('design-system/tokens.css')) errors.push('Application must load the shared design-system entry');

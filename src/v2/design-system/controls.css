@@ -1,0 +1,134 @@
+/* Acoustic Lab: кнопки, поля, переключатели, вкладки (V2-013). Высота основных элементов — 48 px, сенсорная цель ≥ 44 px. */
+.al-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--al-space-8);
+  min-height: var(--al-control-height);
+  min-width: var(--al-touch-min);
+  padding: var(--al-space-0) var(--al-space-16);
+  border: var(--al-border-width) solid transparent;
+  border-radius: var(--al-radius-12);
+  font-size: var(--al-text-body);
+  font-weight: var(--al-weight-semibold);
+  line-height: var(--al-line-tight);
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--al-duration-fast) var(--al-ease), border-color var(--al-duration-fast) var(--al-ease), transform var(--al-duration-fast) var(--al-ease);
+}
+.al-btn:active:not(:disabled) { transform: scale(0.98); }
+.al-btn:disabled, .al-btn[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
+.al-btn--primary { background: var(--al-color-accent); color: var(--al-color-on-accent); }
+.al-btn--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--al-color-accent) 88%, var(--al-color-text)); }
+.al-btn--secondary { background: var(--al-color-surface); color: var(--al-color-text); border-color: var(--al-color-border); }
+.al-btn--secondary:hover:not(:disabled) { background: var(--al-color-surface-hover); }
+.al-btn--ghost { background: transparent; color: var(--al-color-accent); }
+.al-btn--ghost:hover:not(:disabled) { background: var(--al-color-accent-soft); }
+.al-btn--danger { background: var(--al-color-danger); color: var(--al-color-surface); }
+.al-btn--danger-ghost { background: transparent; color: var(--al-color-danger); }
+.al-btn--danger-ghost:hover:not(:disabled) { background: var(--al-color-danger-soft); }
+.al-btn--small { min-height: var(--al-control-height-small); padding: var(--al-space-0) var(--al-space-12); font-size: var(--al-text-small); border-radius: var(--al-radius-8); }
+.al-btn--block { width: 100%; }
+.al-btn--icon { padding: var(--al-space-0); width: var(--al-control-height); }
+.al-btn--icon.al-btn--small { width: var(--al-control-height-small); min-width: var(--al-control-height-small); }
+.al-btn__spinner { width: var(--al-icon-small); height: var(--al-icon-small); border-radius: var(--al-radius-full); border: 2px solid currentColor; border-right-color: transparent; animation: al-spin 0.8s linear infinite; }
+@keyframes al-spin { to { transform: rotate(360deg); } }
+
+.al-icon { width: var(--al-icon); height: var(--al-icon); flex: none; }
+.al-icon--small { width: var(--al-icon-small); height: var(--al-icon-small); }
+
+/* Поля */
+.al-field { display: flex; flex-direction: column; gap: var(--al-space-4); min-width: 0; }
+.al-field__label { font-size: var(--al-text-small); font-weight: var(--al-weight-medium); color: var(--al-color-text); }
+.al-field__hint { font-size: var(--al-text-caption); line-height: var(--al-line-snug); color: var(--al-color-text-secondary); }
+.al-field__error { font-size: var(--al-text-caption); line-height: var(--al-line-snug); color: var(--al-color-danger); }
+.al-field__box {
+  display: flex;
+  align-items: center;
+  min-height: var(--al-control-height);
+  border: var(--al-border-width) solid var(--al-color-border);
+  border-radius: var(--al-radius-12);
+  background: var(--al-color-surface);
+  transition: border-color var(--al-duration-fast) var(--al-ease);
+}
+.al-field__box:focus-within { border-color: var(--al-color-accent); box-shadow: 0 0 0 var(--al-focus-width) var(--al-color-focus); }
+.al-field--error .al-field__box { border-color: var(--al-color-danger); }
+.al-field--disabled .al-field__box { background: var(--al-color-surface-muted); }
+.al-field__box input, .al-field__box select, .al-field__box textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--al-control-height);
+  padding: var(--al-space-0) var(--al-space-12);
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: var(--al-text-body);
+}
+.al-field__box textarea { padding: var(--al-space-12); min-height: calc(var(--al-control-height) * 2); resize: vertical; }
+.al-field__box select { appearance: none; cursor: pointer; padding-right: var(--al-space-32); }
+.al-field__chevron { position: relative; pointer-events: none; margin-left: calc(var(--al-space-32) * -1); width: var(--al-space-32); display: flex; justify-content: center; color: var(--al-color-text-secondary); }
+.al-field__unit { padding: var(--al-space-0) var(--al-space-12) var(--al-space-0) var(--al-space-0); font-size: var(--al-text-small); color: var(--al-color-text-secondary); white-space: nowrap; }
+.al-field--compact .al-field__box, .al-field--compact .al-field__box input, .al-field--compact .al-field__box select { min-height: var(--al-control-height-small); }
+.al-field--compact .al-field__box { border-radius: var(--al-radius-8); }
+.al-field--compact .al-field__box input { font-size: var(--al-text-small); padding: var(--al-space-0) var(--al-space-8); }
+
+/* Переключатель и флажок */
+.al-switch { display: inline-flex; align-items: center; gap: var(--al-space-12); min-height: var(--al-touch-min); cursor: pointer; }
+.al-switch__track { position: relative; flex: none; width: 44px; height: 26px; border-radius: var(--al-radius-full); background: var(--al-color-border); transition: background-color var(--al-duration) var(--al-ease); }
+.al-switch__thumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: var(--al-radius-full); background: var(--al-color-surface); box-shadow: var(--al-shadow-raised); transition: transform var(--al-duration) var(--al-ease); }
+.al-switch[aria-checked='true'] .al-switch__track { background: var(--al-color-accent); }
+.al-switch[aria-checked='true'] .al-switch__thumb { transform: translateX(18px); }
+.al-switch[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
+.al-switch, .al-check { background: none; border: 0; padding: var(--al-space-0); text-align: left; color: inherit; }
+.al-check { display: inline-flex; align-items: center; gap: var(--al-space-8); min-height: var(--al-touch-min); cursor: pointer; }
+.al-check input { width: var(--al-icon); height: var(--al-icon); accent-color: var(--al-color-accent); margin: 0; }
+
+/* Сегменты и вкладки */
+.al-segmented {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  padding: var(--al-space-4);
+  gap: var(--al-space-4);
+  border-radius: var(--al-radius-12);
+  background: var(--al-color-surface-muted);
+  border: var(--al-border-width) solid var(--al-color-border);
+  overflow-x: auto;
+}
+.al-segmented--block { display: flex; }
+.al-segmented--block .al-segmented__item { flex: 1 1 0; }
+.al-segmented__item {
+  min-height: calc(var(--al-control-height) - var(--al-space-8));
+  padding: var(--al-space-0) var(--al-space-12);
+  border: 0;
+  border-radius: var(--al-radius-8);
+  background: transparent;
+  font-size: var(--al-text-small);
+  font-weight: var(--al-weight-medium);
+  color: var(--al-color-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.al-segmented__item[aria-checked='true'] { background: var(--al-color-surface); color: var(--al-color-text); box-shadow: var(--al-shadow-raised); }
+.al-segmented__item:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.al-tabs { display: flex; gap: var(--al-space-4); border-bottom: var(--al-border-width) solid var(--al-color-border); overflow-x: auto; scrollbar-width: none; }
+.al-tabs__tab {
+  min-height: var(--al-touch-min);
+  padding: var(--al-space-0) var(--al-space-12);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-size: var(--al-text-small);
+  font-weight: var(--al-weight-medium);
+  color: var(--al-color-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.al-tabs__tab[aria-selected='true'] { color: var(--al-color-text); border-bottom-color: var(--al-color-accent); }
+.al-tabs__tab:hover { color: var(--al-color-text); }
+
+/* Слайдер */
+.al-range { width: 100%; accent-color: var(--al-color-accent); min-height: var(--al-touch-min); }

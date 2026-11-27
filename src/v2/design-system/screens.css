@@ -1,0 +1,23 @@
+/* Acoustic Lab: составные блоки экранов v2 (каталог, экраны этапов 4–11). */
+.shell {
+  max-width: 640px;
+  margin: var(--al-space-16) auto;
+  padding: var(--al-space-24);
+  background: var(--al-color-surface);
+  border: var(--al-border-width) solid var(--al-color-border);
+  border-radius: var(--al-radius-12);
+}
+.shell__page { padding: max(var(--al-space-16), env(safe-area-inset-top)) max(var(--al-space-16), env(safe-area-inset-right)) max(var(--al-space-16), env(safe-area-inset-bottom)) max(var(--al-space-16), env(safe-area-inset-left)); }
+.shell__stage { margin: 0 0 var(--al-space-8); font-size: var(--al-text-small); font-weight: var(--al-weight-medium); color: var(--al-color-accent); }
+.shell__title { margin: 0 0 var(--al-space-16); font-size: var(--al-text-headline); font-weight: var(--al-weight-semibold); line-height: var(--al-line-tight); }
+.shell__status { margin: 0 0 var(--al-space-8); }
+.shell__note { margin: 0; font-size: var(--al-text-small); color: var(--al-color-text-secondary); }
+
+/* Каталог дизайн-системы */
+.al-catalog { display: flex; flex-direction: column; gap: var(--al-space-32); }
+.al-swatches { display: grid; gap: var(--al-space-8); grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+.al-swatch { display: flex; align-items: center; gap: var(--al-space-12); padding: var(--al-space-8); border: var(--al-border-width) solid var(--al-color-border); border-radius: var(--al-radius-8); background: var(--al-color-surface); font-size: var(--al-text-caption); min-width: 0; }
+.al-swatch__chip { width: 32px; height: 32px; flex: none; border-radius: var(--al-radius-8); border: var(--al-border-width) solid var(--al-color-border); }
+.al-swatch__text { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.al-space-demo { display: flex; align-items: center; gap: var(--al-space-12); font-size: var(--al-text-caption); }
+.al-space-demo__bar { height: 12px; background: var(--al-color-accent); border-radius: var(--al-radius-8); }

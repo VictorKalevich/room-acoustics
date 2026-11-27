@@ -27,9 +27,9 @@ describe('059 · изоляция оболочки v2', () => {
     expect(bad).toEqual([]);
   });
 
-  it('legacy не подключает v2', () => {
+  it('legacy не подключает v2 и шрифт Acoustic Lab', () => {
     const legacy = [...sources('src').filter((f) => !f.startsWith('src/v2/')), 'index.html', 'design-system.html', 'vite.config.ts'];
-    const bad = legacy.flatMap((f) => imports(f).filter((i) => i.startsWith('src/v2')).map((i) => `${f} → ${i}`));
+    const bad = legacy.flatMap((f) => imports(f).filter((i) => i.startsWith('src/v2') || i.startsWith('@fontsource-variable/inter')).map((i) => `${f} → ${i}`));
     expect(bad).toEqual([]);
   });
 
