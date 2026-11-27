@@ -10,12 +10,20 @@ const files = walk('src');
 const cssFiles = files.filter(p => p.endsWith('.css'));
 const tokensFile = 'src/ui/design-system/tokens.css';
 const tokens = read(tokensFile);
-const declarations = new Set(cssFiles.flatMap(p => [...read(p).matchAll(/(--[\w-]+)\s*:/g)].map(m => m[1])));
+// Две изолированные системы (D58): legacy и Acoustic Lab оболочки v2. Токен виден только стилям своей системы.
+const scopes = {
+  legacy: { entry: 'src/styles.css', dir: 'src/ui/design-system/', tokensFile },
+  v2: { entry: 'src/v2/app/styles.css', dir: 'src/v2/design-system/', tokensFile: 'src/v2/design-system/tokens.css' },
+};
+const scopeOf = p => p.replaceAll('\\', '/').startsWith('src/v2/') ? scopes.v2 : scopes.legacy;
+const declarations = new Map(Object.values(scopes).map(s => [s, new Set(cssFiles.filter(p => scopeOf(p) === s)
+  .flatMap(p => [...read(p).matchAll(/(--[\w-]+)\s*:/g)].map(m => m[1])))]));
 for (const file of cssFiles) {
   const css = read(file).replace(/\/\*[\s\S]*?\*\//g, '');
-  if (file.replaceAll('\\', '/') !== 'src/styles.css' && !file.replaceAll('\\', '/').startsWith('src/ui/design-system/')) errors.push(file + ': register styles in the design system');
-  for (const [, name] of css.matchAll(/var\((--[\w-]+)/g)) if (!declarations.has(name)) errors.push(file + ': undefined token ' + name);
-  if (file.replaceAll('\\', '/') === tokensFile) continue;
+  const path = file.replaceAll('\\', '/'), scope = scopeOf(file);
+  if (path !== scope.entry && !path.startsWith(scope.dir)) errors.push(file + ': register styles in the design system');
+  for (const [, name] of css.matchAll(/var\((--[\w-]+)/g)) if (!declarations.get(scope).has(name)) errors.push(file + ': undefined token ' + name);
+  if (path === scope.tokensFile) continue;
   for (const [, property, value] of css.matchAll(/(?:^|[;{])\s*((?:font(?:-size|-weight|-family)?|line-height|letter-spacing|(?:margin|padding)(?:-[\w-]+)?|(?:row-|column-)?gap))\s*:\s*([^;}]+)/g)) {
     const cleaned = value.replace(/var\([^)]*\)/g, '').replace(/!important/g, '');
     if (/\d(?:px|rem|em)\b/.test(cleaned) || (['font-weight', 'line-height'].includes(property) && /[1-9]/.test(cleaned)) || (property === 'font-family' && !['', 'inherit'].includes(cleaned.trim()))) {
@@ -39,5 +47,8 @@ for (const file of files.filter(p => /\.[jt]sx?$/.test(p))) {
 }
 if (!read('src/styles.css').includes('design-system/tokens.css')) errors.push('Application must load the shared design-system entry');
 if (!tokens.includes('--space-stack:') || !tokens.includes('--font-body:')) errors.push('Missing semantic foundations');
+const v2Files = files.filter(p => scopeOf(p) === scopes.v2);
+const hasV2Entry = v2Files.some(p => p.replaceAll('\\', '/') === scopes.v2.entry);
+if (v2Files.length && !(hasV2Entry && read(scopes.v2.entry).includes("@import '../design-system/tokens.css'"))) errors.push(scopes.v2.entry + ': v2 shell must load the Acoustic Lab tokens');
 if (errors.length) { console.error(errors.join('\n')); process.exitCode = 1; }
-else console.log('Design system: ' + cssFiles.length + ' stylesheets and ' + files.filter(p => /\.[jt]sx?$/.test(p)).length + ' source files checked; tokens, typography, spacing and design-system modules OK.');
+else console.log('Design system: ' + cssFiles.length + ' stylesheets (v2: ' + v2Files.filter(p => p.endsWith('.css')).length + ') and ' + files.filter(p => /\.[jt]sx?$/.test(p)).length + ' source files checked; tokens, typography, spacing and design-system modules OK.');

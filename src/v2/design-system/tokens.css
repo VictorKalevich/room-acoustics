@@ -1,0 +1,25 @@
+/* Acoustic Lab (D58): подмножество утверждённых токенов, нужное оболочке v2 (V2-005).
+   Полный набор, шрифт Inter, тёмная и системная темы, компоненты — V2-011–V2-015, docs/acoustic-lab.md.
+   Размеры текста здесь предварительные, уточняются в V2-011 по макетам Figma. */
+:root {
+  --al-color-background: #F4F6F8;
+  --al-color-surface: #FFFFFF;
+  --al-color-text: #17252E;
+  --al-color-text-secondary: #536573;
+  --al-color-border: #DCE3E8;
+  --al-color-accent: #087F75;
+
+  --al-space-8: 8px;
+  --al-space-16: 16px;
+  --al-space-24: 24px;
+  --al-radius-12: 12px;
+
+  --al-font-body: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --al-text-body: 16px;
+  --al-text-small: 14px;
+  --al-text-title: 28px;
+  --al-line-body: 1.5;
+  --al-line-title: 1.2;
+  --al-weight-medium: 500;
+  --al-weight-semibold: 600;
+}

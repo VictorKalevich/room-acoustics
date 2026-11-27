@@ -1,0 +1,55 @@
+/* Вход стилей оболочки v2: только Acoustic Lab, без стилей и шрифтов legacy (D58). */
+@import '../design-system/tokens.css';
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  color-scheme: light;
+  background: var(--al-color-background);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  padding:
+    max(var(--al-space-16), env(safe-area-inset-top)) max(var(--al-space-16), env(safe-area-inset-right))
+    max(var(--al-space-16), env(safe-area-inset-bottom)) max(var(--al-space-16), env(safe-area-inset-left));
+  font-family: var(--al-font-body);
+  font-size: var(--al-text-body);
+  line-height: var(--al-line-body);
+  color: var(--al-color-text);
+  background: var(--al-color-background);
+}
+
+.shell {
+  max-width: 640px;
+  margin: var(--al-space-16) auto;
+  padding: var(--al-space-24);
+  background: var(--al-color-surface);
+  border: 1px solid var(--al-color-border);
+  border-radius: var(--al-radius-12);
+}
+
+.shell__stage {
+  margin: 0 0 var(--al-space-8);
+  font-size: var(--al-text-small);
+  font-weight: var(--al-weight-medium);
+  color: var(--al-color-accent);
+}
+
+.shell__title {
+  margin: 0 0 var(--al-space-16);
+  font-size: var(--al-text-title);
+  font-weight: var(--al-weight-semibold);
+  line-height: var(--al-line-title);
+}
+
+.shell__status {
+  margin: 0 0 var(--al-space-8);
+}
+
+.shell__note {
+  margin: 0;
+  font-size: var(--al-text-small);
+  color: var(--al-color-text-secondary);
+}

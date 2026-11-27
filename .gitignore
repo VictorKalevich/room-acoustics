@@ -1,8 +1,10 @@
 node_modules/
 dist/
+dist-v2/
 dev-dist/
 test-results/
 playwright-report/
+playwright-report-v2/
 tests/fixtures/out/
 *.log
 work/
