@@ -39,6 +39,8 @@ export interface MeasurementData {
   f: Hertz[];
   db: number[];
   ref: DbRef;
+  /** Время реверберации по октавам (вид rt60, V2-036); f и db тогда пустые. approx — оценка по T10. */
+  rt60?: { band: Hertz; t60: number | null; approx?: boolean }[];
 }
 
 /** Результат поиска мест (временный или перенесённый) — не третья конфигурация. */

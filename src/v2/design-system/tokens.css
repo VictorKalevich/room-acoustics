@@ -41,6 +41,10 @@
   --al-color-current-soft: color-mix(in srgb, var(--al-color-current) 14%, var(--al-color-surface));
   --al-color-focus: color-mix(in srgb, var(--al-color-accent) 45%, transparent);
   --al-color-grid: color-mix(in srgb, var(--al-color-border) 70%, var(--al-color-surface));
+  /* Несколько рядов одного вида на графике: цвета объектов плана, у каждой темы свои */
+  --al-color-series-2: var(--al-plan-bass-trap);
+  --al-color-series-3: var(--al-plan-absorber);
+  --al-color-series-4: var(--al-plan-interior);
 
   /* Шрифт (V2-011): Inter Variable из @fontsource-variable/inter, подключается в main.tsx */
   --al-font-body: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;

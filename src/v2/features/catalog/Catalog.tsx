@@ -159,6 +159,13 @@ export function Catalog() {
           <Card title="События во времени" subtitle="Демонстрация: расчётные первые отражения относительно прямого звука">
             <EventChart title="Первые отражения (демонстрация)" events={DEMO_EVENTS} />
           </Card>
+          <Card title="Несколько рядов одного вида" subtitle="variant 2–4: цвет из палитры рядов, штрих — по виду (демонстрация)">
+            <FrequencyChart title="Полосы кроссовера (демонстрация)" fMin={20} fMax={1000} yRange={[-40, 6]} series={[
+              { id: 'lp', label: 'Низкие', kind: 'calculated', x: DEMO_F, y: DEMO_F.map((f) => -10 * Math.log10(1 + (f / 100) ** 8)) },
+              { id: 'hp', label: 'Высокие', kind: 'calculated', variant: 2, x: DEMO_F, y: DEMO_F.map((f) => -10 * Math.log10(1 + (100 / f) ** 8)) },
+              { id: 'sum', label: 'Сумма', kind: 'calculated', variant: 3, x: DEMO_F, y: DEMO_F.map(() => 0) },
+            ]} />
+          </Card>
           <FrequencyChart title="Пусто" fMin={20} fMax={200} series={[]} empty="Нет измерений для этой конфигурации." />
         </Section>
 

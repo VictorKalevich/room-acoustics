@@ -1,15 +1,12 @@
-// Страница инструмента (V2-019): отметка в недавних, избранное, переход к каталогу. Сами инструменты — этап 8.
+// Страница инструмента (V2-019): отметка в недавних, избранное, переход к каталогу; экран инструмента — views (V2-036–V2-040).
 import { useEffect } from 'preact/hooks';
-import type { ComponentType } from 'preact';
 import { Badge, EmptyState, IconButton, Notice, buttonClass } from '../../design-system';
 import { pushRecent, toggleFavorite } from '../../application/settings';
 import { useApp } from '../../shared/context';
 import { href } from '../../shared/router';
 import { Screen } from '../../shared/Screen';
-import { TOOL_CATEGORIES, toolById, type ToolInfo } from './catalog';
-
-/** Экраны инструментов по идентификатору; подключаются в этапе 8. */
-export const TOOL_VIEWS: Record<string, ComponentType<{ tool: ToolInfo }>> = {};
+import { TOOL_CATEGORIES, toolById } from './catalog';
+import { TOOL_VIEWS } from './views';
 
 export function ToolPage({ toolId }: { toolId: string }) {
   const { settings, updateSettings } = useApp();
@@ -35,7 +32,7 @@ export function ToolPage({ toolId }: { toolId: string }) {
           <p class="al-text-secondary">{tool.summary}</p>
           {tool.audio && <div class="al-row"><Badge tone="warning">{tool.audio === 'input' ? 'Нужен микрофон: запуск только кнопкой' : 'Воспроизводит звук: запуск только кнопкой'}</Badge></div>}
         </div>
-        {View ? <View tool={tool} /> : <Notice title="Инструмент подключается">Экран этого инструмента появится на этапе 8 редизайна.</Notice>}
+        {View ? <View tool={tool} /> : <Notice title="Инструмент недоступен">Экран этого инструмента не найден в этой версии приложения.</Notice>}
       </div>
     </Screen>
   );

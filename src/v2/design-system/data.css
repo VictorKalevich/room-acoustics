@@ -41,6 +41,9 @@
 .al-chart__line--estimated { stroke: var(--al-color-text-secondary); stroke-dasharray: 8 3 2 3; }
 .al-chart__line--demo { stroke: var(--al-color-warning); stroke-dasharray: 3 3; }
 .al-chart__line--imported { stroke: var(--al-color-current); stroke-dasharray: 10 3; }
+.al-chart__line--v2 { stroke: var(--al-color-series-2); }
+.al-chart__line--v3 { stroke: var(--al-color-series-3); }
+.al-chart__line--v4 { stroke: var(--al-color-series-4); }
 .al-chart__band { fill: var(--al-color-accent-soft); opacity: 0.6; }
 .al-chart__marker { stroke-width: 1.5; fill: var(--al-color-surface); }
 .al-chart__marker--measured { stroke: var(--al-color-measured); fill: var(--al-color-measured); }

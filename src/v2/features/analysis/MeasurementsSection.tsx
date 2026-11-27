@@ -1,7 +1,7 @@
 // Раздел «Измерения» (V2-035): замеры комнаты с привязкой к конфигурации и снимку, исходная АЧХ и сравнение с моделью
 // выбранной конфигурации (ядро measure.ts в фоновом воркере). Исходные данные только читаются.
 import { useEffect, useState } from 'preact/hooks';
-import { Badge, Button, DataTable, EmptyState, FrequencyChart, KeyValue, LoadingState, Notice, buttonClass, type Series } from '../../design-system';
+import { Badge, BarChart, Button, DataTable, EmptyState, FrequencyChart, KeyValue, LoadingState, Notice, buttonClass, type Series } from '../../design-system';
 import type { Comparison } from '../../../core/measure';
 import { toCore } from '../../adapters/core';
 import { MEASUREMENT_KIND, configOf } from '../../application/experiment';
@@ -76,9 +76,12 @@ function MeasurementView({ p, m }: { p: AnalysisProps; m: MeasurementRecord }) {
     { id: 'model', label: `Модель: ${p.label.toLowerCase()}`, kind: 'calculated', x: job.value.f, y: job.value.model },
   ] : [];
   return (
-    <Block title={`Замер «${m.name}»`} subtitle={`${MEASUREMENT_KIND[m.kind]}, ${data.ref}.`}>
+    <Block title={`Замер «${m.name}»`} subtitle={data.rt60 ? `${MEASUREMENT_KIND[m.kind]}, секунды.` : `${MEASUREMENT_KIND[m.kind]}, ${data.ref}.`}>
       <div class="al-stack al-stack--16">
-        <FrequencyChart title={`Исходный замер ${m.name}`} series={series} fMin={Math.max(15, Math.min(...data.f))} fMax={Math.min(20000, Math.max(...data.f))} />
+        {data.rt60 ? (
+          <BarChart title={`Время реверберации по октавам, Гц: ${m.name}`} unit="с" categories={data.rt60.map((b) => (b.band >= 1000 ? `${b.band / 1000}k` : String(b.band)))}
+            series={[{ id: 'rt', label: m.name, kind: 'measured', values: data.rt60.map((b) => b.t60) }]} />
+        ) : <FrequencyChart title={`Исходный замер ${m.name}`} series={series} fMin={Math.max(15, Math.min(...data.f))} fMax={Math.min(20000, Math.max(...data.f))} />}
         {m.kind === 'frequency-response' && (
           <div class="al-stack al-stack--12">
             <h3 class="al-text-lead">Сравнение с моделью</h3>

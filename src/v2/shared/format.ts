@@ -4,6 +4,16 @@ import type { Room, RoomConfiguration, SystemLayout } from '../domain/model';
 const nf = (d: number) => new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: d });
 
 export const num = (v: number, decimals = 2) => nf(decimals).format(v);
+const comma = (s: string) => s.replace('.', ',').replace('-', '−');
+/** Фиксированное число знаков — для таблиц и сравнения значений. */
+export const n0 = (v: number) => comma(String(Math.round(v)));
+export const n1 = (v: number) => comma(v.toFixed(1));
+export const n2 = (v: number) => comma(v.toFixed(2));
+export const n3 = (v: number) => comma(v.toFixed(3));
+export const hz = (v: number) => `${v < 100 ? n1(v) : n0(v)} Гц`;
+/** Частота во всём слышимом диапазоне: от 1 кГц — в килогерцах. */
+export const freq = (v: number) => (v >= 1000 ? `${comma((v / 1000).toFixed(v >= 10000 ? 1 : 2))} кГц` : hz(v));
+
 export const meters = (v: number, decimals = 2) => `${num(v, decimals)} м`;
 export const cm = (v: number) => `${num(v * 100, 0)} см`;
 

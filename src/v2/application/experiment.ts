@@ -9,8 +9,9 @@ import { SURFACE_LABEL, WALL_LABEL } from './editing';
 
 const clone = <T>(v: T): T => structuredClone(v);
 
-export function takeSnapshot(room: Room, newId: IdFactory, now: string, reason: ConfigSnapshot['reason'] = 'manual'): Room {
-  const snapshot: ConfigSnapshot = { id: newId(), takenAt: now, reason, config: clone(room.current) };
+/** Снимок конфигурации (по умолчанию текущей); для измерения — той, к которой относится замер. */
+export function takeSnapshot(room: Room, newId: IdFactory, now: string, reason: ConfigSnapshot['reason'] = 'manual', config: RoomConfiguration = room.current): Room {
+  const snapshot: ConfigSnapshot = { id: newId(), takenAt: now, reason, config: clone(config) };
   return { ...room, history: [snapshot, ...room.history], updatedAt: now };
 }
 

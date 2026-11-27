@@ -11,7 +11,10 @@ export const SERIES_LABEL: Record<SeriesKind, string> = {
   target: 'цель', estimated: 'оценка', demo: 'демонстрация', imported: 'импорт',
 };
 
-export interface Series { id: string; label: string; kind: SeriesKind; x: readonly number[]; y: readonly number[] }
+/** variant — несколько рядов одного вида (например, полосы кроссовера): цвет из палитры рядов, штрих — по виду. */
+export type SeriesVariant = 2 | 3 | 4;
+export interface Series { id: string; label: string; kind: SeriesKind; x: readonly number[]; y: readonly number[]; variant?: SeriesVariant }
+const lineClass = (kind: SeriesKind, variant?: SeriesVariant) => `al-chart__line al-chart__line--${kind}${variant ? ` al-chart__line--v${variant}` : ''}`;
 
 /** Ширина элемента; до первого измерения — запасная. */
 export function useWidth<T extends HTMLElement>(fallback = 640): [RefObject<T | null>, number] {
@@ -105,7 +108,8 @@ export function FrequencyChart({ series, fMin, fMax, yUnit = 'дБ', yRange, tit
     });
     return d;
   };
-  const ticks = FREQ_TICKS.filter((f) => f >= fMin && f <= fMax).filter((f, i, a) => i === 0 || sx(f) - sx(a[i - 1]) > 28);
+  // расстояние — до последней оставленной отметки, иначе на узком графике с широкой полосой пропадают все, кроме первой
+  const ticks = FREQ_TICKS.filter((f) => f >= fMin && f <= fMax).reduce<number[]>((kept, f) => (kept.length && sx(f) - sx(kept[kept.length - 1]) <= 28 ? kept : [...kept, f]), []);
   const yTicks = niceTicks(y0, y1, Math.max(3, Math.round(ih / 48)));
   const main = visible[0];
   const ci = cursor === null ? -1 : cursor;
@@ -153,7 +157,7 @@ export function FrequencyChart({ series, fMin, fMax, yUnit = 'дБ', yRange, tit
         ))}
         <text class="al-chart__label" x={4} y={pad.t + 4}>{yUnit}</text>
         {marks.filter((m) => m.f >= fMin && m.f <= fMax).map((m) => <line key={m.label} class="al-chart__cursor" x1={sx(m.f)} x2={sx(m.f)} y1={pad.t} y2={pad.t + ih}><title>{m.label}</title></line>)}
-        {visible.map((s) => <path key={s.id} class={`al-chart__line al-chart__line--${s.kind}`} d={path(s)} data-kind={s.kind} />)}
+        {visible.map((s) => <path key={s.id} class={lineClass(s.kind, s.variant)} d={path(s)} data-kind={s.kind} />)}
         {cf !== null && (
           <g>
             <line class="al-chart__cursor" x1={sx(cf)} x2={sx(cf)} y1={pad.t} y2={pad.t + ih} />
@@ -164,18 +168,18 @@ export function FrequencyChart({ series, fMin, fMax, yUnit = 'дБ', yRange, tit
           </g>
         )}
       </svg>
-      <Legend items={visible.map((s) => ({ label: s.label, kind: s.kind }))} />
+      <Legend items={visible.map((s) => ({ label: s.label, kind: s.kind, variant: s.variant }))} />
       <div class="al-chart__readout" aria-live="polite">{readout}</div>
     </figure>
   );
 }
 
-export function Legend({ items }: { items: readonly { label: string; kind: SeriesKind }[] }) {
+export function Legend({ items }: { items: readonly { label: string; kind: SeriesKind; variant?: SeriesVariant }[] }) {
   return (
     <ul class="al-legend" role="list" aria-label="Обозначения">
       {items.map((it) => (
         <li class="al-legend__item" key={it.label}>
-          <svg class="al-legend__swatch" viewBox="0 0 24 12" aria-hidden="true"><path class={`al-chart__line al-chart__line--${it.kind}`} d="M1 6H23" /></svg>
+          <svg class="al-legend__swatch" viewBox="0 0 24 12" aria-hidden="true"><path class={lineClass(it.kind, it.variant)} d="M1 6H23" /></svg>
           <span>{it.label}{it.kind !== 'current' && it.kind !== 'experimental' && it.label.toLowerCase() !== SERIES_LABEL[it.kind] ? ` (${SERIES_LABEL[it.kind]})` : ''}</span>
         </li>
       ))}

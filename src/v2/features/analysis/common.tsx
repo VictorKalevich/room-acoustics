@@ -7,6 +7,7 @@ import type { ConfigEdit } from '../model/useConfig';
 import type { RoomHandle } from '../rooms/useRoom';
 import type { Analysis, AnalysisState } from './useAnalysis';
 import type { JobState } from './useJob';
+import { hz, n0, n1, n2 } from '../../shared/format';
 
 /** Вторая конфигурация комнаты — для сравнения в разделах, где оно применимо. */
 export interface Other { label: string; kind: SeriesKind; config: RoomConfiguration; state: AnalysisState }
@@ -22,13 +23,9 @@ export interface AnalysisProps {
   other: Other | null;
 }
 
-const comma = (s: string) => s.replace('.', ',').replace('-', '−');
-export const n0 = (v: number) => comma(String(Math.round(v)));
-export const n1 = (v: number) => comma(v.toFixed(1));
-export const n2 = (v: number) => comma(v.toFixed(2));
+export { n0, n1, n2, hz };
 export const metres = (v: number) => `${n2(v)} м`;
 export const cm = (v: number) => `${n0(v * 100)} см`;
-export const hz = (v: number) => `${v < 100 ? n1(v) : n0(v)} Гц`;
 
 export function analysisStatus(s: AnalysisState | JobState<unknown>, onStart?: () => void, idle = 'Расчёт не запускался.') {
   if (s.status === 'running') return <CalcStatus state="running" progress={s.progress} />;
