@@ -15,7 +15,7 @@ import { porousLowLimit, reflectionPoints, type ReflectSurface } from '../../cor
 import { treatmentAlpha, treatmentArea } from '../../core/treatments';
 import { SURFACES, type Mode, type SurfaceId, type Vec3 } from '../../core/types';
 import { coreInputs } from '../adapters/core';
-import type { RoomConfiguration, Source } from '../domain/model';
+import type { RoomConfiguration, Source, TreatmentItem } from '../domain/model';
 
 const deg = (r: number) => (r * 180) / Math.PI;
 const dist = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -155,8 +155,13 @@ export function reflectionPaths(c: RoomConfiguration): ReflectionPath[] {
 
 /** Элемент обработки (включённый) накрывает точку стены или потолка. */
 export function treatedAt(c: RoomConfiguration, surface: ReflectSurface, p: Vec3): boolean {
-  if (!c.treatment.enabled) return false;
-  return c.treatment.items.some((t) => {
+  return panelAt(c, surface, p) !== null;
+}
+
+/** Включённый элемент обработки, который накрывает точку стены или потолка. */
+export function panelAt(c: RoomConfiguration, surface: ReflectSurface, p: Vec3): TreatmentItem | null {
+  if (!c.treatment.enabled) return null;
+  return c.treatment.items.find((t) => {
     if (t.enabled === false) return false;
     if (surface === 'ceiling') {
       if (t.kind !== 'cloud') return false;
@@ -166,7 +171,7 @@ export function treatedAt(c: RoomConfiguration, surface: ReflectSurface, p: Vec3
     if (t.kind === 'corner' || t.kind === 'cloud' || t.wall !== surface) return false;
     const along = surface === 'front' || surface === 'back' ? p.y : p.x;
     return Math.abs(along - (t.at ?? 0)) <= t.width / 2 && Math.abs(p.z - (t.z ?? 0)) <= t.height / 2;
-  });
+  }) ?? null;
 }
 
 // ---------- Моды ----------

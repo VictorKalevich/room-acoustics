@@ -41,6 +41,8 @@ export function formatHz(f: number): string {
 }
 const tickHz = (f: number) => (f >= 1000 ? `${String(f / 1000).replace('.', ',')}k` : String(f).replace('.', ','));
 const fmt = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d).replace('.', ',').replace('-', '−') : '—');
+/** Знаков после запятой у делений шкалы — столько, сколько нужно её шагу. */
+const tickDecimals = (ticks: readonly number[]) => [0, 1, 2].find((d) => ticks.every((t) => Math.abs(t * 10 ** d - Math.round(t * 10 ** d)) < 1e-6)) ?? 3;
 
 export function niceTicks(lo: number, hi: number, count = 5): number[] {
   const span = hi - lo || 1;
@@ -111,6 +113,7 @@ export function FrequencyChart({ series, fMin, fMax, yUnit = 'дБ', yRange, tit
   // расстояние — до последней оставленной отметки, иначе на узком графике с широкой полосой пропадают все, кроме первой
   const ticks = FREQ_TICKS.filter((f) => f >= fMin && f <= fMax).reduce<number[]>((kept, f) => (kept.length && sx(f) - sx(kept[kept.length - 1]) <= 28 ? kept : [...kept, f]), []);
   const yTicks = niceTicks(y0, y1, Math.max(3, Math.round(ih / 48)));
+  const yDec = tickDecimals(yTicks);
   const main = visible[0];
   const ci = cursor === null ? -1 : cursor;
   const cf = ci >= 0 ? main.x[ci] : null;
@@ -146,7 +149,7 @@ export function FrequencyChart({ series, fMin, fMax, yUnit = 'дБ', yRange, tit
         {yTicks.map((v) => (
           <g key={v}>
             <line class="al-chart__grid" x1={pad.l} x2={pad.l + iw} y1={sy(v)} y2={sy(v)} />
-            <text class="al-chart__tick" x={pad.l - 6} y={sy(v) + 4} text-anchor="end">{fmt(v, 0)}</text>
+            <text class="al-chart__tick" x={pad.l - 6} y={sy(v) + 4} text-anchor="end">{fmt(v, yDec)}</text>
           </g>
         ))}
         {ticks.map((f) => (
