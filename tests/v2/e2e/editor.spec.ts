@@ -65,6 +65,8 @@ test('059 · план: перетаскивание с привязкой, до�
   await start(page);
   await createRoom(page);
   const listener = obj(page, 'Основное место (слушатель)');
+  // уведомление о создании комнаты внизу экрана не должно оказаться под указателем
+  await listener.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   const box = (await listener.locator('.al-plan__listener').boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();

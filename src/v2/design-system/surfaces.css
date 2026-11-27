@@ -150,4 +150,4 @@
   overflow-wrap: anywhere;
 }
 .al-toast__text { flex: 1 1 auto; min-width: 0; }
-.al-toast .al-btn--ghost { color: var(--al-color-surface); }
+.al-toast .al-btn--ghost { color: var(--al-color-surface); flex: none; white-space: nowrap; }

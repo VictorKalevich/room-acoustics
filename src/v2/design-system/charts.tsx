@@ -176,7 +176,7 @@ export function Legend({ items }: { items: readonly { label: string; kind: Serie
       {items.map((it) => (
         <li class="al-legend__item" key={it.label}>
           <svg class="al-legend__swatch" viewBox="0 0 24 12" aria-hidden="true"><path class={`al-chart__line al-chart__line--${it.kind}`} d="M1 6H23" /></svg>
-          <span>{it.label}{it.kind !== 'current' && it.kind !== 'experimental' ? ` (${SERIES_LABEL[it.kind]})` : ''}</span>
+          <span>{it.label}{it.kind !== 'current' && it.kind !== 'experimental' && it.label.toLowerCase() !== SERIES_LABEL[it.kind] ? ` (${SERIES_LABEL[it.kind]})` : ''}</span>
         </li>
       ))}
     </ul>

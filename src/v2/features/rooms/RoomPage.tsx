@@ -5,6 +5,7 @@ import { EmptyState, ErrorState, LoadingState, Notice, TabPanel, Tabs, buttonCla
 import { useApp } from '../../shared/context';
 import { ROOM_TABS, href, navigate, roomHref, type RoomTab } from '../../shared/router';
 import { Screen } from '../../shared/Screen';
+import { ConfigBar } from '../experiment/ConfigBar';
 import { ModelTab } from '../model/ModelTab';
 import { useRoom, type RoomHandle } from './useRoom';
 
@@ -29,6 +30,7 @@ export function RoomPage({ id, tab, section }: { id: string; tab: RoomTab; secti
     <Screen title={room.name} context={h.role === 'experimental' ? 'Эксперимент' : 'Текущая конфигурация'} backHref={href({ name: 'rooms' })}>
       <div class="al-stack al-stack--16">
         <Tabs idPrefix="room" label="Разделы комнаты" value={tab} onChange={(t) => navigate(roomHref(id, t))} tabs={ROOM_TABS.map((t) => ({ id: t, label: TAB_LABEL[t] }))} />
+        <ConfigBar h={h} />
         {h.error && <Notice tone="danger" title="Изменение не сохранено">{h.error}</Notice>}
         <TabPanel idPrefix="room" active={tab}>
           <RoomTabContent h={h} tab={tab} section={section} />

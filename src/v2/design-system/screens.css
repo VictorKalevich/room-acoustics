@@ -59,3 +59,9 @@ a.al-tile:hover { background: var(--al-color-surface-hover); }
 
 /* Списки объектов редактора модели (V2-023): выбранный объект, свойства которого открыты рядом. */
 button.al-list__item[aria-pressed='true'] { background: var(--al-color-accent-soft); }
+
+/* Различия конфигураций (V2-028, V2-029): области и изменения в них. */
+.al-changes { display: flex; flex-direction: column; gap: var(--al-space-12); margin: 0; }
+.al-changes__group { display: flex; flex-direction: column; gap: var(--al-space-4); }
+.al-changes__area { font-size: var(--al-text-caption); font-weight: var(--al-weight-medium); color: var(--al-color-text-secondary); }
+.al-changes__item { margin: 0; font-size: var(--al-text-small); overflow-wrap: anywhere; }

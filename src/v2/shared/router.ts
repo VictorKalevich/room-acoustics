@@ -7,7 +7,7 @@ export type RoomTab = (typeof ROOM_TABS)[number];
 
 /** Подразделы вкладок комнаты; пустой подраздел — обзор вкладки. */
 export const ROOM_SECTIONS = {
-  model: ['geometry', 'audio', 'listening', 'interior', 'treatment', 'simulation', 'history'],
+  model: ['geometry', 'audio', 'listening', 'interior', 'treatment', 'simulation', 'compare', 'history'],
   analysis: ['bass', 'speakers', 'subwoofers', 'listeners', 'reflections', 'reverb', 'treatment', 'measurements'],
   advice: ['goals', 'optimize', 'dsp', 'plan', 'reports'],
 } as const satisfies Record<RoomTab, readonly string[]>;

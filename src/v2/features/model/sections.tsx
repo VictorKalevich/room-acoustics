@@ -2,7 +2,7 @@
 // расчёта, история. Списки объектов открывают те же свойства, что и план. Скрытые уровнем параметры не сбрасываются.
 import { useState } from 'preact/hooks';
 import {
-  Badge, Button, Card, DataTable, EmptyState, NumberField, Notice, SegmentedControl, SelectField, Switch, useToast,
+  Badge, Button, Card, NumberField, Notice, SegmentedControl, SelectField, Switch, useToast,
 } from '../../design-system';
 import { FURNITURE_ORDER } from '../../../core/furniture';
 import { FURNISHING_LABEL, MATERIALS } from '../../../core/materials';
@@ -16,7 +16,6 @@ import { hiddenOverrides, resetParams, visibleAt } from '../../domain/complexity
 import type { Complexity, RoomConfiguration, SystemLayout } from '../../domain/model';
 import { DIM_LABEL, DIM_LIMITS } from '../../domain/validation';
 import { useApp } from '../../shared/context';
-import { dateTime } from '../../shared/format';
 import type { RoomHandle } from '../rooms/useRoom';
 import { CORNER_LABEL, NameField, Properties } from './Properties';
 import type { ConfigEdit } from './useConfig';
@@ -416,29 +415,5 @@ export function HiddenNotice({ edit, level }: { edit: ConfigEdit; level: Complex
     <Notice tone="warning" title="Скрытые параметры изменены" action={<Button small onClick={() => edit.apply((x) => resetParams(x, hidden.map((p) => p.id)), 'Сброс скрытых параметров')}>Сбросить к значениям по умолчанию</Button>}>
       Расчёт использует значения, которые на этом уровне не показываются: {hidden.map((p) => p.label.toLowerCase()).join(', ')}. Они сохранены; увидеть их можно на более сложном уровне.
     </Notice>
-  );
-}
-
-// ---------- История ----------
-
-export function HistorySection({ h }: SectionProps) {
-  const room = h.room!;
-  return (
-    <div class="al-stack al-stack--24">
-      <Card title="Изменения в этом сеансе" subtitle="Отмена и повтор работают, пока страница открыта; сохранённые изменения не теряются.">
-        <div class="al-row">
-          <Button small icon="undo" disabled={!h.canUndo} onClick={() => void h.undo()}>{h.undoLabel ? `Отменить: ${h.undoLabel}` : 'Отменить'}</Button>
-          <Button small icon="redo" disabled={!h.canRedo} onClick={() => void h.redo()}>{h.redoLabel ? `Повторить: ${h.redoLabel}` : 'Повторить'}</Button>
-        </div>
-      </Card>
-      <Card title="Снимки конфигурации">
-        {room.history.length === 0
-          ? <EmptyState icon="history" title="Снимков пока нет" text="Снимок сохраняется при подтверждении эксперимента и при измерении." />
-          : <DataTable caption="Снимки конфигурации" rowKey={(s) => s.id} rows={room.history.toReversed()} columns={[
-            { key: 'at', title: 'Когда', render: (s) => dateTime(s.takenAt) },
-            { key: 'why', title: 'Причина', render: (s) => (s.reason === 'experiment-confirmed' ? 'Подтверждён эксперимент' : s.reason === 'measurement' ? 'Измерение' : 'Вручную') },
-          ]} />}
-      </Card>
-    </div>
   );
 }
