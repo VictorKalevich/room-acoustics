@@ -221,7 +221,8 @@ export interface RoomConfiguration {
 export interface ArchivedVariant {
   id: string;
   name: string;
-  savedAt: string;
+  /** null — время сохранения неизвестно (legacy его не хранил). */
+  savedAt: string | null;
   origin: 'legacy-setup' | 'optimization' | 'manual';
   layout: {
     listener: Vec3;

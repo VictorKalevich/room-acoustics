@@ -14,7 +14,8 @@ export type Amplitude = number;
 export type Energy = number;
 
 /** Опора децибел. dBFS без абсолютной калибровки не превращается в dB SPL. */
-export type DbRef = 'dBFS' | 'dB SPL' | 'dB re 1' | 'dB re target' | 'dB re median';
+/** 'dB re unknown' — опора не записана (перенесённые и импортированные кривые): значения только относительные. */
+export type DbRef = 'dBFS' | 'dB SPL' | 'dB re 1' | 'dB re target' | 'dB re median' | 'dB re unknown';
 export interface Level { db: number; ref: DbRef }
 
 export const cmToM = (cm: Centimeters): Meters => cm / 100;
