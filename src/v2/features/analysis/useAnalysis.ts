@@ -8,7 +8,7 @@ import type { Overview } from '../../../core/overview';
 import type { SetupEval } from '../../../core/system';
 import type { ReverbResult } from '../../../core/types';
 import { toCore } from '../../adapters/core';
-import { calcOverview, calcReverb, setupKey } from '../../adapters/calculations';
+import { calcModes, calcOverview, calcReverb, setupKey, type ModesValue } from '../../adapters/calculations';
 import { lru, memoAsync } from '../../application/cache';
 import { hashInputs, type Provenance } from '../../domain/provenance';
 import type { RoomConfiguration } from '../../domain/model';
@@ -18,6 +18,7 @@ export interface Analysis {
   ev: SetupEval;
   overview: Overview;
   reverb: ReverbResult;
+  modes: ModesValue;
   model: 'modal' | 'wave';
   provenance: Provenance;
 }
@@ -53,8 +54,11 @@ export function useAnalysis(c: RoomConfiguration | null): AnalysisState {
       const now = clock.now();
       const ov = calcOverview(c, now, ev);
       const rev = calcReverb(c, now);
-      if (!ov.ok || !rev.ok) throw new Error(ov.ok ? (rev as { reason: string }).reason : ov.reason);
-      return { ev, overview: ov.result.value.overview, reverb: rev.result.value, model: ov.result.value.model, provenance: ov.result.provenance };
+      const md = calcModes(c, now);
+      if (!ov.ok) throw new Error(ov.reason);
+      if (!rev.ok) throw new Error(rev.reason);
+      if (!md.ok) throw new Error(md.reason);
+      return { ev, overview: ov.result.value.overview, reverb: rev.result.value, modes: md.result.value, model: ov.result.value.model, provenance: ov.result.provenance };
     }).then(
       (value) => alive && setState({ status: 'ready', value }),
       (e: unknown) => alive && setState({ status: 'error', message: e instanceof Error ? e.message : String(e) }),

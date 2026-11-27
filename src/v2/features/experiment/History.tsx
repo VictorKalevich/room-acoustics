@@ -2,7 +2,7 @@
 // эксперимент, сохранить вручную), архив вариантов расстановки, измерения и прогоны подбора с привязкой к конфигурации.
 import { useEffect, useState } from 'preact/hooks';
 import { Badge, Button, Card, ConfirmDialog, DataTable, EmptyState, useToast } from '../../design-system';
-import { snapshotToExperiment, takeSnapshot } from '../../application/experiment';
+import { MEASUREMENT_KIND, configOf, snapshotToExperiment, takeSnapshot } from '../../application/experiment';
 import { restoreArchived } from '../../domain/operations';
 import type { ConfigSnapshot } from '../../domain/model';
 import { roomRecords, type RoomRecords } from '../../storage/history';
@@ -14,7 +14,6 @@ import { setCompareTarget } from './Compare';
 
 const REASON: Record<ConfigSnapshot['reason'], string> = { 'experiment-confirmed': 'Перед подтверждением эксперимента', measurement: 'При измерении', manual: 'Вручную' };
 const ORIGIN = { 'legacy-setup': 'Перенесён из legacy', optimization: 'Подбор', manual: 'Вручную' } as const;
-const KIND = { 'frequency-response': 'АЧХ', 'impulse-response': 'Импульсная характеристика', rt60: 'Время реверберации', noise: 'Шум', spl: 'Уровень' } as const;
 
 type Ask = { kind: 'snapshot'; id: string } | { kind: 'archive'; id: string } | null;
 
@@ -35,7 +34,7 @@ export function HistorySection({ h }: SectionProps) {
     setAsk(null);
     if (ok) { h.setRole('experimental'); toast.show('Перенесено в эксперимент; текущая конфигурация не изменилась'); }
   };
-  const configName = (id: string | null) => (id === room.current.id ? 'текущая' : id && id === room.experimental?.id ? 'эксперимент' : id && room.history.some((s) => s.config.id === id) ? 'из истории' : 'неизвестна');
+  const configName = (id: string | null) => configOf(room, id);
 
   return (
     <div class="al-stack al-stack--24">
@@ -80,7 +79,7 @@ export function HistorySection({ h }: SectionProps) {
             <div class="al-stack al-stack--16">
               {records.measurements.length > 0 && <DataTable caption="Измерения" rowKey={(m) => m.id} rows={records.measurements} columns={[
                 { key: 'at', title: 'Когда', render: (m) => dateTime(m.recordedAt) },
-                { key: 'name', title: 'Измерение', render: (m) => `${m.name} · ${KIND[m.kind]}` },
+                { key: 'name', title: 'Измерение', render: (m) => `${m.name} · ${MEASUREMENT_KIND[m.kind]}` },
                 { key: 'cfg', title: 'Конфигурация', render: (m) => configName(m.configId) },
                 { key: 'snap', title: 'Снимок при записи', render: (m) => (m.snapshotId ? <Badge tone="success" icon={false}>есть</Badge> : <Badge tone="neutral" icon={false}>{m.lateBinding ? 'нет, привязано позже' : 'нет'}</Badge>) },
               ]} />}

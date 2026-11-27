@@ -9,7 +9,7 @@ import { FURNISHING_LABEL, MATERIALS } from '../../../core/materials';
 import { PRECISIONS, type Precision } from '../../../core/precision';
 import { SURFACES, type AcousticModel, type Extension, type Furnishing, type Leakage, type SubZone, type WallId } from '../../../core/types';
 import {
-  FURNITURE_LABEL, SURFACE_LABEL, WALL_LABEL, addCovering, addFurniture, addListener, addSource, addTreatment, newOpening, newTreatment,
+  FURNITURE_LABEL, SURFACE_LABEL, TREATMENT_LABEL, WALL_LABEL, addCovering, addFurniture, addListener, addSource, addTreatment, newOpening, newTreatment,
   newZone, removeZone, setDimensions, setLayout, setSlope, setSurface, upsertOpening, upsertZone, type EditRef, type TreatmentKind,
 } from '../../application/editing';
 import { hiddenOverrides, resetParams, visibleAt } from '../../domain/complexity';
@@ -32,7 +32,6 @@ const LAYOUT_OPTIONS: { value: Exclude<SystemLayout, 'custom'>; label: string }[
   { value: 'mono', label: '1.0' }, { value: '2.0', label: '2.0' }, { value: '2.1', label: '2.1' }, { value: '2.2', label: '2.2' }, { value: '5.1', label: '5.1' },
 ];
 const OPENING_KIND = { door: 'Дверь', window: 'Окно', passage: 'Проём' } as const;
-const TREATMENT_LABEL: Record<TreatmentKind, string> = { panel: 'Панель на стене', corner: 'Угловая ловушка', cloud: 'Потолочное облако', diffuser: 'Диффузор', resonator: 'Резонатор' };
 const m2 = (v: number) => v.toFixed(2).replace('.', ',');
 
 interface Row { ref: EditRef; title: string; meta: string; badge?: string }

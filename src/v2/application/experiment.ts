@@ -2,6 +2,7 @@
 // эксперименту, перечень различий двух конфигураций. Сравнение — просмотр двух конфигураций, третьей не создаётся.
 import { MATERIAL_BY_ID, FURNISHING_LABEL } from '../../core/materials';
 import { SURFACES } from '../../core/types';
+import type { MeasurementKind } from '../domain/measurement';
 import type { ConfigSnapshot, Room, RoomConfiguration } from '../domain/model';
 import { createExperiment, updateConfig, type IdFactory } from '../domain/operations';
 import { SURFACE_LABEL, WALL_LABEL } from './editing';
@@ -139,4 +140,14 @@ export function diffConfigs(a: RoomConfiguration, b: RoomConfiguration): ConfigC
   if (!same(pa.placement, pb.placement)) push('simulation', 'Правила расстановки');
   if (!same(pa.objective, pb.objective) || pa.houseCurve !== pb.houseCurve) push('simulation', 'Цель подбора мест');
   return out;
+}
+
+export const MEASUREMENT_KIND: Record<MeasurementKind, string> = { 'frequency-response': 'АЧХ', 'impulse-response': 'Импульсная характеристика', rt60: 'Время реверберации', noise: 'Шум', spl: 'Уровень' };
+
+/** К какой конфигурации комнаты относится запись (измерение, прогон подбора). */
+export function configOf(room: Room, id: string | null): string {
+  if (id && id === room.current.id) return 'текущая';
+  if (id && id === room.experimental?.id) return 'эксперимент';
+  if (id && room.history.some((s) => s.config.id === id)) return 'из истории';
+  return 'неизвестна';
 }

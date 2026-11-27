@@ -1,5 +1,6 @@
-// История комнаты (V2-030): измерения и прогоны подбора, привязанные к комнате. Только чтение; записи не меняются.
-import type { MeasurementRecord, OptimizationRun } from '../domain/measurement';
+// История комнаты (V2-030, V2-035): измерения и прогоны подбора, привязанные к комнате, и исходные данные измерения.
+// Только чтение; записи не меняются.
+import type { MeasurementData, MeasurementRecord, OptimizationRun } from '../domain/measurement';
 import { req, type V2Db } from './db';
 
 export interface RoomRecords { measurements: MeasurementRecord[]; optimizations: OptimizationRun[] }
@@ -14,4 +15,9 @@ export async function roomRecords(db: V2Db, roomId: string): Promise<RoomRecords
       optimizations: optimizations.sort((a, b) => newest(a.createdAt, b.createdAt)),
     };
   });
+}
+
+/** Исходные данные измерения (неизменяемые); null — данных нет. */
+export async function measurementData(db: V2Db, id: string): Promise<MeasurementData | null> {
+  return db.run('measurementData', 'readonly', async (tx) => ((await req(tx.objectStore('measurementData').get(id))) as MeasurementData | undefined) ?? null);
 }

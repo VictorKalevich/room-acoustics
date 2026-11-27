@@ -411,6 +411,7 @@ export const removeCovering = (c: RoomConfiguration, id: string): RoomConfigurat
 // ---------- Обработка ----------
 
 export type TreatmentKind = 'panel' | 'corner' | 'cloud' | 'diffuser' | 'resonator';
+export const TREATMENT_LABEL: Record<TreatmentKind, string> = { panel: 'Панель на стене', corner: 'Угловая ловушка', cloud: 'Потолочное облако', diffuser: 'Диффузор', resonator: 'Резонатор' };
 
 export function newTreatment(c: RoomConfiguration, kind: TreatmentKind, id: string): TreatmentItem {
   const g = rect(c);

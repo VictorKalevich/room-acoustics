@@ -2,13 +2,18 @@
 // Данные графиков и плана здесь — демонстрационные и помечены так; это не результаты расчёта.
 import { useState } from 'preact/hooks';
 import {
-  Badge, BarChart, Button, CalcStatus, Card, Checkbox, ConfirmDialog, DataTable, EmptyState, ErrorState, FrequencyChart, Icon, IconButton, ICON_NAMES,
+  Badge, BarChart, Button, EventChart, HeatLegend, PlanHeat, PlanPath, CalcStatus, Card, Checkbox, ConfirmDialog, DataTable, EmptyState, ErrorState, FrequencyChart, Icon, IconButton, ICON_NAMES,
   KeyValue, LoadingState, MetricCard, Notice, NumberField, PageHead, PlanLegend, PlanView, RangeField, Section, SegmentedControl, SelectField, Sheet, Switch,
   TabPanel, Tabs, TextField, useToast, applyTheme, saveTheme, readTheme, THEME_LABEL, type PlanItem, type ThemeChoice,
 } from '../../design-system';
 import { colorRoles, families, radii, spacing, textStyles } from '../../design-system/registry';
 
 const DEMO_F = Array.from({ length: 97 }, (_, i) => 20 * 2 ** (i / 24));
+const DEMO_HEAT = { x0: 0.25, y0: 0.25, step: 0.5, nx: 9, ny: 8, min: 2, max: 12, values: Array.from({ length: 72 }, (_, k) => 2 + 10 * Math.abs(Math.sin(k * 0.37))) };
+const DEMO_EVENTS = [
+  { id: 'd', t: 0, db: 0, label: 'Прямой звук', direct: true }, { id: 'f', t: 2.6, db: -3.7, label: 'Передняя стена' },
+  { id: 's', t: 4.6, db: -5.8, label: 'Боковая стена' }, { id: 'c', t: 4.8, db: -5.9, label: 'Потолок' }, { id: 'b', t: 17.3, db: -13.1, label: 'Задняя стена' },
+];
 const demoCurve = (shift: number, depth: number) => DEMO_F.map((f) => 75 + depth * Math.sin(Math.log2(f / 20) * 2.4 + shift) - (f > 150 ? 2 : 0));
 
 export function Catalog() {
@@ -151,6 +156,9 @@ export function Catalog() {
               { id: 'm', label: 'Замер', kind: 'measured', values: [0.7, 0.58, null, 0.47, 0.43, 0.41] },
             ]} />
           </Card>
+          <Card title="События во времени" subtitle="Демонстрация: расчётные первые отражения относительно прямого звука">
+            <EventChart title="Первые отражения (демонстрация)" events={DEMO_EVENTS} />
+          </Card>
           <FrequencyChart title="Пусто" fMin={20} fMax={200} series={[]} empty="Нет измерений для этой конфигурации." />
         </Section>
 
@@ -166,6 +174,11 @@ export function Catalog() {
               <PlanLegend types={['source', 'listener', 'absorber', 'bass-trap', 'diffuser', 'interior']} />
             </div>
           </div>
+          <Card title="Карта и путь на плане" subtitle="Наложение renderOverlay: тепловая карта по узлам сетки и путь отражения (демонстрация)">
+            <PlanView title="Карта (демонстрация)" depth={4.5} width={3.8} height={2.7} items={items.filter((it) => it.type === 'source' || it.type === 'listener')}
+              renderOverlay={(m) => [<PlanHeat key="h" map={m} grid={DEMO_HEAT} />, <PlanPath key="p" map={m} points={[{ x: 0.9, y: 0.8 }, { x: 1.6, y: 0 }, { x: 2.8, y: 1.9 }]} selected label="Отражение от левой стены" />]} />
+            <HeatLegend title="Шкала карты (демонстрация)" min={DEMO_HEAT.min} max={DEMO_HEAT.max} unit="дБ" />
+          </Card>
         </Section>
 
         <Section title="Значки" id="icons">

@@ -31,6 +31,9 @@ export interface PlanOpening { id: string; wall: WallSide; a0: number; a1: numbe
 
 export interface PlanPoint { x?: number; y?: number; z?: number }
 
+/** Перевод координат комнаты в координаты рисунка для наложений (`renderOverlay`): точка и масштаб, пикселей на метр. */
+export interface PlanMap { at: (p: { x: number; y: number; z?: number }) => [number, number]; scale: number }
+
 export interface PlanViewProps {
   title: string;
   depth: number;
@@ -47,6 +50,8 @@ export interface PlanViewProps {
   /** Привязка перетаскивания к сетке, м; 0 — шаг 1 см. Клавиши двигают на 5 и 25 см независимо от привязки. */
   snapStep?: number;
   children?: ComponentChildren;
+  /** Наложение под объектами (карта, пути): получает перевод координат текущего вида. */
+  renderOverlay?: (m: PlanMap) => ComponentChildren;
 }
 
 interface Axes { u: (p: { x: number; y: number; z: number }) => number; v: (p: { x: number; y: number; z: number }) => number; U: number; V: number; su: 'x' | 'y'; sv: 'x' | 'z'; du: 'dx' | 'dy'; dv: 'dx' | 'dy' | 'dz' }
@@ -62,7 +67,7 @@ const TYPE_NAME: Record<PlanItemType, string> = {
   source: 'колонка', sub: 'сабвуфер', listener: 'слушатель', seat: 'место', obstacle: 'интерьер', absorber: 'панель', 'bass-trap': 'басовая ловушка', diffuser: 'диффузор', zone: 'зона',
 };
 
-export function PlanView({ title, depth, width, height, view = 'top', items, openings = [], selectedId, onSelect, onMove, gridStep = 0.5, snapStep = 0, children }: PlanViewProps) {
+export function PlanView({ title, depth, width, height, view = 'top', items, openings = [], selectedId, onSelect, onMove, gridStep = 0.5, snapStep = 0, children, renderOverlay }: PlanViewProps) {
   const [ref, cw] = useWidth<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<{ id: string; du: number; dv: number } | null>(null);
@@ -141,6 +146,7 @@ export function PlanView({ title, depth, width, height, view = 'top', items, ope
         })}
         <text class="al-plan__dim" x={pu(ax.U / 2)} y={pad - 8} text-anchor="middle">{fmtM(ax.U)}</text>
         <text class="al-plan__dim" x={pad - 8} y={pv(ax.V / 2)} text-anchor="middle" transform={`rotate(-90 ${pad - 8} ${pv(ax.V / 2)})`}>{fmtM(ax.V)}</text>
+        {renderOverlay?.({ at: (p) => [pu(ax.u({ z: 0, ...p })), pv(ax.v({ z: 0, ...p }))], scale })}
         {children}
         {sorted.map((it) => {
           const p = pos(it);

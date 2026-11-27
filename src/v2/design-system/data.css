@@ -48,6 +48,12 @@
 .al-chart__bar { fill: var(--al-color-accent); }
 .al-chart__bar--measured { fill: var(--al-color-measured); }
 .al-chart__bar--predicted, .al-chart__bar--calculated { fill: var(--al-color-predicted-soft); stroke: var(--al-color-predicted); stroke-dasharray: 4 3; }
+.al-chart__stem line { stroke: var(--al-color-predicted); stroke-width: 2; }
+.al-chart__stem circle { fill: var(--al-color-surface); stroke: var(--al-color-predicted); stroke-width: 1.5; cursor: pointer; }
+.al-chart__stem--direct line { stroke: var(--al-color-text); }
+.al-chart__stem--direct circle { stroke: var(--al-color-text); }
+.al-chart__stem--selected line { stroke: var(--al-color-accent); stroke-width: 3; }
+.al-chart__stem--selected circle { fill: var(--al-color-accent); stroke: var(--al-color-accent); }
 .al-chart__cursor { stroke: var(--al-color-text); stroke-width: 1; stroke-dasharray: 2 2; }
 .al-chart__readout { font-size: var(--al-text-caption); color: var(--al-color-text-secondary); font-variant-numeric: tabular-nums; min-height: 1.4em; }
 .al-chart__empty { display: flex; align-items: center; justify-content: center; min-height: 160px; border: var(--al-border-width) dashed var(--al-color-border); border-radius: var(--al-radius-12); color: var(--al-color-text-secondary); font-size: var(--al-text-small); text-align: center; padding: var(--al-space-16); }
@@ -79,6 +85,18 @@
 .al-plan__ghost { opacity: 0.35; }
 .al-plan__compare { fill: none; stroke: var(--al-color-current); stroke-width: 1.5; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .al-plan__heat { opacity: 0.55; }
+.al-plan__heat-cell { stroke: none; }
+.al-plan__heat-cell--0 { fill: var(--al-color-experimental); }
+.al-plan__heat-cell--1 { fill: color-mix(in srgb, var(--al-color-experimental) 65%, var(--al-color-warning)); }
+.al-plan__heat-cell--2 { fill: color-mix(in srgb, var(--al-color-experimental) 35%, var(--al-color-warning)); }
+.al-plan__heat-cell--3 { fill: var(--al-color-warning); }
+.al-plan__heat-cell--4 { fill: var(--al-color-danger); }
+.al-plan__path path { fill: none; stroke: var(--al-color-current); stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.al-plan__path-point { fill: var(--al-color-current); }
+.al-plan__path--selected path { stroke: var(--al-color-accent); stroke-width: 3; stroke-dasharray: none; }
+.al-plan__path--selected .al-plan__path-point { fill: var(--al-color-accent); }
+.al-heat-legend { display: flex; flex-wrap: wrap; gap: var(--al-space-8) var(--al-space-16); font-size: var(--al-text-caption); color: var(--al-color-text-secondary); }
+.al-heat-legend__swatch { display: inline-block; width: 12px; height: 12px; margin-right: var(--al-space-4); vertical-align: -1px; opacity: 0.8; }
 .al-plan-legend { display: flex; flex-wrap: wrap; gap: var(--al-space-8) var(--al-space-16); font-size: var(--al-text-caption); color: var(--al-color-text-secondary); }
 .al-plan-legend__swatch { display: inline-block; width: 12px; height: 12px; border-radius: var(--al-radius-full); margin-right: var(--al-space-4); vertical-align: -1px; }
 .al-plan-legend__swatch--source { background: var(--al-plan-source); }
