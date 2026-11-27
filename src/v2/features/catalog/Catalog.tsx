@@ -2,13 +2,23 @@
 // Данные графиков и плана здесь — демонстрационные и помечены так; это не результаты расчёта.
 import { useState } from 'preact/hooks';
 import {
-  Badge, BarChart, Button, EventChart, HeatLegend, PlanHeat, PlanPath, CalcStatus, Card, Checkbox, ConfirmDialog, DataTable, EmptyState, ErrorState, FrequencyChart, Icon, IconButton, ICON_NAMES,
+  Badge, BarChart, Button, Spectrogram, EventChart, HeatLegend, PlanHeat, PlanPath, CalcStatus, Card, Checkbox, ConfirmDialog, DataTable, EmptyState, ErrorState, FrequencyChart, Icon, IconButton, ICON_NAMES,
   KeyValue, LoadingState, MetricCard, Notice, NumberField, PageHead, PlanLegend, PlanView, RangeField, Section, SegmentedControl, SelectField, Sheet, Switch,
   TabPanel, Tabs, TextField, useToast, applyTheme, saveTheme, readTheme, THEME_LABEL, type PlanItem, type ThemeChoice,
 } from '../../design-system';
 import { colorRoles, families, radii, spacing, textStyles } from '../../design-system/registry';
 
 const DEMO_F = Array.from({ length: 97 }, (_, i) => 20 * 2 ** (i / 24));
+// полосы 1/3 октавы 25 Гц – 16 кГц; тон, который поднимается по времени, на фоне розового шума
+const DEMO_SG = (() => {
+  const edges = Array.from({ length: 29 }, (_, k) => 25 * 2 ** ((k - 0.5) / 3));
+  const bands = edges.length - 1, columns = 60;
+  const values = Float32Array.from({ length: columns * bands }, (_, i) => {
+    const x = Math.floor(i / bands), b = i % bands;
+    return -80 + 6 * Math.sin(b / 3) + (Math.abs(b - (4 + x / 3)) < 1 ? 45 : 0) - (x < 6 ? NaN : 0);
+  });
+  return { edges, columns, values };
+})();
 const DEMO_HEAT = { x0: 0.25, y0: 0.25, step: 0.5, nx: 9, ny: 8, min: 2, max: 12, values: Array.from({ length: 72 }, (_, k) => 2 + 10 * Math.abs(Math.sin(k * 0.37))) };
 const DEMO_EVENTS = [
   { id: 'd', t: 0, db: 0, label: 'Прямой звук', direct: true }, { id: 'f', t: 2.6, db: -3.7, label: 'Передняя стена' },
@@ -165,6 +175,9 @@ export function Catalog() {
               { id: 'hp', label: 'Высокие', kind: 'calculated', variant: 2, x: DEMO_F, y: DEMO_F.map((f) => -10 * Math.log10(1 + (100 / f) ** 8)) },
               { id: 'sum', label: 'Сумма', kind: 'calculated', variant: 3, x: DEMO_F, y: DEMO_F.map(() => 0) },
             ]} />
+          </Card>
+          <Card title="Спектрограмма" subtitle="Время по горизонтали, полосы 1/3 октавы, восемь ступеней цвета (демонстрация)">
+            <Spectrogram title="Спектрограмма (демонстрация)" columns={DEMO_SG.columns} edgesHz={DEMO_SG.edges} values={DEMO_SG.values} min={-110} max={-30} unit="дБFS" seconds={60} height={160} />
           </Card>
           <FrequencyChart title="Пусто" fMin={20} fMax={200} series={[]} empty="Нет измерений для этой конфигурации." />
         </Section>

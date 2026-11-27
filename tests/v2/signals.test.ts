@@ -72,7 +72,7 @@ describe('059 V2-037 · сигналы', () => {
     expect(String.fromCharCode(v.getUint8(0), v.getUint8(1), v.getUint8(2), v.getUint8(3))).toBe('RIFF');
     expect(v.getUint16(22, true)).toBe(2);
     expect(v.getUint32(24, true)).toBe(FS);
-    expect(signalFileName(sig({ kind: 'sine', f: 1000 }))).toBe('sine-1000Hz_-20dBFS_1s_both.wav');
+    expect(signalFileName(sig({ kind: 'sine', f: 1000 }))).toBe('sine-1000Hz_-20dBFS_1s_both_48k.wav');
   });
 
   it('ограничения уровня, длительности и частот; готовые сигналы корректны', () => {

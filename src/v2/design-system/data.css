@@ -108,3 +108,23 @@
 .al-plan-legend__swatch--bass-trap { background: var(--al-plan-bass-trap); border-radius: var(--al-space-0); }
 .al-plan-legend__swatch--diffuser { background: var(--al-plan-diffuser); border-radius: var(--al-space-0); }
 .al-plan-legend__swatch--interior { background: var(--al-plan-interior); border-radius: var(--al-space-0); }
+
+/* Спектрограмма (V2-036): холст по полосам и столбцам времени, ступени цвета — из токенов темы. */
+.al-spectrogram { gap: var(--al-space-8); }
+.al-spectrogram__body { display: grid; grid-template-columns: 40px minmax(0, 1fr); row-gap: var(--al-space-4); }
+.al-spectrogram__freq { position: relative; }
+.al-spectrogram__freq span { position: absolute; right: var(--al-space-8); transform: translateY(50%); font-size: var(--al-text-caption); color: var(--al-color-text-secondary); font-variant-numeric: tabular-nums; }
+.al-spectrogram__canvas { display: block; width: 100%; image-rendering: pixelated; background: var(--al-color-surface-muted); border-radius: var(--al-radius-8); }
+.al-spectrogram__time { grid-column: 2; display: flex; justify-content: space-between; font-size: var(--al-text-caption); color: var(--al-color-text-secondary); }
+.al-spectrogram__scale { display: flex; flex-wrap: wrap; align-items: center; gap: var(--al-space-4); font-size: var(--al-text-caption); color: var(--al-color-text-secondary); font-variant-numeric: tabular-nums; }
+.al-spectrogram__step { display: inline-flex; align-items: center; gap: var(--al-space-4); }
+.al-spectrogram__unit { margin-left: var(--al-space-4); }
+.al-spectrogram__swatch { display: inline-block; width: 20px; height: 12px; border-radius: var(--al-radius-8); }
+.al-spectrogram__level--0 { background-color: var(--al-color-surface-muted); }
+.al-spectrogram__level--1 { background-color: color-mix(in srgb, var(--al-color-accent) 20%, var(--al-color-surface-muted)); }
+.al-spectrogram__level--2 { background-color: color-mix(in srgb, var(--al-color-accent) 45%, var(--al-color-surface-muted)); }
+.al-spectrogram__level--3 { background-color: color-mix(in srgb, var(--al-color-accent) 75%, var(--al-color-surface-muted)); }
+.al-spectrogram__level--4 { background-color: var(--al-color-accent); }
+.al-spectrogram__level--5 { background-color: color-mix(in srgb, var(--al-color-accent) 45%, var(--al-color-warning)); }
+.al-spectrogram__level--6 { background-color: var(--al-color-warning); }
+.al-spectrogram__level--7 { background-color: var(--al-color-danger); }

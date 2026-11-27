@@ -227,3 +227,67 @@ export function BarChart({ categories, series, unit, title, height = 220 }: { ca
     </figure>
   );
 }
+
+export const SPECTROGRAM_LEVELS = 8;
+
+/** Ступень шкалы спектрограммы: 0 — тише min и у min, SPECTROGRAM_LEVELS − 1 — у max и громче. */
+export function spectrogramLevel(v: number, min: number, max: number): number {
+  const t = max - min > 1e-9 ? (v - min) / (max - min) : 0;
+  return Math.min(SPECTROGRAM_LEVELS - 1, Math.max(0, Math.floor(t * SPECTROGRAM_LEVELS)));
+}
+
+const SPECTROGRAM_TICKS = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
+
+/**
+ * Спектрограмма: время по горизонтали (справа — последнее), полосы частот снизу вверх, уровень — ступенью цвета.
+ * values — по столбцам: values[x · полосы + b], NaN — нет данных. Цвета холст берёт у образцов шкалы
+ * (токены темы), поэтому тема и шкала всегда совпадают.
+ */
+export function Spectrogram({ title, values, columns, edgesHz, min, max, unit, seconds, height = 200 }: {
+  title: string; values: ArrayLike<number>; columns: number; edgesHz: readonly number[]; min: number; max: number; unit: string; seconds: number; height?: number;
+}) {
+  const bands = edgesHz.length - 1;
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const scale = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const c = canvas.current, s = scale.current;
+    const ctx = c?.getContext('2d');
+    if (!c || !s || !ctx || bands < 1) return;
+    const colors = Array.from(s.querySelectorAll('.al-spectrogram__swatch'), (el) => getComputedStyle(el).backgroundColor);
+    if (c.width !== columns) c.width = columns;
+    if (c.height !== bands) c.height = bands;
+    ctx.clearRect(0, 0, columns, bands);
+    for (let x = 0; x < columns; x++) {
+      for (let b = 0; b < bands; b++) {
+        const v = values[x * bands + b];
+        if (!Number.isFinite(v)) continue;
+        ctx.fillStyle = colors[spectrogramLevel(v, min, max)];
+        ctx.fillRect(x, bands - 1 - b, 1, 1);
+      }
+    }
+  });
+  const lo = Math.log(edgesHz[0]), hi = Math.log(edgesHz[bands]);
+  const ticks = SPECTROGRAM_TICKS.filter((f) => f > edgesHz[0] && f < edgesHz[bands]);
+  const step = (max - min) / SPECTROGRAM_LEVELS;
+  return (
+    <figure class="al-chart al-spectrogram">
+      <div class="al-spectrogram__body">
+        <div class="al-spectrogram__freq" aria-hidden="true">
+          {ticks.map((f) => <span key={f} style={{ bottom: `${((Math.log(f) - lo) / (hi - lo)) * 100}%` }}>{tickHz(f)}</span>)}
+        </div>
+        <canvas ref={canvas} class="al-spectrogram__canvas" style={{ height: `${height}px` }} role="img"
+          aria-label={`${title}. Последние ${fmt(seconds, 0)} с, полосы от ${formatHz(edgesHz[0])} до ${formatHz(edgesHz[bands])}, уровень от ${fmt(min, 0)} до ${fmt(max, 0)} ${unit}.`} />
+        <div class="al-spectrogram__time" aria-hidden="true"><span>{`−${fmt(seconds, 0)} с`}</span><span>сейчас</span></div>
+      </div>
+      <ul ref={scale} class="al-spectrogram__scale" role="list" aria-label={`Шкала уровня, ${unit}`}>
+        {Array.from({ length: SPECTROGRAM_LEVELS }, (_, k) => (
+          <li key={k} class="al-spectrogram__step">
+            <span class={`al-spectrogram__swatch al-spectrogram__level--${k}`} aria-hidden="true" />
+            {k === 0 || k === SPECTROGRAM_LEVELS - 1 ? <span>{k ? `от ${fmt(min + k * step, 0)}` : `до ${fmt(min + step, 0)}`}</span> : <span class="al-visually-hidden">{`${fmt(min + k * step, 0)}…${fmt(min + (k + 1) * step, 0)}`}</span>}
+          </li>
+        ))}
+        <li class="al-spectrogram__unit">{unit}</li>
+      </ul>
+    </figure>
+  );
+}

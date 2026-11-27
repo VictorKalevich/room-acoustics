@@ -22,11 +22,11 @@ export interface ToolInfo {
 }
 
 export const TOOLS: readonly ToolInfo[] = [
-  { id: 'noise-meter', category: 'measure', title: 'Шумомер', summary: 'Текущий уровень, Leq, Min/Max, L10/L50/L90, полосы и история', keywords: ['spl', 'leq', 'шум', 'уровень', 'громкость', 'дб'], audio: 'input' },
-  { id: 'rta', category: 'measure', title: 'Анализатор спектра RTA', summary: 'FFT и дробно-октавный спектр, усреднение, удержание пиков', keywords: ['fft', 'спектр', 'октава', 'rta', 'peak hold'], audio: 'input' },
-  { id: 'sweep', category: 'measure', title: 'Измерение АЧХ свипом', summary: 'Логарифмический свип: АЧХ на низких частотах, качество записи, усреднение дублей', keywords: ['ачх', 'свип', 'sweep', 'импульс', 'частотная характеристика'], audio: 'input' },
+  { id: 'noise-meter', category: 'measure', title: 'Шумомер', summary: 'Fast/Slow, Leq, Min/Max, L10/L50/L90, полосы и история', keywords: ['spl', 'leq', 'шум', 'уровень', 'громкость', 'дб', 'fast', 'slow'], audio: 'input' },
+  { id: 'rta', category: 'measure', title: 'Анализатор спектра RTA', summary: 'Полосы и БПФ с выбором окна, спектрограмма, удержание пиков, искажения (THD, IMD)', keywords: ['fft', 'спектр', 'октава', 'rta', 'peak hold', 'спектрограмма', 'thd', 'imd', 'smpte', 'искажения', 'гармоники'], audio: 'input' },
+  { id: 'sweep', category: 'measure', title: 'Измерение АЧХ свипом', summary: 'Логарифмический свип: АЧХ на низких или во всём диапазоне, качество записи, усреднение дублей', keywords: ['ачх', 'свип', 'sweep', 'импульс', 'частотная характеристика'], audio: 'input' },
   { id: 'decay', category: 'measure', title: 'Измерение затухания', summary: 'RT60 по октавам по хлопку или свипу (T20, при малом запасе — T10)', keywords: ['rt60', 'реверберация', 'хлопок', 'затухание', 't20'], audio: 'input' },
-  { id: 'signal-generator', category: 'generators', title: 'Генератор сигналов', summary: 'Синус, шум, свипы, мультитон, импульсы; экспорт WAV', keywords: ['синус', 'шум', 'розовый', 'белый', 'генератор', 'wav'], audio: 'output' },
+  { id: 'signal-generator', category: 'generators', title: 'Генератор сигналов', summary: 'Синус, шум, свипы, ступени, двухтоновый, MLS, пакеты, импульсы; экспорт WAV', keywords: ['синус', 'шум', 'розовый', 'белый', 'генератор', 'wav', 'mls', 'smpte', 'пакет'], audio: 'output' },
   { id: 'test-signals', category: 'generators', title: 'Тестовые сигналы', summary: 'Готовые сигналы: каналы, полярность, полосы, свипы', keywords: ['полярность', 'каналы', 'тест', 'сигнал'], audio: 'output' },
   { id: 'wavelength', category: 'calculators', title: 'Длина волны', summary: 'Длина волны, период и четверть волны по частоте и температуре', keywords: ['волна', 'частота', 'скорость звука', 'λ'] },
   { id: 'room-modes', category: 'calculators', title: 'Комнатные моды', summary: 'Осевые, тангенциальные и косые моды прямоугольной комнаты', keywords: ['моды', 'резонанс', 'стоячие волны', 'бас'] },
