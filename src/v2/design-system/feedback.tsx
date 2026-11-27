@@ -186,7 +186,7 @@ export function EmptyState({ icon = 'info', title, text, action }: { icon?: Icon
   return (
     <div class="al-state">
       <Icon name={icon} class="al-state__icon" />
-      <p class="al-state__title">{title}</p>
+      <h2 class="al-state__title">{title}</h2>
       {text && <div class="al-state__text">{text}</div>}
       {action}
     </div>

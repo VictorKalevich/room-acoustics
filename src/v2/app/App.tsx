@@ -1,28 +1,76 @@
-import { useEffect, useState } from 'preact/hooks';
-import { ToastHost } from '../design-system';
+// Приложение v2 (V2-016–V2-020): первый запуск, основная навигация (боковая панель или нижняя), хеш-маршруты.
+import { useEffect, useRef } from 'preact/hooks';
+import { EmptyState, Sidebar, TabBar, ToastHost, buttonClass, type NavItem } from '../design-system';
 import { Catalog } from '../features/catalog/Catalog';
+import { Home } from '../features/home/Home';
+import { Library } from '../features/library/Library';
+import { FirstRun } from '../features/onboarding/FirstRun';
+import { CreateRoom } from '../features/rooms/CreateRoom';
+import { RoomPage } from '../features/rooms/RoomPage';
+import { RoomsList } from '../features/rooms/RoomsList';
+import { Settings } from '../features/settings/Settings';
+import { ToolPage } from '../features/tools/ToolPage';
+import { ToolsCatalog } from '../features/tools/ToolsCatalog';
+import { AppProvider, useApp } from '../shared/context';
+import { href, navSection, useRoute, type Route } from '../shared/router';
+import { Screen } from '../shared/Screen';
 
-const useHash = () => {
-  const [hash, setHash] = useState(location.hash);
-  useEffect(() => {
-    const on = () => setHash(location.hash);
-    addEventListener('hashchange', on);
-    return () => removeEventListener('hashchange', on);
-  }, []);
-  return hash;
-};
+const NAV: readonly NavItem[] = [
+  { id: 'home', label: 'Главная', icon: 'home', href: '#/' },
+  { id: 'rooms', label: 'Комнаты', icon: 'rooms', href: '#/rooms' },
+  { id: 'tools', label: 'Инструменты', icon: 'tools', href: '#/tools' },
+  { id: 'library', label: 'Мои данные', short: 'Данные', icon: 'library', href: '#/library' },
+  { id: 'settings', label: 'Настройки', icon: 'settings', href: '#/settings' },
+];
 
 export function App() {
-  const hash = useHash();
-  if (hash === '#/catalog') return <ToastHost><main class="shell__page"><Catalog /></main></ToastHost>;
   return (
-    <main class="shell__page">
-      <div class="shell">
-        <p class="shell__stage">Этап 3 — дизайн-система</p>
-        <h1 class="shell__title">Room Acoustics v2</h1>
-        <p class="shell__status">Создана отдельная точка входа новой версии. Комнаты, инструменты, измерения и расчёты появятся на следующих этапах.</p>
-        <p class="shell__note">Эта страница не сохраняет данные, не обращается к микрофону и не воспроизводит звук. Действующее приложение работает отдельно и не изменено.</p>
-      </div>
-    </main>
+    <ToastHost>
+      <AppProvider>
+        <Shell />
+      </AppProvider>
+    </ToastHost>
   );
+}
+
+function Shell() {
+  const { settings } = useApp();
+  const route = useRoute();
+  const first = useRef(true);
+  const key = href(route);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    scrollTo(0, 0);
+    document.getElementById('main')?.focus({ preventScroll: true });
+  }, [key]);
+
+  if (settings.complexity === null && route.name !== 'catalog') return <div class="al-app"><a class="al-skip-link" href="#main">К содержимому</a><main class="al-main"><FirstRun /></main></div>;
+  const current = navSection(route);
+  return (
+    <div class="al-app">
+      <a class="al-skip-link" href="#main">К содержимому</a>
+      <Sidebar items={NAV} current={current} brand="Room Acoustics" />
+      <main class="al-main">{screen(route)}</main>
+      <TabBar items={NAV} current={current} />
+    </div>
+  );
+}
+
+function screen(r: Route) {
+  switch (r.name) {
+    case 'home': return <Home />;
+    case 'rooms': return <RoomsList />;
+    case 'room-new': return <CreateRoom />;
+    case 'room': return <RoomPage key={r.id} id={r.id} tab={r.tab} section={r.section} />;
+    case 'tools': return <ToolsCatalog />;
+    case 'tool': return <ToolPage key={r.toolId} toolId={r.toolId} />;
+    case 'library': return <Library key={r.category ?? ''} category={r.category} />;
+    case 'settings': return <Settings />;
+    case 'catalog': return <Screen title="Каталог дизайн-системы" backHref={href({ name: 'settings' })}><Catalog /></Screen>;
+    case 'not-found': return (
+      <Screen title="Страница не найдена">
+        <EmptyState icon="search" title="Такой страницы нет" text={`Адрес «${r.path}» не найден. Возможно, ссылка устарела.`} action={<a class={buttonClass('primary')} href="#/">На главную</a>} />
+      </Screen>
+    );
+  }
 }

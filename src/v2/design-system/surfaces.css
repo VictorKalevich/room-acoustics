@@ -79,7 +79,7 @@
 /* Состояния раздела */
 .al-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--al-space-12); padding: var(--al-space-32) var(--al-space-16); color: var(--al-color-text-secondary); }
 .al-state__icon { width: 40px; height: 40px; color: var(--al-color-text-secondary); }
-.al-state__title { font-size: var(--al-text-lead); font-weight: var(--al-weight-semibold); color: var(--al-color-text); }
+.al-state__title { margin: 0; font-size: var(--al-text-lead); font-weight: var(--al-weight-semibold); color: var(--al-color-text); }
 .al-state__text { max-width: var(--al-reading-max); font-size: var(--al-text-small); }
 .al-state--error .al-state__icon { color: var(--al-color-danger); }
 .al-skeleton { border-radius: var(--al-radius-8); background: linear-gradient(90deg, var(--al-color-surface-muted), var(--al-color-surface-hover), var(--al-color-surface-muted)); background-size: 200% 100%; animation: al-shimmer 1.4s linear infinite; min-height: 16px; }

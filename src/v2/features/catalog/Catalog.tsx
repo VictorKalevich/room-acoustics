@@ -38,7 +38,7 @@ export function Catalog() {
   const pick = (t: ThemeChoice) => { setTheme(t); applyTheme(t); saveTheme(t); };
 
   return (
-    <div class="al-content">
+    <div>
       <PageHead overline="Acoustic Lab" title="Каталог дизайн-системы" text="Компоненты, цвета, текстовые стили и отступы Room Acoustics v2. Графики и план — демонстрационные данные." actions={
         <SegmentedControl label="Тема" value={theme} onChange={pick} options={(['system', 'light', 'dark'] as const).map((v) => ({ value: v, label: THEME_LABEL[v] }))} />
       } />

@@ -65,6 +65,8 @@ export function formatNumber(v: number | null, decimals = 2): string {
 export interface NumberFieldProps extends FieldShell {
   value: number | null;
   onCommit: (v: number) => void;
+  /** Сообщает, прошло ли введённое значение проверку (при выходе из поля). */
+  onValidity?: (valid: boolean) => void;
   unit?: string;
   min?: number;
   max?: number;
@@ -74,7 +76,7 @@ export interface NumberFieldProps extends FieldShell {
   placeholder?: string;
 }
 
-export function NumberField({ value, onCommit, unit, min, max, decimals = 2, optional, placeholder, ...shell }: NumberFieldProps) {
+export function NumberField({ value, onCommit, onValidity, unit, min, max, decimals = 2, optional, placeholder, ...shell }: NumberFieldProps) {
   const id = useId();
   const [text, setText] = useState(formatNumber(value, decimals));
   const [local, setLocal] = useState<string | null>(null);
@@ -92,6 +94,7 @@ export function NumberField({ value, onCommit, unit, min, max, decimals = 2, opt
     focused.current = false;
     const err = check(text);
     setLocal(err);
+    onValidity?.(!err);
     if (err) return;
     const v = parseNumber(text);
     if (!(Number.isNaN(v) && value === null) && v !== value) onCommit(v);

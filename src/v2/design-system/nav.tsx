@@ -4,7 +4,8 @@ import type { ComponentChildren } from 'preact';
 import { IconButton } from './Button';
 import { Icon, type IconName } from './Icon';
 
-export interface NavItem { id: string; label: string; icon: IconName; href: string }
+/** `short` — подпись в нижней панели на узком экране, если полная не помещается. */
+export interface NavItem { id: string; label: string; short?: string; icon: IconName; href: string }
 
 export function Sidebar({ items, current, brand, footer }: { items: readonly NavItem[]; current: string; brand: string; footer?: ComponentChildren }) {
   return (
@@ -27,7 +28,7 @@ export function TabBar({ items, current }: { items: readonly NavItem[]; current:
       {items.map((it) => (
         <a key={it.id} class="al-tabbar__item" href={it.href} aria-current={it.id === current ? 'page' : undefined}>
           <Icon name={it.icon} />
-          <span>{it.label}</span>
+          <span>{it.short ?? it.label}</span>
         </a>
       ))}
     </nav>

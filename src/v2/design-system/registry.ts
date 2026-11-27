@@ -13,6 +13,7 @@ export const families: readonly Family[] = [
   { id: 'charts', title: 'Графики и легенды', components: ['FrequencyChart', 'BarChart', 'Legend'], classes: ['al-chart', 'al-chart__line', 'al-chart__bar', 'al-legend', 'al-chart__empty'], note: 'Измерение — сплошная, расчёт — штрих, эксперимент — пунктир; курсор стрелками' },
   { id: 'plan', title: 'План помещения', components: ['PlanView', 'PlanLegend'], classes: ['al-plan', 'al-plan__object', 'al-plan-legend'], note: 'Сверху, сбоку, спереди; выбор, перетаскивание, стрелки' },
   { id: 'layout', title: 'Каркас и навигация', components: ['Card', 'PageHead', 'Section', 'Sidebar', 'TabBar', 'TopBar'], classes: ['al-app', 'al-sidebar', 'al-tabbar', 'al-topbar', 'al-content', 'al-card', 'al-section', 'al-list', 'al-split', 'al-grid', 'al-stack', 'al-row'], note: 'Боковая панель от 1024 px, нижняя — до 1024 px; safe-area' },
+  { id: 'screens', title: 'Блоки экранов', components: [], classes: ['al-choices', 'al-choice', 'al-tiles', 'al-tile', 'al-tile--feature', 'al-tile__link', 'al-list__item--wrap', 'al-list__link'], note: 'Выбор карточкой (радиокнопка внутри), плитки разделов и инструментов: вся плитка — ссылка, кнопки поверх' },
   { id: 'icons', title: 'Значки', components: ['Icon'], classes: ['al-icon'], note: 'Контурные 24 × 24, currentColor; декоративные скрыты от чтения с экрана' },
 ];
 

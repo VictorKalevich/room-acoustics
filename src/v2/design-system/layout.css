@@ -1,5 +1,7 @@
 /* Acoustic Lab: каркас приложения — боковая навигация на широком экране, нижняя панель на узком, верхняя панель,
    содержимое с safe-area (V2-013, V2-020). */
+:root { scroll-padding-top: calc(var(--al-space-32) + var(--al-space-32)); scroll-padding-bottom: calc(var(--al-tabbar-height) + env(safe-area-inset-bottom) + var(--al-space-8)); }
+@media (min-width: 1024px) { :root { scroll-padding-bottom: var(--al-space-0); } }
 .al-app { min-height: 100dvh; display: flex; flex-direction: column; }
 @media (min-width: 1024px) { .al-app { flex-direction: row; } }
 

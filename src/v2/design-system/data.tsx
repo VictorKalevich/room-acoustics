@@ -8,7 +8,7 @@ export type MetricTone = 'neutral' | 'good' | 'warning' | 'danger';
 export function MetricCard({ label, value, unit, note, tone = 'neutral', kind }: { label: string; value: string | null; unit?: string; note?: ComponentChildren; tone?: MetricTone; kind?: { tone: BadgeTone; label: string } }) {
   return (
     <div class={['al-metric', value === null && 'al-metric--missing', tone !== 'neutral' && `al-metric--${tone}`].filter(Boolean).join(' ')}>
-      <div class="al-row al-row--between al-row--nowrap">
+      <div class="al-row al-row--between">
         <span class="al-metric__label">{label}</span>
         {kind && <Badge tone={kind.tone}>{kind.label}</Badge>}
       </div>

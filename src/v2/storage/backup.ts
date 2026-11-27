@@ -97,3 +97,11 @@ export async function requestPersistence(storage: Pick<StorageManager, 'persist'
     return { persisted, usage: null, quota: null };
   }
 }
+
+/** Только прочитать состояние хранилища, ничего не запрашивая у браузера. */
+export async function storageStatus(storage: Pick<StorageManager, 'persisted' | 'estimate'> | undefined = globalThis.navigator?.storage): Promise<Persistence> {
+  if (!storage) return { persisted: null, usage: null, quota: null };
+  const persisted = (await storage.persisted?.().catch(() => null)) ?? null;
+  const e = await storage.estimate?.().catch(() => null);
+  return { persisted, usage: e?.usage ?? null, quota: e?.quota ?? null };
+}

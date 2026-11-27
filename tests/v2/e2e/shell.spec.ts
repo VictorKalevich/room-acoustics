@@ -1,5 +1,5 @@
-// V2-005 (D58): оболочка v2 запускается отдельно и ничего не делает сама — без service worker, хранилища,
-// микрофона, звука, воркеров, внешних запросов и стилей legacy.
+// V2-005, V2-016 (D58): приложение v2 запускается отдельно. При запуске — только своя IndexedDB v2: без service
+// worker, микрофона, звука, воркеров, внешних запросов, базы и стилей legacy.
 import { test, expect } from '@playwright/test';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,15 +25,15 @@ test.beforeEach(async ({ page }) => {
     };
     method(navigator.mediaDevices, 'getUserMedia', 'getUserMedia');
     method(navigator.serviceWorker, 'register', 'serviceWorker.register');
-    method(indexedDB, 'open', 'indexedDB.open');
     method(Storage.prototype, 'setItem', 'storage.setItem');
     method(window.caches, 'open', 'caches.open');
     method(HTMLMediaElement.prototype, 'play', 'media.play');
+    method(navigator.storage, 'persist', 'storage.persist');
     for (const name of ['AudioContext', 'webkitAudioContext', 'OfflineAudioContext', 'Worker', 'SharedWorker']) ctor(name);
   });
 });
 
-test('059 · оболочка v2: экран запуска без действий, хранилища, service worker, звука и стилей legacy', async ({ page, baseURL }) => {
+test('059 · запуск v2: первый запуск без звука, микрофона, service worker, базы и стилей legacy', async ({ page, baseURL }) => {
   const requests: string[] = [];
   const errors: string[] = [];
   page.on('request', (r) => requests.push(r.url()));
@@ -41,10 +41,9 @@ test('059 · оболочка v2: экран запуска без действ�
   page.on('pageerror', (e) => errors.push(e.message));
 
   await page.goto('./');
-  await expect(page).toHaveTitle('Room Acoustics v2');
-  await expect(page.getByRole('heading', { level: 1, name: 'Room Acoustics v2' })).toBeVisible();
-  await expect(page.getByText('Создана отдельная точка входа новой версии.', { exact: false })).toBeVisible();
-  await expect(page.locator('button, a[href], input, select, textarea, [role="button"]')).toHaveCount(0);
+  await expect(page).toHaveTitle('Выбор сложности — Room Acoustics v2');
+  await expect(page.getByRole('heading', { level: 1, name: 'Как подробно показывать акустику?' })).toBeVisible();
+  await expect(page.getByRole('radio')).toHaveCount(3);
   await page.waitForLoadState('networkidle');
 
   const state = await page.evaluate(async () => ({
@@ -63,21 +62,26 @@ test('059 · оболочка v2: экран запуска без действ�
   const { font, ...rest } = state;
   expect(rest).toEqual({
     calls: [], serviceWorkers: 0, controlled: false, manifest: false, localStorage: 0, sessionStorage: 0, cookie: '',
-    databases: [], caches: [], legacyCss: false,
+    databases: ['room-acoustics-v2'], caches: [], legacyCss: false,
   });
   expect(font).not.toMatch(/Golos/);
   expect(font).toMatch(/^"?Inter Variable/);
-  expect(requests.filter((u) => !u.startsWith(baseURL!) && !u.startsWith('data:'))).toEqual([]);
+  expect(requests.filter((u) => !u.startsWith(baseURL!) && !u.startsWith('data:') && !u.startsWith('blob:'))).toEqual([]);
   expect(errors).toEqual([]);
 });
 
-test('059 · оболочка v2 помещается по ширине на 320, 390 и 1440 px', async ({ page }) => {
+test('059 · первый запуск и главная помещаются по ширине на 320, 390 и 1440 px', async ({ page }) => {
   await page.goto('./');
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 800 });
-    await expect(page.getByRole('heading', { level: 1, name: 'Room Acoustics v2' })).toBeVisible();
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    expect(overflow, `ширина ${width} px`).toBeLessThanOrEqual(0);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `первый запуск ${width} px`).toBeLessThanOrEqual(0);
+  }
+  await page.getByRole('button', { name: 'Продолжить' }).click();
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Акустика вашей комнаты' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `главная ${width} px`).toBeLessThanOrEqual(0);
   }
 });
 
@@ -87,7 +91,7 @@ test('059 · сборка v2 — отдельный каталог без servic
   expect(readFileSync('dist-v2/index.html', 'utf8')).not.toMatch(/manifest|registerSW|serviceWorker/);
 });
 
-test('059 · сборка legacy не содержит оболочку v2', () => {
+test('059 · сборка legacy не содержит v2', () => {
   test.skip(!existsSync('dist/index.html'), 'Сборка legacy (npm run build) не выполнялась перед этим прогоном.');
   const legacy = walk('dist').filter((p) => /\.(html|js|css|webmanifest)$/.test(p));
   expect(legacy.filter((p) => readFileSync(p, 'utf8').includes('Room Acoustics v2'))).toEqual([]);
