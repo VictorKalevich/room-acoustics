@@ -9,7 +9,7 @@ export {
 } from './feedback';
 export { FrequencyChart, BarChart, Legend, Spectrogram, spectrogramLevel, SPECTROGRAM_LEVELS, useWidth, formatHz, niceTicks, nearestIndex, SERIES_LABEL, type Series, type SeriesKind, type SeriesVariant, type BarSeries } from './charts';
 export { MetricCard, DataTable, KeyValue, Card, PageHead, Section, type Column, type MetricTone } from './data';
-export { PlanView, PlanLegend, axesFor, type PlanItem, type PlanItemType, type PlanMap, type PlanOpening, type PlanPoint, type PlanViewKind } from './PlanView';
+export { PlanView, PlanLegend, axesFor, type PlanAnnex, type PlanItem, type PlanItemType, type PlanMap, type PlanOpening, type PlanPoint, type PlanViewKind } from './PlanView';
 export { PlanHeat, HeatLegend, PlanPath, EventChart, heatLevel, HEAT_LEVELS, type HeatGrid, type PlanPathPoint, type TimeEvent } from './overlays';
 export { Sidebar, TabBar, TopBar, type NavItem } from './nav';
 export { applyTheme, readTheme, saveTheme, resolvedTheme, THEME_LABEL, type ThemeChoice } from './theme';

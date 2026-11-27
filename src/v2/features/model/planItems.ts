@@ -1,6 +1,6 @@
 // Конфигурация → объекты плана (V2-024). Идентификатор объекта плана — «вид:id», по нему находится объект модели.
 // Облако: ширина — поперёк комнаты (по y), «высота» — вдоль (по x), как в ядре; угловая ловушка — катет width/√2.
-import type { PlanItem, PlanOpening } from '../../design-system';
+import type { PlanAnnex, PlanItem, PlanOpening } from '../../design-system';
 import type { EditRef } from '../../application/editing';
 import type { RoomConfiguration } from '../../domain/model';
 
@@ -20,8 +20,20 @@ export function refOf(planItemId: string): EditRef | null {
 
 const OPENING_LABEL = { door: 'Дверь', window: 'Окно', passage: 'Проём' } as const;
 
-export function planItems(c: RoomConfiguration, layers: ReadonlySet<Layer>): { items: PlanItem[]; openings: PlanOpening[] } {
-  if (c.geometry.kind !== 'rect') return { items: [], openings: [] };
+/** Смежные зоны и части сложной формы (V2-046) — коробки за стенами; у части проход во всю её ширину. */
+export function planAnnexes(c: RoomConfiguration): PlanAnnex[] {
+  if (c.geometry.kind !== 'rect') return [];
+  const { depth: D, width: W } = c.geometry;
+  const part = new Set(c.shape?.zoneIds ?? []);
+  return c.zones.map((z) => {
+    const [x0, x1, y0, y1] = z.wall === 'right' ? [z.a0, z.a1, W, W + z.depth] : z.wall === 'left' ? [z.a0, z.a1, -z.depth, 0]
+      : z.wall === 'front' ? [-z.depth, 0, z.a0, z.a1] : [D, D + z.depth, z.a0, z.a1];
+    return { id: z.id, x0, x1, y0, y1, height: z.height, wall: z.wall, a0: z.arch.a0, a1: z.arch.a1, label: z.name, part: part.has(z.id) };
+  });
+}
+
+export function planItems(c: RoomConfiguration, layers: ReadonlySet<Layer>): { items: PlanItem[]; openings: PlanOpening[]; annexes: PlanAnnex[] } {
+  if (c.geometry.kind !== 'rect') return { items: [], openings: [], annexes: [] };
   const { depth: D, width: W, height: H } = c.geometry;
   const items: PlanItem[] = [];
   if (layers.has('audio')) {
@@ -74,5 +86,5 @@ export function planItems(c: RoomConfiguration, layers: ReadonlySet<Layer>): { i
   const openings: PlanOpening[] = layers.has('openings')
     ? c.openings.map((o) => ({ id: planId({ type: 'opening', id: o.id }), wall: o.wall, a0: o.a0, a1: o.a1, bottom: o.bottom, top: o.top, closed: o.state === 'closed', label: OPENING_LABEL[o.kind] }))
     : [];
-  return { items, openings };
+  return { items, openings, annexes: planAnnexes(c) };
 }

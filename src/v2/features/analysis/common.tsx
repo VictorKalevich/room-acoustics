@@ -56,7 +56,7 @@ export function AnalysisPlan({ config, title, renderOverlay, selectedId, onSelec
   if (config.geometry.kind !== 'rect') return <Notice>План доступен для прямоугольной комнаты.</Notice>;
   const g = config.geometry;
   const p = planItems(config, ALL);
-  return <PlanView title={title} depth={g.depth} width={g.width} height={g.height} items={p.items} openings={p.openings} renderOverlay={renderOverlay} selectedId={selectedId} onSelect={onSelect}>{children}</PlanView>;
+  return <PlanView title={title} depth={g.depth} width={g.width} height={g.height} items={p.items} openings={p.openings} annexes={p.annexes} renderOverlay={renderOverlay} selectedId={selectedId} onSelect={onSelect}>{children}</PlanView>;
 }
 
 /** Карточка раздела анализа: содержимое — столбцом с отступом 12. */

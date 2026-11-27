@@ -68,7 +68,7 @@ function ComparePlan({ a, b }: { a: Side; b: Side }) {
   });
   return (
     <Card title="План" subtitle={`Объекты — ${b.label.toLowerCase()}; контур — где они были: ${a.label.toLowerCase()}.`}>
-      <PlanView title={`Сравнение: ${b.label} и ${a.label}`} depth={g.depth} width={g.width} height={g.height} items={[...moved.map((p) => ({ ...p, ghost: true })), ...mine.items]} openings={mine.openings} />
+      <PlanView title={`Сравнение: ${b.label} и ${a.label}`} depth={g.depth} width={g.width} height={g.height} items={[...moved.map((p) => ({ ...p, ghost: true })), ...mine.items]} openings={mine.openings} annexes={mine.annexes} />
     </Card>
   );
 }

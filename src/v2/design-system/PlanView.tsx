@@ -29,6 +29,12 @@ export interface PlanItem {
 
 export interface PlanOpening { id: string; wall: WallSide; a0: number; a1: number; bottom: number; top: number; closed: boolean; label: string }
 
+/**
+ * Пристройка за стеной основного прямоугольника (V2-046): часть комнаты сложной формы или смежная зона. Коробка в
+ * координатах комнаты (может уходить в отрицательные), проход — участок стены `wall` от `a0` до `a1`.
+ */
+export interface PlanAnnex { id: string; x0: number; x1: number; y0: number; y1: number; height: number; wall: WallSide; a0: number; a1: number; label: string; part: boolean }
+
 export interface PlanPoint { x?: number; y?: number; z?: number }
 
 /** Перевод координат комнаты в координаты рисунка для наложений (`renderOverlay`): точка и масштаб, пикселей на метр. */
@@ -42,6 +48,7 @@ export interface PlanViewProps {
   view?: PlanViewKind;
   items: readonly PlanItem[];
   openings?: readonly PlanOpening[];
+  annexes?: readonly PlanAnnex[];
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
   /** Новое положение центра: `final` — конец перетаскивания или шаг клавишей. */
@@ -67,21 +74,32 @@ const TYPE_NAME: Record<PlanItemType, string> = {
   source: 'колонка', sub: 'сабвуфер', listener: 'слушатель', seat: 'место', obstacle: 'интерьер', absorber: 'панель', 'bass-trap': 'басовая ловушка', diffuser: 'диффузор', zone: 'зона',
 };
 
-export function PlanView({ title, depth, width, height, view = 'top', items, openings = [], selectedId, onSelect, onMove, gridStep = 0.5, snapStep = 0, children, renderOverlay }: PlanViewProps) {
+/** Пристройка в координатах вида; в виде сбоку и спереди — только выходящая за основную часть по горизонтали. */
+function annexBox(view: PlanViewKind, a: PlanAnnex, height: number, U: number): { u0: number; u1: number; v0: number; v1: number } | null {
+  if (view === 'top') return { u0: a.y0, u1: a.y1, v0: a.x0, v1: a.x1 };
+  const [u0, u1] = view === 'side' ? [a.x0, a.x1] : [a.y0, a.y1];
+  if (u0 >= -1e-6 && u1 <= U + 1e-6) return null;
+  return { u0, u1, v0: height - a.height, v1: height };
+}
+
+export function PlanView({ title, depth, width, height, view = 'top', items, openings = [], annexes = [], selectedId, onSelect, onMove, gridStep = 0.5, snapStep = 0, children, renderOverlay }: PlanViewProps) {
   const [ref, cw] = useWidth<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<{ id: string; du: number; dv: number } | null>(null);
   const ax = axesFor(view, depth, width, height);
+  const boxes = annexes.flatMap((a) => { const b = annexBox(view, a, height, ax.U); return b ? [{ a, b }] : []; });
+  const u0 = Math.min(0, ...boxes.map((x) => x.b.u0)), u1 = Math.max(ax.U, ...boxes.map((x) => x.b.u1));
+  const v0 = Math.min(0, ...boxes.map((x) => x.b.v0)), v1 = Math.max(ax.V, ...boxes.map((x) => x.b.v1));
   const pad = 28;
   const maxH = typeof window === 'undefined' ? 480 : Math.max(240, window.innerHeight * 0.62);
-  const scale = Math.max(10, Math.min((cw - pad * 2) / ax.U, (maxH - pad * 2) / ax.V));
-  const W = ax.U * scale + pad * 2, H = ax.V * scale + pad * 2;
-  const pu = (u: number) => pad + u * scale, pv = (v: number) => pad + v * scale;
+  const scale = Math.max(10, Math.min((cw - pad * 2) / (u1 - u0), (maxH - pad * 2) / (v1 - v0)));
+  const W = (u1 - u0) * scale + pad * 2, H = (v1 - v0) * scale + pad * 2;
+  const pu = (u: number) => pad + (u - u0) * scale, pv = (v: number) => pad + (v - v0) * scale;
   const pos = (it: PlanItem) => ({ x: it.x, y: it.y, z: it.z ?? 0 });
   const toRoom = (clientX: number, clientY: number) => {
     const r = svgRef.current!.getBoundingClientRect();
-    const u = ((clientX - r.left) * (W / r.width) - pad) / scale;
-    const v = ((clientY - r.top) * (H / r.height) - pad) / scale;
+    const u = ((clientX - r.left) * (W / r.width) - pad) / scale + u0;
+    const v = ((clientY - r.top) * (H / r.height) - pad) / scale + v0;
     return { u, v };
   };
   const apply = (it: PlanItem, u: number, v: number, step = 0): PlanPoint => {
@@ -115,7 +133,7 @@ export function PlanView({ title, depth, width, height, view = 'top', items, ope
         height={H}
         viewBox={`0 0 ${W} ${H}`}
         role="group"
-        aria-label={`${title}. ${view === 'top' ? 'Вид сверху, передняя стена вверху' : view === 'side' ? 'Вид сбоку, передняя стена слева' : 'Вид спереди, левая стена слева'}. ${fmtM(ax.U)} × ${fmtM(ax.V)}.`}
+        aria-label={`${title}. ${view === 'top' ? 'Вид сверху, передняя стена вверху' : view === 'side' ? 'Вид сбоку, передняя стена слева' : 'Вид спереди, левая стена слева'}. ${fmtM(ax.U)} × ${fmtM(ax.V)}.${annexes.length ? ` За стенами: ${annexes.map((a) => a.label).join(', ')}.` : ''}`}
         onPointerDown={(e) => { if (e.target === e.currentTarget || (e.target as Element).classList.contains('al-plan__floor')) onSelect?.(null); }}
         onPointerMove={(e) => {
           if (!drag || !onMove) return;
@@ -135,6 +153,9 @@ export function PlanView({ title, depth, width, height, view = 'top', items, ope
         }}
         onPointerCancel={() => setDrag(null)}
       >
+        {boxes.map(({ a, b }) => (
+          <rect key={`annex-${a.id}`} class={a.part ? 'al-plan__annex al-plan__annex--part' : 'al-plan__annex'} x={pu(b.u0)} y={pv(b.v0)} width={(b.u1 - b.u0) * scale} height={(b.v1 - b.v0) * scale}><title>{a.label}</title></rect>
+        ))}
         <rect class="al-plan__floor" x={pu(0)} y={pv(0)} width={ax.U * scale} height={ax.V * scale} />
         {gridU.map((u) => <line key={`u${u}`} class="al-plan__grid" x1={pu(u)} x2={pu(u)} y1={pv(0)} y2={pv(ax.V)} />)}
         {gridV.map((v) => <line key={`v${v}`} class="al-plan__grid" x1={pu(0)} x2={pu(ax.U)} y1={pv(v)} y2={pv(v)} />)}
@@ -144,6 +165,17 @@ export function PlanView({ title, depth, width, height, view = 'top', items, ope
           const [x1, y1, x2, y2] = o.wall === 'front' ? [o.a0, 0, o.a1, 0] : o.wall === 'back' ? [o.a0, ax.V, o.a1, ax.V] : o.wall === 'left' ? [0, o.a0, 0, o.a1] : [ax.U, o.a0, ax.U, o.a1];
           return <line key={o.id} class={['al-plan__opening', o.closed && 'al-plan__opening--closed'].filter(Boolean).join(' ')} x1={pu(x1)} y1={pv(y1)} x2={pu(x2)} y2={pv(y2)}><title>{o.label}</title></line>;
         })}
+        {view === 'top' && boxes.map(({ a }) => {
+          const [x1, y1, x2, y2] = a.wall === 'front' ? [a.a0, 0, a.a1, 0] : a.wall === 'back' ? [a.a0, ax.V, a.a1, ax.V] : a.wall === 'left' ? [0, a.a0, 0, a.a1] : [ax.U, a.a0, ax.U, a.a1];
+          return <line key={`pass-${a.id}`} class="al-plan__passage" x1={pu(x1)} y1={pv(y1)} x2={pu(x2)} y2={pv(y2)} />;
+        })}
+        {view !== 'top' && boxes.filter(({ a }) => a.part).map(({ a }) => {
+          const u = a.wall === 'back' || a.wall === 'right' ? ax.U : 0;
+          return <line key={`pass-${a.id}`} class="al-plan__passage" x1={pu(u)} y1={pv(height - a.height)} x2={pu(u)} y2={pv(height)} />;
+        })}
+        {boxes.map(({ a, b }) => (b.u1 - b.u0) * scale > 56 && (b.v1 - b.v0) * scale > 18 && (
+          <text key={`annex-label-${a.id}`} class="al-plan__dim" x={pu((b.u0 + b.u1) / 2)} y={pv((b.v0 + b.v1) / 2) + 4} text-anchor="middle">{a.label}</text>
+        ))}
         <text class="al-plan__dim" x={pu(ax.U / 2)} y={pad - 8} text-anchor="middle">{fmtM(ax.U)}</text>
         <text class="al-plan__dim" x={pad - 8} y={pv(ax.V / 2)} text-anchor="middle" transform={`rotate(-90 ${pad - 8} ${pv(ax.V / 2)})`}>{fmtM(ax.V)}</text>
         {renderOverlay?.({ at: (p) => [pu(ax.u({ z: 0, ...p })), pv(ax.v({ z: 0, ...p }))], scale })}

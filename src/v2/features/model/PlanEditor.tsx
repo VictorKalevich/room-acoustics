@@ -45,7 +45,7 @@ export function PlanEditor({ h, edit, level }: { h: RoomHandle; edit: ConfigEdit
 
   if (c.geometry.kind !== 'rect') return <Notice tone="warning" title="План недоступен">Редактор плана работает с прямоугольной комнатой (со скосом потолка и смежными зонами).</Notice>;
   const g = c.geometry;
-  const { items, openings } = planItems(c, layers);
+  const { items, openings, annexes } = planItems(c, layers);
   const ref = selected ? refOf(selected) : null;
   const shown = ref && exists(c, ref) ? ref : null;
   const issues = placementIssues(c);
@@ -80,7 +80,7 @@ export function PlanEditor({ h, edit, level }: { h: RoomHandle; edit: ConfigEdit
       <div class="al-split">
         <div class="al-stack al-stack--12">
           <PlanView
-            title="План комнаты" depth={g.depth} width={g.width} height={g.height} view={view} items={items} openings={openings}
+            title="План комнаты" depth={g.depth} width={g.width} height={g.height} view={view} items={items} openings={openings} annexes={annexes}
             selectedId={shown ? planId(shown) : null} onSelect={setSelected} onMove={onMove} snapStep={step} gridStep={step >= 0.25 ? step : 0.5}
           />
           <PlanLegend types={['source', 'listener', 'interior', 'absorber', 'bass-trap', 'diffuser']} />

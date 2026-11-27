@@ -36,6 +36,14 @@ export interface PolygonGeometry {
 
 export type Geometry = RectGeometry | PolygonGeometry;
 
+/** Форма из конструктора (V2-046): какие смежные зоны — части комнаты, а не коридоры; контур — для повторной правки. */
+export type ShapeKind = 'rect' | 'l' | 't' | 'u' | 'niche' | 'contour';
+export interface RoomShape {
+  kind: Exclude<ShapeKind, 'rect'>;
+  zoneIds: string[];
+  outline?: { x: Meters; y: Meters }[];
+}
+
 /** Материал поверхности — ссылка на профиль: встроенный материал ядра или версия профиля библиотеки. */
 export interface SurfaceMaterial { material: string; profileVersion?: number }
 export type Surfaces = Record<SurfaceId, SurfaceMaterial>;
@@ -205,6 +213,8 @@ export interface RoomConfiguration {
   basedOn?: { configId: string; revision: number };
   geometrySource: 'manual' | 'scan';
   geometry: Geometry;
+  /** Сложная форма: части комнаты среди смежных зон. Нет — прямоугольник и зоны пользователя. */
+  shape?: RoomShape;
   surfaces: Surfaces;
   openings: Opening[];
   zones: AcousticZone[];

@@ -56,6 +56,7 @@ export function toCore(c: RoomConfiguration): CoreConversion {
   if (c.treatment.enabled && porous.length < c.treatment.items.filter((t) => t.enabled !== false).length) {
     limitations.push('Диффузоры и резонаторы в расчёт ядра не входят: учтено только пористое поглощение.');
   }
+  if (c.shape) limitations.push('Сложная форма: части комнаты учитывает волновая модель баса; реверберация, отражения и расстояния до стен считаются по основной части.');
   if (c.listening.listeners.length > 1) limitations.push('Ядро оценивает основное место и ряд мест вокруг него; другие слушатели учитываются отдельно.');
   const g = c.geometry;
   const sp = c.simulation;

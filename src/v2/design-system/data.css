@@ -69,6 +69,9 @@
 .al-plan__wall-front { stroke: var(--al-color-accent); stroke-width: 4; vector-effect: non-scaling-stroke; }
 .al-plan__dim { fill: var(--al-color-text-secondary); font-size: var(--al-text-caption); font-family: var(--al-font-body); }
 .al-plan__opening { stroke: var(--al-color-surface); stroke-width: 5; vector-effect: non-scaling-stroke; }
+.al-plan__annex { fill: color-mix(in srgb, var(--al-color-grid) 45%, var(--al-color-surface)); stroke: var(--al-color-text-secondary); stroke-width: 1.5; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; }
+.al-plan__annex--part { fill: var(--al-color-surface); stroke: var(--al-color-text); stroke-width: 2; stroke-dasharray: none; }
+.al-plan__passage { stroke: var(--al-color-surface); stroke-width: 5; vector-effect: non-scaling-stroke; }
 .al-plan__opening--closed { stroke: var(--al-color-measured); stroke-width: 4; stroke-dasharray: 4 2; }
 .al-plan__zone { fill: color-mix(in srgb, var(--al-plan-interior) 14%, transparent); stroke: var(--al-plan-interior); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .al-plan__obstacle { fill: color-mix(in srgb, var(--al-plan-interior) 22%, var(--al-color-surface)); stroke: var(--al-plan-interior); stroke-width: 1.5; vector-effect: non-scaling-stroke; }

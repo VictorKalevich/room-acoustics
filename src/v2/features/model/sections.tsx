@@ -18,6 +18,8 @@ import { DIM_LABEL, DIM_LIMITS } from '../../domain/validation';
 import { useApp } from '../../shared/context';
 import type { RoomHandle } from '../rooms/useRoom';
 import { CORNER_LABEL, NameField, Properties } from './Properties';
+import { ScanCard } from './ScanCard';
+import { ShapeCard } from './ShapeCard';
 import type { ConfigEdit } from './useConfig';
 
 export interface SectionProps { h: RoomHandle; edit: ConfigEdit; level: Complexity }
@@ -82,13 +84,15 @@ export function GeometrySection({ edit, level }: SectionProps) {
   const add = (kind: 'door' | 'window' | 'passage') => { const id = clock.newId(); void edit.apply((x) => upsertOpening(x, newOpening(x, kind, wall, id)), OPENING_KIND[kind]); };
   return (
     <div class="al-stack al-stack--24">
-      <Card title="Размеры" subtitle="Прямоугольная комната. Пока места не выбраны, колонки и слушатель встают на исходные места для новых размеров.">
+      <Card title="Размеры" subtitle={`${c.shape ? 'Основная часть комнаты сложной формы; части — в «Форме комнаты».' : 'Прямоугольная комната.'} Пока места не выбраны, колонки и слушатель встают на исходные места для новых размеров.`}>
         <div class="al-grid">
           {(['depth', 'width', 'height'] as const).map((k) => (
             <NumberField key={k} label={`${DIM_LABEL[k]}${k === 'depth' ? ' (от передней стены к задней)' : k === 'width' ? ' (вдоль передней стены)' : ''}`} unit="м" value={g[k]} min={DIM_LIMITS[k][0]} max={DIM_LIMITS[k][1]} onCommit={dim(k)} />
           ))}
         </div>
       </Card>
+      {visibleAt('advanced', level) ? <ShapeCard edit={edit} /> : c.shape && <Notice>Комната сложной формы: частей — {c.shape.zoneIds.length}. Форма редактируется на продвинутом уровне.</Notice>}
+      <ScanCard edit={edit} />
       {visibleAt('advanced', level) && <SlopeCard edit={edit} />}
       <Card title="Поверхности" subtitle="Материал задаёт поглощение по октавам; ковры, шторы и обработка добавляются поверх.">
         <div class="al-grid">
@@ -149,7 +153,7 @@ function ZonesCard({ edit }: { edit: ConfigEdit }) {
           {c.zones.map((z) => (
             <div key={z.id} class="al-stack al-stack--12">
               <div class="al-row al-row--between">
-                <span class="al-text-title">{z.name}</span>
+                <span class="al-row"><span class="al-text-title">{z.name}</span>{c.shape?.zoneIds.includes(z.id) && <Badge>Часть формы</Badge>}{z.fromScan && <Badge>Из скана</Badge>}</span>
                 <div class="al-row">
                   <Button variant="ghost" small onClick={() => setOpen(open === z.id ? null : z.id)} aria-expanded={open === z.id}>{open === z.id ? 'Свернуть' : 'Изменить'}</Button>
                   <Button variant="danger-ghost" small icon="trash" onClick={() => edit.apply((x) => removeZone(x, z.id), 'Удаление зоны')}>Удалить</Button>
