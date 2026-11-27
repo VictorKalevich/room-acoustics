@@ -1,15 +1,22 @@
 // Подбор (V2-043): поиск мест ядра и согласование сабвуферов в фоновом воркере по запросу. Результат — лучший
 // найденный вариант; он временный, по желанию сохраняется отчётом прогона и переносится только в эксперимент после
 // подтверждения. Варианты, которые двигают закреплённое или запрещённое ограничениями, не применяются (R44).
+// V2-050 (продвинутый уровень): поиск с учётом закреплений, фронт Парето «оценка — перестановка», чувствительность.
 import { useState } from 'preact/hooks';
 import { Badge, Button, ConfirmDialog, DataTable, FrequencyChart, KeyValue, Notice, useToast, type Series } from '../../design-system';
 import { evalPpo } from '../../../core/precision';
 import type { IntegrationResult } from '../../../core/integration';
 import type { SubFilterResult } from '../../../core/subfilters';
+import type { SetupEval } from '../../../core/system';
 import type { Placement, PlacementResult } from '../../../core/types';
 import { toCore, type CoreInputs } from '../../adapters/core';
 import { applyProposal } from '../../application/experiment';
 import { placementOp, runRecord, runStale, searchKey, subSettingsOp, subsKey, variantConflicts, variantMoves, variantNotes } from '../../application/optimize';
+import { paretoOp, paretoSearch, searchSpace, sensitivity, thinFront, type Layout, type ParetoPoint, type ParetoResult, type Sensitivity } from '../../application/pareto';
+import { effectiveComplexity } from '../../application/settings';
+import { visibleAt } from '../../domain/complexity';
+import { hashInputs } from '../../domain/provenance';
+import { setupKey } from '../../adapters/calculations';
 import type { RoomConfiguration } from '../../domain/model';
 import { useApp } from '../../shared/context';
 import { dateTime } from '../../shared/format';
@@ -19,6 +26,7 @@ import { useJob } from '../analysis/useJob';
 import type { AdviceData } from './useAdvice';
 
 export function OptimizeSection({ d }: { d: AdviceData }) {
+  const { settings } = useApp();
   const conv = toCore(d.edit.config);
   if (!conv.ok) return <Notice tone="warning">{conv.reason}</Notice>;
   const subs = d.edit.config.audio.sources.filter((s) => s.kind === 'sub');
@@ -26,6 +34,7 @@ export function OptimizeSection({ d }: { d: AdviceData }) {
     <div class="al-stack al-stack--24">
       <p class="al-text-secondary">{`${d.label} конфигурация. Найденное переносится только в эксперимент и только после подтверждения.`}</p>
       <PlacementSearch d={d} i={conv.inputs} />
+      {visibleAt('advanced', effectiveComplexity(settings, 'advice')) && <ParetoBlock d={d} i={conv.inputs} />}
       {subs.length > 0 && <SubAlignment d={d} i={conv.inputs} kind="integrate" />}
       {subs.length > 0 && <SubAlignment d={d} i={conv.inputs} kind="subFilters" />}
     </div>
@@ -93,7 +102,7 @@ function PlacementSearch({ d, i }: { d: AdviceData; i: CoreInputs }) {
             { key: 'a', title: 'Стереоугол', numeric: true, render: (p) => (p.angleDeg === null ? '—' : `${n0(p.angleDeg)}°`) },
             { key: 'm', title: 'Что меняет', render: (p) => movesText(c, p) },
           ]} />
-          <p class="al-text-small al-text-secondary">Неровность — разброс АЧХ баса в местах слушателей, меньше — ровнее. Устойчивость — насколько хуже при сдвиге на 10 см.</p>
+          <p class="al-text-small al-text-secondary">Неровность — разброс АЧХ баса в местах слушателей, меньше — ровнее. Устойчивость — насколько хуже при сдвиге колонок и сабвуферов на 10 см и слушателя на 25 см.</p>
           {chosen && <FrequencyChart title={`АЧХ: сейчас и вариант ${sel + 1}`} fMin={result.fLo} fMax={result.fHi} series={series} />}
           {chosen && <VariantActions d={d} p={chosen} onApply={() => setAsk(chosen)} />}
           <div class="al-row">
@@ -189,5 +198,78 @@ function SubAlignment({ d, i, kind }: { d: AdviceData; i: CoreInputs; kind: Subs
           text={<><p>{`Настройки ${ids.length} сабвуфер${ids.length === 1 ? 'а' : 'ов'}${xo !== undefined ? ' и частота раздела' : ''}.`}</p><p>{confirmText(d)}</p></>} />
       )}
     </Block>
+  );
+}
+
+/** Поиск с учётом закреплений и фронт Парето (V2-050). */
+function ParetoBlock({ d, i }: { d: AdviceData; i: CoreInputs }) {
+  const { compute } = useApp();
+  const c = d.edit.config;
+  const room = d.h.room!;
+  const space = searchSpace(c, room.goals, i);
+  const free = space.listener.length + space.speakerX.length + space.speakerHalf.length + space.subs.length > 0;
+  const evaluate = (l: Layout) => compute().run('evaluate', { room: i.room, sources: i.sources, constraints: i.constraints, setup: { ...i.setup, ...l }, ppo: evalPpo(i.precision) });
+  const key = free ? hashInputs({ method: 'pareto', input: setupKey(i), space }) : null;
+  const [job, start] = useJob<ParetoResult>(key, (onProgress) => paretoSearch(space, { listener: i.setup.listener, positions: i.setup.positions }, evaluate, { onProgress }));
+  const [sel, setSel] = useState(0);
+  const [ask, setAsk] = useState<ParetoPoint | null>(null);
+  const apply = useApply(d);
+  const r = job.status === 'ready' ? job.value : null;
+  const front = r ? thinFront(r.front) : [];
+  const chosen = front[Math.min(sel, front.length - 1)] ?? null;
+  const name = (id: string) => (id === 'listener' ? 'слушатель' : (c.audio.sources.find((s) => s.id === id)?.name ?? id).toLowerCase());
+  const what = (p: ParetoPoint) => (p.moved.length ? p.moved.map(name).join(', ') : 'ничего — как сейчас');
+  const label = (p: ParetoPoint) => (p.shift === 0 ? 'Как сейчас' : `Вариант ${front.indexOf(p)}`);
+  return (
+    <Block title="Поиск с учётом закреплений" subtitle="Перебор от нынешней расстановки по одной координате за шаг; каждый вариант оценивает ядро в фоне. Закреплённое и запрещённое целями не двигается. Показаны варианты, где больше перестановки даёт заметно лучший бас (фронт Парето) — выберите, сколько готовы переставлять.">
+      {space.fixed.map((x) => <p key={x} class="al-text-small al-text-secondary">{x}</p>)}
+      {!free ? <Notice>Двигать нечего: все объекты закреплены или запрещены целями. Снимите закрепление или ограничение в разделе «Цели и ограничения».</Notice>
+        : job.status !== 'ready' ? analysisStatus(job, start, 'Поиск запускается по запросу: несколько секунд, в волновой модели — дольше.') : r && chosen && (
+          <>
+            <KeyValue items={[
+              ['Проверено вариантов', n0(r.evaluated)], ['Оценка сейчас', `${n1(r.baseline.score)} дБ`],
+              ['Лучшая найденная', `${n1(r.front[r.front.length - 1].score)} дБ`], ['Вариантов на фронте', n0(r.front.length)],
+            ]} />
+            {r.stopped === 'budget' && <p class="al-text-small al-text-secondary">Поиск остановлен по числу оценок: лучше может найтись при меньшем числе подвижных объектов.</p>}
+            <DataTable caption="Фронт Парето: оценка и перестановка" rowKey={(p) => p.key} rows={front} columns={[
+              { key: 'n', title: 'Вариант', render: (p) => <Button small variant={p === chosen ? 'secondary' : 'ghost'} aria-pressed={p === chosen} onClick={() => setSel(front.indexOf(p))}>{label(p)}</Button> },
+              { key: 's', title: 'Оценка', numeric: true, render: (p) => `${n1(p.score)} дБ` },
+              { key: 'g', title: 'Лучше на', numeric: true, render: (p) => (p.shift === 0 ? '—' : `${n1(r.baseline.score - p.score)} дБ`) },
+              { key: 'm', title: 'Перестановка', numeric: true, render: (p) => (p.shift === 0 ? '—' : `${n2(p.shift)} м`) },
+              { key: 'w', title: 'Что меняет', render: what },
+            ]} />
+            <p class="al-text-small al-text-secondary">Оценка — по цели подбора со штрафами расстановки, меньше — лучше. Перестановка — сумма сдвигов по полу. Лучший найденный вариант не обязательно лучший возможный.</p>
+            <FrequencyChart title={`АЧХ: сейчас и ${label(chosen).toLowerCase()}`} fMin={r.baseline.response.f[0]} fMax={r.baseline.response.f[r.baseline.response.f.length - 1]} series={[
+              { id: 'base', label: 'Сейчас', kind: 'current', x: r.baseline.response.f, y: r.baseline.response.db },
+              ...(chosen.shift > 0 ? [{ id: 'var', label: label(chosen), kind: 'calculated' as const, x: chosen.response.f, y: chosen.response.db }] : []),
+              { id: 'target', label: 'Цель', kind: 'target', x: chosen.response.f, y: chosen.response.target },
+            ]} />
+            {chosen.penalties.map((x) => <p key={x} class="al-text-small al-text-secondary">{`Правило расстановки: ${x}`}</p>)}
+            <SensitivityBlock key={chosen.key} p={chosen} i={i} evaluate={evaluate} name={name} title={label(chosen)} />
+            <div class="al-row"><Button variant="primary" small icon="flask" disabled={chosen.shift === 0} onClick={() => setAsk(chosen)}>Перенести в эксперимент</Button></div>
+          </>
+        )}
+      {ask && (
+        <ConfirmDialog title="Перенести вариант в эксперимент?" confirmLabel="В эксперимент" onCancel={() => setAsk(null)}
+          onConfirm={() => { const p = ask; setAsk(null); void apply(paretoOp(p.layout), 'Подбор с учётом закреплений'); }}
+          text={<><p>{`Меняет: ${what(ask)}; перестановка ${n2(ask.shift)} м.`}</p><p>{confirmText(d)}</p></>} />
+      )}
+    </Block>
+  );
+}
+
+function SensitivityBlock({ p, i, evaluate, name, title }: { p: ParetoPoint; i: CoreInputs; evaluate: (l: Layout) => Promise<SetupEval>; name: (id: string) => string; title: string }) {
+  const [job, start] = useJob<Sensitivity[]>(hashInputs({ method: 'sensitivity', input: setupKey(i), layout: p.layout }), () => sensitivity(i, p.layout, p.score, evaluate));
+  if (job.status !== 'ready') return analysisStatus(job, start, `Чувствительность «${title}» к неточной установке — по запросу.`);
+  const top = job.value[0];
+  return (
+    <div class="al-stack al-stack--8">
+      <DataTable caption={`Чувствительность: ${title.toLowerCase()}`} rowKey={(s) => s.id} rows={job.value} columns={[
+        { key: 'o', title: 'Объект', render: (s) => name(s.id) },
+        { key: 'd', title: 'Сдвиг', numeric: true, render: (s) => `${n0(s.shift * 100)} см` },
+        { key: 'w', title: 'Хуже в среднем', numeric: true, render: (s) => `${n2(s.worse)} дБ` },
+      ]} />
+      <p class="al-text-small al-text-secondary">{top && top.worse >= 0.5 ? `Точнее всего ставьте: ${name(top.id)} — при сдвиге на ${n0(top.shift * 100)} см оценка хуже на ${n1(top.worse)} дБ.` : 'Вариант нечувствителен к неточной установке: при сдвигах оценка меняется меньше чем на 0,5 дБ.'}</p>
+    </div>
   );
 }
