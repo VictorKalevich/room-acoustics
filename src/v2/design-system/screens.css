@@ -56,3 +56,6 @@ a.al-tile:hover { background: var(--al-color-surface-hover); }
 .al-list__link:hover .al-list__title { color: var(--al-color-accent); }
 .al-list__item--wrap { flex-wrap: wrap; }
 .al-list__item--wrap .al-list__text { flex: 1 1 200px; }
+
+/* Списки объектов редактора модели (V2-023): выбранный объект, свойства которого открыты рядом. */
+button.al-list__item[aria-pressed='true'] { background: var(--al-color-accent-soft); }

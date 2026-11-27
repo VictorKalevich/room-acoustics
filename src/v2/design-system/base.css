@@ -79,6 +79,7 @@ ul[role='list'], ol[role='list'] { padding: 0; list-style: none; }
 .al-row--16 { gap: var(--al-space-16); }
 .al-row--between { justify-content: space-between; }
 .al-row--end { justify-content: flex-end; }
+.al-row--bottom { align-items: flex-end; }
 .al-row--nowrap { flex-wrap: nowrap; }
 .al-grow { flex: 1 1 auto; min-width: 0; }
 .al-grid { display: grid; gap: var(--al-space-16); grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }

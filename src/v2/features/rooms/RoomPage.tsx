@@ -1,11 +1,11 @@
 // Страница комнаты (V2-018, V2-020): вкладки «Модель», «Анализ», «Советы» — хеш-адреса; открытая комната
 // становится активной и восстанавливается при следующем запуске.
 import { useEffect } from 'preact/hooks';
-import { Badge, EmptyState, ErrorState, KeyValue, LoadingState, Notice, TabPanel, Tabs, buttonClass } from '../../design-system';
+import { EmptyState, ErrorState, LoadingState, Notice, TabPanel, Tabs, buttonClass } from '../../design-system';
 import { useApp } from '../../shared/context';
-import { dimsText, systemText, volumeText } from '../../shared/format';
 import { ROOM_TABS, href, navigate, roomHref, type RoomTab } from '../../shared/router';
 import { Screen } from '../../shared/Screen';
+import { ModelTab } from '../model/ModelTab';
 import { useRoom, type RoomHandle } from './useRoom';
 
 export const TAB_LABEL: Record<RoomTab, string> = { model: 'Модель', analysis: 'Анализ', advice: 'Советы' };
@@ -38,16 +38,7 @@ export function RoomPage({ id, tab, section }: { id: string; tab: RoomTab; secti
   );
 }
 
-function RoomTabContent({ h, tab }: { h: RoomHandle; tab: RoomTab; section?: string }) {
-  const room = h.room!;
-  const c = h.role === 'experimental' && room.experimental ? room.experimental : room.current;
-  if (tab === 'model') {
-    return (
-      <div class="al-stack al-stack--16">
-        <KeyValue items={[['Размеры', dimsText(c)], ['Объём', volumeText(c) ?? '—'], ['Аудиосистема', systemText(c)], ['Слушатели', String(c.listening.listeners.length)]]} />
-        {room.experimental && <Badge tone="experimental">Есть эксперимент</Badge>}
-      </div>
-    );
-  }
+function RoomTabContent({ h, tab, section }: { h: RoomHandle; tab: RoomTab; section?: string }) {
+  if (tab === 'model') return <ModelTab h={h} section={section} />;
   return <EmptyState icon={tab === 'analysis' ? 'analysis' : 'advice'} title={TAB_LABEL[tab]} text="Раздел подключается на следующих этапах редизайна." />;
 }

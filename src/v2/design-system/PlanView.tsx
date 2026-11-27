@@ -44,6 +44,8 @@ export interface PlanViewProps {
   /** Новое положение центра: `final` — конец перетаскивания или шаг клавишей. */
   onMove?: (id: string, to: PlanPoint, final: boolean) => void;
   gridStep?: number;
+  /** Привязка перетаскивания к сетке, м; 0 — шаг 1 см. Клавиши двигают на 5 и 25 см независимо от привязки. */
+  snapStep?: number;
   children?: ComponentChildren;
 }
 
@@ -60,7 +62,7 @@ const TYPE_NAME: Record<PlanItemType, string> = {
   source: 'колонка', sub: 'сабвуфер', listener: 'слушатель', seat: 'место', obstacle: 'интерьер', absorber: 'панель', 'bass-trap': 'басовая ловушка', diffuser: 'диффузор', zone: 'зона',
 };
 
-export function PlanView({ title, depth, width, height, view = 'top', items, openings = [], selectedId, onSelect, onMove, gridStep = 0.5, children }: PlanViewProps) {
+export function PlanView({ title, depth, width, height, view = 'top', items, openings = [], selectedId, onSelect, onMove, gridStep = 0.5, snapStep = 0, children }: PlanViewProps) {
   const [ref, cw] = useWidth<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<{ id: string; du: number; dv: number } | null>(null);
@@ -77,10 +79,11 @@ export function PlanView({ title, depth, width, height, view = 'top', items, ope
     const v = ((clientY - r.top) * (H / r.height) - pad) / scale;
     return { u, v };
   };
-  const apply = (it: PlanItem, u: number, v: number): PlanPoint => {
+  const apply = (it: PlanItem, u: number, v: number, step = 0): PlanPoint => {
     const halfU = (it[ax.du] ?? 0) / 2, halfV = (it[ax.dv] ?? 0) / 2;
-    const cu = Math.min(ax.U - halfU, Math.max(halfU, u));
-    const cv = Math.min(ax.V - halfV, Math.max(halfV, v));
+    const snap = (t: number) => (step > 0 ? Math.round(t / step) * step : t);
+    const cu = Math.min(ax.U - halfU, Math.max(halfU, snap(u)));
+    const cv = Math.min(ax.V - halfV, Math.max(halfV, ax.sv === 'z' ? height - snap(height - v) : snap(v)));
     const out: PlanPoint = {};
     out[ax.su] = round(cu);
     if (ax.sv === 'z') out.z = round(height - cv);
@@ -114,14 +117,14 @@ export function PlanView({ title, depth, width, height, view = 'top', items, ope
           const it = items.find((i) => i.id === drag.id);
           if (!it) return;
           const { u, v } = toRoom(e.clientX, e.clientY);
-          onMove(it.id, apply(it, u - drag.du, v - drag.dv), false);
+          onMove(it.id, apply(it, u - drag.du, v - drag.dv, snapStep), false);
         }}
         onPointerUp={(e) => {
           if (!drag || !onMove) { setDrag(null); return; }
           const it = items.find((i) => i.id === drag.id);
           if (it) {
             const { u, v } = toRoom(e.clientX, e.clientY);
-            onMove(it.id, apply(it, u - drag.du, v - drag.dv), true);
+            onMove(it.id, apply(it, u - drag.du, v - drag.dv, snapStep), true);
           }
           setDrag(null);
         }}
@@ -186,7 +189,7 @@ export function PlanView({ title, depth, width, height, view = 'top', items, ope
             >
               {point ? <circle class="al-plan__hit" cx={cx} cy={cy} r={hitR} /> : <rect class="al-plan__hit" x={cx - su / 2 - 4} y={cy - sv / 2 - 4} width={su + 8} height={sv + 8} rx={4} />}
               {shape}
-              {(point || su > 40) && <text class="al-plan__label" x={cx} y={point ? cy - r - 6 : cy + 4} text-anchor="middle">{it.label}</text>}
+              {(point || su > 40) && <text class="al-plan__label" x={cx} y={point ? (cy - r - 20 < pv(0) ? cy + r + 14 : cy - r - 6) : cy + 4} text-anchor="middle">{it.label}</text>}
             </g>
           );
         })}

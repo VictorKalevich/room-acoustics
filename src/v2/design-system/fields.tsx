@@ -28,6 +28,8 @@ const describedBy = (id: string, error?: string | null, hint?: string) => (error
 export interface TextFieldProps extends FieldShell {
   value: string;
   onInput: (v: string) => void;
+  /** Значение по завершении ввода: выход из поля или Enter в однострочном поле. */
+  onCommit?: (v: string) => void;
   placeholder?: string;
   multiline?: boolean;
   maxLength?: number;
@@ -35,16 +37,17 @@ export interface TextFieldProps extends FieldShell {
   type?: 'text' | 'search';
 }
 
-export function TextField({ value, onInput, placeholder, multiline, maxLength, autoFocus, type = 'text', ...shell }: TextFieldProps) {
+export function TextField({ value, onInput, onCommit, placeholder, multiline, maxLength, autoFocus, type = 'text', ...shell }: TextFieldProps) {
   const id = useId();
   const common = {
     id, value, placeholder, maxLength, disabled: shell.disabled, autoFocus,
     'aria-invalid': !!shell.error || undefined, 'aria-describedby': describedBy(id, shell.error, shell.hint),
     onInput: (e: TargetedEvent<HTMLInputElement | HTMLTextAreaElement>) => onInput(e.currentTarget.value),
+    onBlur: onCommit && ((e: TargetedEvent<HTMLInputElement | HTMLTextAreaElement>) => onCommit(e.currentTarget.value)),
   };
   return (
     <Shell id={id} {...shell}>
-      <div class="al-field__box">{multiline ? <textarea {...common} /> : <input {...common} type={type} list={undefined} />}</div>
+      <div class="al-field__box">{multiline ? <textarea {...common} /> : <input {...common} type={type} list={undefined} onKeyDown={onCommit && ((e) => { if (e.key === 'Enter') e.currentTarget.blur(); })} />}</div>
     </Shell>
   );
 }
@@ -180,6 +183,8 @@ export function rovingIndex(key: string, i: number, n: number): number | null {
 export function SegmentedControl<T extends string>({ value, options, onChange, label, block }: { value: T; options: readonly Option<T>[]; onChange: (v: T) => void; label: string; block?: boolean }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const enabled = options.filter((o) => !o.disabled);
+  // Значение вне списка (например, произвольная схема): в группу всё равно можно попасть клавишей Tab.
+  const focusable = options.some((o) => o.value === value) ? value : enabled[0]?.value;
   return (
     <div class={['al-segmented', block && 'al-segmented--block'].filter(Boolean).join(' ')} role="radiogroup" aria-label={label}>
       {options.map((o) => (
@@ -190,7 +195,7 @@ export function SegmentedControl<T extends string>({ value, options, onChange, l
           role="radio"
           class="al-segmented__item"
           aria-checked={o.value === value}
-          tabIndex={o.value === value ? 0 : -1}
+          tabIndex={o.value === focusable ? 0 : -1}
           disabled={o.disabled}
           onClick={() => onChange(o.value)}
           onKeyDown={(e) => {

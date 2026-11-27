@@ -126,9 +126,13 @@ export interface Listening {
   seats: Seats;
 }
 
+/** Закреплённый объект не двигается на плане и при подборе (V2-025, V2-043). */
+export interface Lockable { locked?: boolean }
+export type InteriorZone = Zone & Lockable;
+
 export interface Interior {
   /** Мебель и области, где нельзя ставить источники (и, если canSit = false, сидеть) — форма ядра. */
-  obstacles: Zone[];
+  obstacles: InteriorZone[];
   coverings: Covering[];
   /** Обстановка на средних и высоких частотах — по списку мебели и покрытий; бас — по `furnishing`. */
   furnitureList: boolean;
@@ -163,7 +167,7 @@ export interface ResonatorItem {
   enabled?: boolean;
 }
 
-export type TreatmentItem = Treatment | DiffuserItem | ResonatorItem;
+export type TreatmentItem = (Treatment & Lockable) | (DiffuserItem & Lockable) | (ResonatorItem & Lockable);
 
 export interface TreatmentPlan {
   items: TreatmentItem[];
