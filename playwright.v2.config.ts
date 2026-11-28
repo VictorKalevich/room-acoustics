@@ -19,5 +19,7 @@ export default defineConfig({
   projects: [
     { name: 'v2-desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, channel } },
     { name: 'v2-iphone', use: { ...devices['iPhone 15 Pro'], browserName: 'chromium', channel } },
+    // Тот же iPhone на движке Safari (WebKit), V2-059: npm run e2e:v2:safari. Эмуляция, а не физический iPhone.
+    { name: 'v2-safari', use: { ...devices['iPhone 15 Pro'] } },
   ],
 });

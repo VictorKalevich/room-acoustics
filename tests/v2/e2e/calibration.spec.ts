@@ -27,6 +27,7 @@ test('059 · подстройка модели по замеру и коррек
   const go = (path: string) => page.goto(roomUrl.replace(/#\/rooms\/([^/]+)\/.*$/, `#/rooms/$1/${path}`));
 
   await page.goto('./#/tools/sweep');
+  test.skip(!await page.evaluate(() => typeof AudioContext !== 'undefined' && !!navigator.mediaDevices?.getUserMedia), 'Нет Web Audio или микрофона в этой сборке браузера (WebKit под Windows).');
   await expect(page.getByRole('button', { name: 'Обновить список' })).toBeVisible();
   await page.getByRole('radio', { name: 'Из файла WAV' }).click();
   await page.getByLabel('Файл записи WAV').setInputFiles({ name: 'bass.wav', mimeType: 'audio/wav', buffer: recording() });

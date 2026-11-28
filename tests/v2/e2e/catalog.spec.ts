@@ -49,7 +49,8 @@ test('059 · сегменты и вкладки переключаются ст�
 
 test('059 · диалог: фокус на отмене, Tab не выходит наружу, Esc закрывает и возвращает фокус', async ({ page }) => {
   const opener = page.getByRole('button', { name: 'Диалог подтверждения' });
-  await opener.click();
+  await opener.focus();
+  await page.keyboard.press('Enter');
   const dialog = page.getByRole('alertdialog', { name: 'Удалить комнату?' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Отмена' })).toBeFocused();

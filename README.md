@@ -159,7 +159,8 @@ npm run build       # статическая сборка в dist/
 npm run dev:v2      # оболочка v2: http://localhost:5174/ (без PWA и service worker)
 npm run build:v2    # проверочная сборка v2 в dist-v2/ (не публикуется)
 npm run preview:v2  # просмотр dist-v2 на порту 4174
-npm run e2e:v2      # smoke-тест оболочки v2 (Chromium)
+npm run e2e:v2      # сценарии v2: desktop и эмуляция iPhone (Chromium)
+npm run e2e:v2:safari  # те же сценарии в WebKit (эмуляция, не физический iPhone)
 ```
 
 Материалы физических проверок лежат в `public/field-check/` и публикуются вместе с приложением. Экспорты разбирают

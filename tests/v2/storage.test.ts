@@ -44,6 +44,20 @@ describe('059 V2-008 · база v2', () => {
     const db = openV2Db(undefined);
     await expect(db.run('rooms', 'readonly', () => 1)).rejects.toMatchObject({ kind: 'unavailable' });
   });
+
+  it('V2-058: нехватка места — ошибка «quota» с понятным текстом, записанное раньше цело, транзакция откатывается', async () => {
+    const { db } = setup();
+    await db.run('meta', 'readwrite', (tx) => req(tx.objectStore('meta').put({ id: 'old', value: 1 })));
+    const err = await db.run(['meta'], 'readwrite', async (tx) => {
+      await req(tx.objectStore('meta').put({ id: 'new', value: 2 }));
+      throw new DOMException('Недостаточно места', 'QuotaExceededError');
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StorageError);
+    expect(err).toMatchObject({ kind: 'quota' });
+    expect((err as Error).message).toMatch(/не хватает места/);
+    expect(await db.run('meta', 'readonly', (tx) => req(tx.objectStore('meta').get('old')))).toEqual({ id: 'old', value: 1 });
+    expect(await db.run('meta', 'readonly', (tx) => req(tx.objectStore('meta').get('new')))).toBeUndefined();
+  });
 });
 
 describe('059 V2-008 · сценарии комнат', () => {

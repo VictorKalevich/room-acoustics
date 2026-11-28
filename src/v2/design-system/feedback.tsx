@@ -2,7 +2,7 @@
 // шторка (панель свойств), уведомления, пустое состояние, загрузка, ошибка.
 import type { ComponentChildren } from 'preact';
 import { createContext } from 'preact';
-import { useCallback, useContext, useEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useContext, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { Button, IconButton } from './Button';
 import { Icon, type IconName } from './Icon';
 
@@ -66,7 +66,8 @@ function useModal(onClose: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
-  useEffect(() => {
+  // до отрисовки: иначе отложенный эффект переносит фокус на первую кнопку, когда в поле уже вводят текст
+  useLayoutEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     const el = ref.current;
     const first = el?.querySelector<HTMLElement>('[data-autofocus]') ?? el?.querySelector<HTMLElement>(FOCUSABLE);

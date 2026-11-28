@@ -76,6 +76,7 @@ test('059 · эквалайзер: фильтры, экспорт Equalizer APO,
 
 test('059 · генератор: запуск только кнопкой, «Стоп», остановка при уходе со страницы, WAV', async ({ page }) => {
   await firstRun(page);
+  test.skip(!await page.evaluate(() => typeof AudioContext !== 'undefined'), 'Нет Web Audio в этой сборке браузера (WebKit под Windows).');
   await page.goto('./#/tools/signal-generator');
   await expect(page.getByRole('button', { name: 'Стоп' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Воспроизвести' }).click();

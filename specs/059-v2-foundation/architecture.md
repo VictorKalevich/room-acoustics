@@ -194,6 +194,13 @@ v2 использует изолированную дизайн-систему *
 
 Тесты первого пакета: `tests/v2/isolation.test.ts`, `tests/v2/workflows.test.ts` (Vitest, входят в `npm test`), `tests/v2/e2e/shell.spec.ts` (`npm run e2e:v2`).
 
+Итоговая приёмка (V2-056–V2-059):
+
+- `npm run e2e:v2` — все сценарии v2 в Chromium (desktop 1440 и эмуляция iPhone);
+- `npm run e2e:v2:safari` — те же сценарии в WebKit-эмуляции iPhone; звуковые пропускаются там, где нет Web Audio;
+- `resilience.spec.ts` — производительность, работа без сети, восстановление;
+- `visual-sweep.spec.ts` — все адреса на 320, 390 и 1440 px.
+
 ## 14. Конфликтующие требования: что действует для legacy и для v2
 
 | Требование | legacy | v2 |

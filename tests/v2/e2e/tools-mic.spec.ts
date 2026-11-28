@@ -19,6 +19,7 @@ async function createRoom(page: Page, name: string) {
 
 test('059 · шумомер: замер с микрофона, сохранение в комнату, запись в разделе «Измерения»', async ({ page }) => {
   await firstRun(page);
+  test.skip(!await page.evaluate(() => typeof AudioContext !== 'undefined' && !!navigator.mediaDevices?.getUserMedia), 'Нет Web Audio или микрофона в этой сборке браузера (WebKit под Windows).');
   await createRoom(page, 'Студия');
   await page.goto('./#/tools/noise-meter');
   await page.getByRole('button', { name: 'Начать замер' }).click();
@@ -41,6 +42,7 @@ test('059 · шумомер: замер с микрофона, сохранен�
 
 test('059 · анализатор спектра: полосы, БПФ с окном и перекрытием, спектрограмма', async ({ page }) => {
   await firstRun(page);
+  test.skip(!await page.evaluate(() => typeof AudioContext !== 'undefined' && !!navigator.mediaDevices?.getUserMedia), 'Нет Web Audio или микрофона в этой сборке браузера (WebKit под Windows).');
   await page.goto('./#/tools/rta');
   await page.getByRole('button', { name: 'Начать' }).click();
   await expect(page.getByRole('img', { name: /^Спектрограмма, Z/ })).toBeVisible({ timeout: 15_000 });

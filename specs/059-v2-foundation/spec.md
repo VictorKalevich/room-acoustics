@@ -19,6 +19,9 @@
 | [plan.md](plan.md) | 12 этапов, зависимости, контрольные версии, границы первого пакета |
 | [tasks.md](tasks.md) | 60 задач, подзадачи и статус V2-001–V2-005, результаты прогонов |
 | [acceptance.md](acceptance.md) | Критерии первого пакета и будущих этапов |
+| [parity.md](parity.md) | Сохранение функциональности: legacy → v2, пробелы (V2-059) |
+| [owner-review.md](owner-review.md) | Решения, принятые ассистентом за владельца (D59), — на ревью |
+| [docs/v2-iphone-field-check.md](../../docs/v2-iphone-field-check.md) | Протокол физической проверки измерений v2 на iPhone (V2-057) |
 | [docs/acoustic-lab.md](../../docs/acoustic-lab.md) | Дизайн-система Acoustic Lab и макеты Figma |
 
 ## 1. Назначение
