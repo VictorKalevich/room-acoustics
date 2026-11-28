@@ -8,7 +8,7 @@ import { toCore } from '../../src/v2/adapters/core';
 import { calcSetup } from '../../src/v2/adapters/calculations';
 import { newZone, upsertOpening, upsertZone, newOpening } from '../../src/v2/application/editing';
 import { buildRoom, DEFAULT_NEW_ROOM } from '../../src/v2/application/rooms';
-import { applyScan, scanChoice, scanDimsProblem, scanInfo, wallItems } from '../../src/v2/application/scan';
+import { applyScan, scanChoice, scanDims, scanDimsProblem, scanInfo, wallItems } from '../../src/v2/application/scan';
 import { applyShape, decomposeContour, parseOutline, shapeSize, templateShape, type TemplateParams } from '../../src/v2/application/shapes';
 import { planAnnexes } from '../../src/v2/features/model/planItems';
 import type { RoomConfiguration } from '../../src/v2/domain/model';
@@ -126,6 +126,20 @@ describe('скан в v2 (V2-046)', () => {
     const again = applyScan(r.config, choice, info, id, NOW);
     expect(again.config.openings.filter((o) => o.fromScan).length).toBe(items.length);
     expect(toCore(again.config).ok).toBe(true);
+  });
+
+  it('новая комната по скану (D61): размеры, проёмы и мебель из скана сразу при создании', () => {
+    const items = wallItems(layout);
+    const choice = scanChoice(det, layout, items.map((i) => i.guess), layout.furniture.map(() => ({ on: true, sit: true })), false);
+    const info = { fileName: 'room.glb', format: 'glb', units: det.units, unitsGuessed: det.unitsGuessed, confidence: det.confidence, depth: det.depth, width: det.width, height: det.height, warnings: det.warnings };
+    const room = buildRoom({ ...DEFAULT_NEW_ROOM, name: 'По скану', ...scanDims(choice) }, id, NOW, { choice, info });
+    const c = room.current;
+    expect(c.geometry.kind === 'rect' && [c.geometry.depth, c.geometry.width, c.geometry.height]).toEqual(Object.values(scanDims(choice)));
+    expect(c.geometrySource).toBe('scan');
+    expect(c.openings.filter((o) => o.fromScan).length).toBe(items.length);
+    expect(c.interior.obstacles.filter((z) => z.fromScan).length).toBe(layout.furniture.length);
+    expect(scanInfo(c)).toMatchObject({ fileName: 'room.glb', appliedAt: NOW });
+    expect(toCore(c).ok).toBe(true);
   });
 
   it('неверные единицы — отказ без изменения комнаты', () => {

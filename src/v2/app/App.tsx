@@ -15,6 +15,9 @@ import { AppProvider, useApp } from '../shared/context';
 import { href, navSection, useRoute, type Route } from '../shared/router';
 import { Screen } from '../shared/Screen';
 
+/** Каталог дизайн-системы — для разработки: dev-сервер и проверочная сборка `dist-v2`. В опубликованной сборке (`--mode pages`) его адрес — «не найдено» (D61). */
+const CATALOG_ROUTE = import.meta.env.MODE !== 'pages';
+
 const NAV: readonly NavItem[] = [
   { id: 'home', label: 'Главная', icon: 'home', href: '#/' },
   { id: 'rooms', label: 'Комнаты', icon: 'rooms', href: '#/rooms' },
@@ -35,9 +38,11 @@ export function App() {
 
 function Shell() {
   const { settings } = useApp();
-  const route = useRoute();
+  const parsed = useRoute();
+  const route: Route = parsed.name === 'catalog' && !CATALOG_ROUTE ? { name: 'not-found', path: '/catalog' } : parsed;
   const first = useRef(true);
-  const key = href(route);
+  // смена способа на экране создания комнаты — тот же экран: прокрутка и фокус остаются у выбора
+  const key = href(route.name === 'room-new' ? { name: 'room-new' } : route);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
     scrollTo(0, 0);
@@ -60,13 +65,13 @@ function screen(r: Route) {
   switch (r.name) {
     case 'home': return <Home />;
     case 'rooms': return <RoomsList />;
-    case 'room-new': return <CreateRoom />;
+    case 'room-new': return <CreateRoom mode={r.mode} />;
     case 'room': return <RoomPage key={r.id} id={r.id} tab={r.tab} section={r.section} />;
     case 'tools': return <ToolsCatalog />;
     case 'tool': return <ToolPage key={r.toolId} toolId={r.toolId} />;
     case 'library': return <Library key={r.category ?? ''} category={r.category} />;
     case 'settings': return <Settings />;
-    case 'catalog': return <Screen title="Каталог дизайн-системы" backHref={href({ name: 'settings' })}><Catalog /></Screen>;
+    case 'catalog': return CATALOG_ROUTE ? <Screen title="Каталог дизайн-системы" backHref={href({ name: 'settings' })}><Catalog /></Screen> : null;
     case 'not-found': return (
       <Screen title="Страница не найдена">
         <EmptyState icon="search" title="Такой страницы нет" text={`Адрес «${r.path}» не найден. Возможно, ссылка устарела.`} action={<a class={buttonClass('primary')} href="#/">На главную</a>} />

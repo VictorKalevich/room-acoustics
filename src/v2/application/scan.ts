@@ -49,6 +49,11 @@ export function scanChoice(det: DetectResult, layout: LayoutResult, kinds: WallI
 
 export const wallItems = (layout: LayoutResult) => foundWallItems(layout);
 
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/** Размеры комнаты по выбранному в скане, с округлением до миллиметра. */
+export const scanDims = (choice: ScanChoice) => ({ depth: r3(choice.rect.x1 - choice.rect.x0), width: r3(choice.rect.y1 - choice.rect.y0), height: r3(choice.height) });
+
 /**
  * Применить скан: размеры (объекты вписываются, как при смене размеров), затем проёмы, коридор и мебель ядра скана.
  * Прежнее найденное в скане заменяется, ручное остаётся.
@@ -56,8 +61,7 @@ export const wallItems = (layout: LayoutResult) => foundWallItems(layout);
 export function applyScan(c: RoomConfiguration, choice: ScanChoice, info: Omit<ScanInfo, 'appliedAt'>, newId: () => string, now: string): { config: RoomConfiguration; notes: string[] } {
   const problem = scanDimsProblem({ depth: choice.rect.x1 - choice.rect.x0, width: choice.rect.y1 - choice.rect.y0, height: choice.height });
   if (problem) throw new Error(problem);
-  const r3 = (v: number) => Math.round(v * 1000) / 1000;
-  const sized = setDimensions(c, { depth: r3(choice.rect.x1 - choice.rect.x0), width: r3(choice.rect.y1 - choice.rect.y0), height: r3(choice.height) });
+  const sized = setDimensions(c, scanDims(choice));
   const base = sized.config;
   const manual = { ...base, openings: base.openings.filter((o) => !o.fromScan), zones: base.zones.filter((z) => !z.fromScan), interior: { ...base.interior, obstacles: base.interior.obstacles.filter((z) => !z.fromScan) } };
   const inputs = coreInputs(manual);

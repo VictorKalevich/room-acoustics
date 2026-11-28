@@ -10,7 +10,7 @@ async function start(page: Page, level = 'Простой') {
 }
 
 async function createRoom(page: Page) {
-  await page.goto('./#/rooms/new');
+  await page.goto('./#/rooms/new/manual');
   await page.getByLabel('Название').fill('Студия');
   for (const [label, v] of [['Длина', '4,5'], ['Ширина', '3,8'], ['Высота', '2,7']] as const) {
     await page.getByLabel(label, { exact: true }).fill(v);

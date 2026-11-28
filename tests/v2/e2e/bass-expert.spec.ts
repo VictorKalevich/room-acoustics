@@ -7,7 +7,7 @@ test('059 · поле на высоте ушей и модели расчёта 
   await page.goto('./');
   await page.getByRole('radio', { name: /Экспертный/ }).check();
   await page.getByRole('button', { name: 'Продолжить' }).click();
-  await page.goto('./#/rooms/new');
+  await page.goto('./#/rooms/new/manual');
   await page.getByLabel('Название').fill('Гостиная');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
   await expect(page.locator('.al-plan__object').first()).toBeVisible();

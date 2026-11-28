@@ -10,7 +10,7 @@ test('059 · поиск с учётом закреплений и фронт П�
   await page.goto('./');
   await page.getByRole('radio', { name: /Продвинутый/ }).check();
   await page.getByRole('button', { name: 'Продолжить' }).click();
-  await page.goto('./#/rooms/new');
+  await page.goto('./#/rooms/new/manual');
   await page.getByLabel('Название').fill('Гостиная');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
   const sub = obj(page, 'Сабвуфер 1 (сабвуфер)');

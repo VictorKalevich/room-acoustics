@@ -171,7 +171,7 @@ v2 использует изолированную дизайн-систему *
 - `#/rooms/:id/analysis/bass`, `speakers`, `subwoofers`, `listeners`, `reflections`, `reverb`, `treatment`, `measurements`;
 - `#/tools`, `#/tools/:toolId`, `#/library`, `#/settings`.
 
-Корректные back/forward браузера, восстановление последней активной комнаты, неизвестный адрес — экран «Такой страницы нет». Подразделы вкладок «Модель» (`geometry`, `audio`, `listening`, `interior`, `treatment`, `simulation`, `history`) и «Советы» (`goals`, `optimize`, `dsp`, `plan`, `reports`); `#/catalog` — каталог дизайн-системы. Совместимость прежних адресов legacy не нужна: v2 — отдельное приложение. Общие службы (база, комнаты, настройки, расчёты) — `src/v2/shared/context.tsx`; экраны — `src/v2/features/*`.
+Корректные back/forward браузера, восстановление последней активной комнаты, неизвестный адрес — экран «Такой страницы нет». Подразделы вкладок «Модель» (`geometry`, `audio`, `listening`, `interior`, `treatment`, `simulation`, `history`) и «Советы» (`goals`, `optimize`, `dsp`, `plan`, `reports`); `#/catalog` — каталог дизайн-системы, только для разработки: в опубликованной сборке (`--mode pages`) — «не найдено» (D61). `#/rooms/new` — выбор способа создания, `#/rooms/new/scan` и `#/rooms/new/manual` — выбранный способ (D61). Совместимость прежних адресов legacy не нужна: v2 — отдельное приложение. Общие службы (база, комнаты, настройки, расчёты) — `src/v2/shared/context.tsx`; экраны — `src/v2/features/*`.
 
 ## 12. Публикация и CI
 

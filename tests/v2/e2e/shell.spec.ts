@@ -91,8 +91,12 @@ test('059 · сборка v2 — отдельный каталог без servic
   expect(readFileSync('dist-v2/index.html', 'utf8')).not.toMatch(/manifest|registerSW|serviceWorker/);
 });
 
-test('059 · сборка legacy не содержит v2', () => {
+// D60: v2 публикуется в dist/v2 рядом с legacy; файлы legacy вне dist/v2 её не подключают, а без каталога (D61)
+test('059 · сборка legacy не содержит v2; опубликованная v2 — в dist/v2 без каталога дизайн-системы', () => {
   test.skip(!existsSync('dist/index.html'), 'Сборка legacy (npm run build) не выполнялась перед этим прогоном.');
-  const legacy = walk('dist').filter((p) => /\.(html|js|css|webmanifest)$/.test(p));
+  const legacy = walk('dist').filter((p) => !p.startsWith('dist/v2/') && /\.(html|js|css|webmanifest)$/.test(p));
   expect(legacy.filter((p) => readFileSync(p, 'utf8').includes('Room Acoustics v2'))).toEqual([]);
+  const pages = walk('dist/v2').filter((p) => p.endsWith('.js'));
+  expect(pages.length).toBeGreaterThan(0);
+  expect(pages.filter((p) => readFileSync(p, 'utf8').includes('Каталог дизайн-системы'))).toEqual([]);
 });

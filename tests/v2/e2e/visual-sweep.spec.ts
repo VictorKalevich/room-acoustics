@@ -24,13 +24,13 @@ test('059 · все экраны помещаются по ширине и от�
   await page.goto('./');
   await page.getByRole('radio', { name: /Экспертный/ }).check();
   await page.getByRole('button', { name: 'Продолжить' }).click();
-  await page.goto('./#/rooms/new');
+  await page.goto('./#/rooms/new/manual');
   await page.getByLabel('Название').fill('Гостиная');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
   await page.waitForURL(/#\/rooms\/[^/]+\/model/);
   const id = /#\/rooms\/([^/]+)\//.exec(page.url())![1];
 
-  const paths = ['', 'rooms', 'rooms/new', 'tools', 'library', 'settings'];
+  const paths = ['', 'rooms', 'rooms/new', 'rooms/new/scan', 'rooms/new/manual', 'tools', 'library', 'settings'];
   for (const tab of ROOM_TABS) {
     paths.push(`rooms/${id}/${tab}`);
     for (const s of ROOM_SECTIONS[tab]) paths.push(`rooms/${id}/${tab}/${s}`);

@@ -32,7 +32,7 @@ test('059 · запись из файла: петля, время прихода
   await page.goto('./');
   await page.getByRole('radio', { name: /Простой/ }).check();
   await page.getByRole('button', { name: 'Продолжить' }).click();
-  await page.goto('./#/rooms/new');
+  await page.goto('./#/rooms/new/manual');
   await page.getByLabel('Название').fill('Гостиная');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
   await expect(page.locator('.al-plan__object').first()).toBeVisible();

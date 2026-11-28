@@ -13,10 +13,14 @@ export const ROOM_SECTIONS = {
 } as const satisfies Record<RoomTab, readonly string[]>;
 export type RoomSection<T extends RoomTab = RoomTab> = (typeof ROOM_SECTIONS)[T][number];
 
+/** Способ задать новую комнату (D61): по скану или вручную — первый шаг создания. */
+export const NEW_ROOM_MODES = ['scan', 'manual'] as const;
+export type NewRoomMode = (typeof NEW_ROOM_MODES)[number];
+
 export type Route =
   | { name: 'home' }
   | { name: 'rooms' }
-  | { name: 'room-new' }
+  | { name: 'room-new'; mode?: NewRoomMode }
   | { name: 'room'; id: string; tab: RoomTab; section?: string }
   | { name: 'tools' }
   | { name: 'tool'; toolId: string }
@@ -36,8 +40,8 @@ export function parseRoute(hash: string): Route {
   if (!a) return { name: 'home' };
   if (a === 'rooms') {
     if (!b) return { name: 'rooms' };
-    if (b === 'new' && !c) return { name: 'room-new' };
-    if (b === 'new' || b.includes('\u0000')) return nf;
+    if (b === 'new') return !c ? { name: 'room-new' } : has(NEW_ROOM_MODES, c) && d === undefined ? { name: 'room-new', mode: c } : nf;
+    if (b.includes('\u0000')) return nf;
     const tab = c ?? 'model';
     if (!has(ROOM_TABS, tab)) return nf;
     if (d === undefined) return { name: 'room', id: b, tab };
@@ -56,7 +60,7 @@ export function href(r: Route): string {
   switch (r.name) {
     case 'home': return '#/';
     case 'rooms': return '#/rooms';
-    case 'room-new': return '#/rooms/new';
+    case 'room-new': return r.mode ? `#/rooms/new/${r.mode}` : '#/rooms/new';
     case 'room': return `#/rooms/${encodeURIComponent(r.id)}/${r.tab}${r.section ? `/${r.section}` : ''}`;
     case 'tools': return '#/tools';
     case 'tool': return `#/tools/${encodeURIComponent(r.toolId)}`;

@@ -1,12 +1,11 @@
 // Настройки (V2-020): уровень сложности и локальные уровни, тема, хранилище и резервная копия, перенос из
 // прежней версии, сведения о приложении.
 import { useEffect, useState } from 'preact/hooks';
-import { Badge, Button, Card, ConfirmDialog, KeyValue, Notice, Section, SegmentedControl, THEME_LABEL, applyTheme, buttonClass, readTheme, saveTheme, useToast, type ThemeChoice } from '../../design-system';
+import { Badge, Button, Card, ConfirmDialog, KeyValue, Notice, Section, SegmentedControl, THEME_LABEL, applyTheme, readTheme, saveTheme, useToast, type ThemeChoice } from '../../design-system';
 import { COMPLEXITIES, COMPLEXITY_LABEL, COMPLEXITY_TEXT, setOverride } from '../../application/settings';
 import { backupFileName, exportBackup, parseBackup, requestPersistence, restoreBackup, storageStatus, type Backup, type Persistence, type RestoreResult } from '../../storage/backup';
 import { useApp } from '../../shared/context';
 import { downloadText } from '../../shared/files';
-import { href } from '../../shared/router';
 import { Screen } from '../../shared/Screen';
 import { LegacyImport } from '../rooms/LegacyImport';
 import { scopeLabel } from './scopes';
@@ -111,7 +110,6 @@ export function Settings() {
 
         <Section title="О приложении" id="about">
           <KeyValue items={[['Версия', 'Room Acoustics v2 (в разработке)'], ['Работа без сети', 'Расчёты выполняются на устройстве'], ['Звук и микрофон', 'Только по кнопке в инструменте']]} />
-          <div class="al-row"><a class={buttonClass('ghost')} href={href({ name: 'catalog' })}>Каталог дизайн-системы</a></div>
         </Section>
       </div>
       {pending && (

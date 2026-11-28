@@ -7,7 +7,7 @@ async function start(page: Page) {
   await page.goto('./');
   await page.getByRole('radio', { name: /Продвинутый/ }).check();
   await page.getByRole('button', { name: 'Продолжить' }).click();
-  await page.goto('./#/rooms/new');
+  await page.goto('./#/rooms/new/manual');
   await page.getByLabel('Название').fill('Гостиная');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
   await expect(page.locator('.al-plan__object').first()).toBeVisible();
@@ -40,6 +40,29 @@ test('059 · форма комнаты: Г-образная, части на п�
   await expect(shape).toContainText('наклонный');
   await shape.getByLabel('Точки контура').fill('0; 0\n6; 0\n6; 2\n7,5; 2\n7,5; 4\n0; 4');
   await expect(shape).toContainText('Основная часть 6 × 4 × 2,5 м, частей — 1');
+});
+
+test('059 · новая комната по скану (D61): способ на первом шаге, размеры не запрашиваются', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('./');
+  await page.getByRole('radio', { name: /Продвинутый/ }).check();
+  await page.getByRole('button', { name: 'Продолжить' }).click();
+  await page.goto('./#/rooms/new');
+  await page.getByRole('group', { name: 'Как задать комнату' }).getByRole('radio', { name: /По скану/ }).check();
+  await expect(page.getByLabel('Длина', { exact: true })).toHaveCount(0);
+  const create = page.getByRole('button', { name: 'Создать', exact: true });
+  await expect(create).toBeDisabled();
+  const file = card(page, 'Файл скана');
+  const obj = toOBJ(makeRoomScan({ depth: 6, width: 4.5, height: 2.6, openings: true }));
+  await file.getByLabel('Файл скана').setInputFiles({ name: 'room.obj', mimeType: 'text/plain', buffer: Buffer.from(obj) });
+  await expect(file).toContainText(/6,00 × 4,5\d × 2,60 м/, { timeout: 60_000 });
+  await expect(file.getByRole('group', { name: 'Двери, окна и проёмы из скана' })).toBeVisible();
+  await page.getByLabel('Название').fill('Гостиная по скану');
+  await create.click();
+  await expect(page.getByText(/^Комната «Гостиная по скану» создана по скану «room\.obj»/)).toBeVisible();
+  await page.getByRole('link', { name: 'Помещение' }).click();
+  await expect(page.getByLabel('Длина (от передней стены к задней)')).toHaveValue('6');
+  await expect(card(page, 'Скан помещения')).toContainText('Применён скан «room.obj»');
 });
 
 test('059 · скан помещения: распознавание и применение к конфигурации', async ({ page }) => {

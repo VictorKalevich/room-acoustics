@@ -12,7 +12,7 @@ async function start(page: Page, level = 'Простой') {
 }
 
 async function createRoom(page: Page, name: string, dims: [string, string, string]) {
-  await page.goto('./#/rooms/new');
+  await page.goto('./#/rooms/new/manual');
   await page.getByLabel('Название').fill(name);
   for (const [label, v] of [['Длина', dims[0]], ['Ширина', dims[1]], ['Высота', dims[2]]] as const) {
     await page.getByLabel(label, { exact: true }).fill(v);
@@ -37,6 +37,12 @@ test('059 · первый запуск: выбранный уровень зап
 test('059 · комната: создание с запятой и проверкой размеров, активная на главной, копия, переименование, удаление', async ({ page }) => {
   await start(page);
   await page.getByRole('link', { name: 'Создать комнату' }).first().click();
+  const how = page.getByRole('group', { name: 'Как задать комнату' });
+  await expect(how.getByRole('radio')).toHaveCount(2);
+  await expect(page.getByLabel('Длина', { exact: true })).toHaveCount(0);
+  await how.getByRole('radio', { name: /Вручную/ }).check();
+  await expect(page).toHaveURL(/#\/rooms\/new\/manual$/);
+  await expect(how.getByRole('radio', { name: /Вручную/ })).toBeFocused();
   await expect(page.getByLabel('Начальная аудиосистема')).toHaveCount(0);
   const depth = page.getByLabel('Длина', { exact: true });
   await depth.fill('0,5');

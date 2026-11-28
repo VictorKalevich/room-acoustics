@@ -15,7 +15,7 @@ async function firstRun(page: Page) {
 }
 
 async function createRoom(page: Page, name: string) {
-  await page.goto('./#/rooms/new');
+  await page.goto('./#/rooms/new/manual');
   await page.getByLabel('Название').fill(name);
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
   await expect(page.locator('.al-plan__object').first()).toBeVisible();

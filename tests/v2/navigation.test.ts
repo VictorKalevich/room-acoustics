@@ -11,7 +11,7 @@ import { nextRoomName } from '../../src/v2/shared/format';
 describe('059 V2-020 · хеш-маршруты', () => {
   it('разбор и обратная сборка совпадают для всех маршрутов', () => {
     const routes: Route[] = [
-      { name: 'home' }, { name: 'rooms' }, { name: 'room-new' }, { name: 'tools' }, { name: 'tool', toolId: 'room-modes' },
+      { name: 'home' }, { name: 'rooms' }, { name: 'room-new' }, { name: 'room-new', mode: 'scan' }, { name: 'room-new', mode: 'manual' }, { name: 'tools' }, { name: 'tool', toolId: 'room-modes' },
       { name: 'library' }, { name: 'library', category: 'materials' }, { name: 'settings' }, { name: 'catalog' },
       { name: 'room', id: 'legacy-abc~1f2e3d4c', tab: 'model' }, { name: 'room', id: 'r 1/2', tab: 'advice' },
       ...ROOM_SECTIONS.analysis.map((section) => ({ name: 'room' as const, id: 'r1', tab: 'analysis' as const, section })),
@@ -27,7 +27,7 @@ describe('059 V2-020 · хеш-маршруты', () => {
   });
 
   it('неизвестные адреса — «не найдено», а не другой экран', () => {
-    for (const h of ['#/nope', '#/rooms/abc/unknown', '#/rooms/abc/analysis/foo', '#/rooms/abc/model/bass', '#/library/x', '#/settings/x', '#/rooms/new/x', '#/tools/a/b', '#/rooms/%E0%A4%A/model', '#/rooms/a/model/geometry/x']) {
+    for (const h of ['#/nope', '#/rooms/abc/unknown', '#/rooms/abc/analysis/foo', '#/rooms/abc/model/bass', '#/library/x', '#/settings/x', '#/rooms/new/x', '#/rooms/new/scan/x', '#/tools/a/b', '#/rooms/%E0%A4%A/model', '#/rooms/a/model/geometry/x']) {
       expect(parseRoute(h).name, h).toBe('not-found');
     }
   });

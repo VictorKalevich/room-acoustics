@@ -7,6 +7,8 @@ import { validateDimensions, type Issue } from '../domain/validation';
 import type { IdFactory } from '../domain/operations';
 import type { V2Db } from '../storage/db';
 import { deleteMeta, deleteRoom, getMeta, getRoom, listRooms, saveRoom, setMeta, type DamagedRecord } from '../storage/rooms';
+import type { ScanChoice } from '../../scan/apply';
+import { applyScan, type ScanInfo } from './scan';
 
 export type StarterLayout = 'mono' | '2.0' | '2.1' | '2.2';
 export const STARTER_LAYOUTS: readonly StarterLayout[] = ['mono', '2.0', '2.1', '2.2'];
@@ -20,6 +22,9 @@ export interface NewRoomInput {
   layout: StarterLayout;
 }
 
+/** Комната по скану (D61): найденное в скане применяется к новой конфигурации сразу при создании. */
+export interface ScanStart { choice: ScanChoice; info: Omit<ScanInfo, 'appliedAt'> }
+
 export const DEFAULT_NEW_ROOM: NewRoomInput = { name: 'Моя комната', depth: 5, width: 4, height: 2.5, layout: '2.1' };
 
 export function newRoomIssues(input: NewRoomInput): Issue[] {
@@ -29,7 +34,7 @@ export function newRoomIssues(input: NewRoomInput): Issue[] {
 }
 
 /** Комната по умолчанию: материалы, система, ограничения и исходные места — как у нового проекта legacy. */
-export function buildRoom(input: NewRoomInput, newId: IdFactory, now: string): Room {
+export function buildRoom(input: NewRoomInput, newId: IdFactory, now: string, scan?: ScanStart): Room {
   const issues = newRoomIssues(input);
   if (issues.length) throw new Error(issues.map((i) => i.message).join(' '));
   const room = { ...defaultRoom(), depth: input.depth, width: input.width, height: input.height };
@@ -37,7 +42,8 @@ export function buildRoom(input: NewRoomInput, newId: IdFactory, now: string): R
   const sources = defaultSources(speakers, subs);
   const constraints = defaultConstraints(room);
   const setup = defaultSetup(room, sources, constraints);
-  const current = fromCore({ room, sources, constraints, setup }, { id: newId(), role: 'current', revision: 1 });
+  const base = fromCore({ room, sources, constraints, setup }, { id: newId(), role: 'current', revision: 1 });
+  const current = scan ? applyScan(base, scan.choice, scan.info, newId, now).config : base;
   return {
     schema: ROOM_SCHEMA, id: newId(), name: input.name.trim(), createdAt: now, updatedAt: now,
     current, experimental: null, goals: structuredClone(DEFAULT_GOALS), archive: [], history: [], origin: { kind: 'created' },
@@ -49,7 +55,7 @@ export const systemClock: Clock = { now: () => new Date().toISOString(), newId: 
 
 export interface RoomsService {
   list(): Promise<{ rooms: Room[]; damaged: DamagedRecord[] }>;
-  create(input: NewRoomInput): Promise<Room>;
+  create(input: NewRoomInput, scan?: ScanStart): Promise<Room>;
   open(id: string): Promise<Room | undefined>;
   /** Сохранить изменённую комнату; `base` — версия, от которой сделано изменение (для проверки конфликта). */
   save(next: Room, base: Room): Promise<Room>;
@@ -62,8 +68,8 @@ export interface RoomsService {
 export function roomsService(db: V2Db, clock: Clock = systemClock): RoomsService {
   const svc: RoomsService = {
     list: () => listRooms(db),
-    async create(input) {
-      const room = buildRoom(input, clock.newId, clock.now());
+    async create(input, scan) {
+      const room = buildRoom(input, clock.newId, clock.now(), scan);
       await saveRoom(db, room, null);
       await setMeta(db, 'activeRoomId', room.id);
       return room;

@@ -49,7 +49,7 @@ export function RoomsList() {
             </Notice>
           )}
           {data.rooms.length === 0 ? (
-            <EmptyState icon="rooms" title="Комнат пока нет" text="Для начала нужны только длина, ширина и высота. Остальное можно добавить позже." action={<a class={buttonClass('primary')} href={href({ name: 'room-new' })}><Icon name="plus" />Создать комнату</a>} />
+            <EmptyState icon="rooms" title="Комнат пока нет" text="Комнату можно создать по скану или вручную, по трём размерам. Остальное можно добавить позже." action={<a class={buttonClass('primary')} href={href({ name: 'room-new' })}><Icon name="plus" />Создать комнату</a>} />
           ) : (
             <ul class="al-list" aria-label="Комнаты">
               {data.rooms.map((r) => (

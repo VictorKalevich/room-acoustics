@@ -7,7 +7,7 @@ async function start(page: Page, level: RegExp) {
   await page.goto('./');
   await page.getByRole('radio', { name: level }).check();
   await page.getByRole('button', { name: 'Продолжить' }).click();
-  await page.goto('./#/rooms/new');
+  await page.goto('./#/rooms/new/manual');
   await page.getByLabel('Название').fill('Гостиная');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
   await page.waitForURL(/#\/rooms\/[^/]+\/model/);
