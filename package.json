@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && npm run build:v2:pages",
     "preview": "vite preview",
     "dev:v2": "vite --config vite.v2.config.ts",
     "build:v2": "tsc --noEmit && vite build --config vite.v2.config.ts",
+    "build:v2:pages": "vite build --config vite.v2.config.ts --outDir ../../../dist/v2 --emptyOutDir",
     "preview:v2": "vite preview --config vite.v2.config.ts",
     "e2e:v2": "playwright test --config playwright.v2.config.ts --project=v2-desktop --project=v2-iphone",
     "e2e:v2:safari": "playwright test --config playwright.v2.config.ts --project=v2-safari",

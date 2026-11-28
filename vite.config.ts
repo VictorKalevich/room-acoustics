@@ -39,6 +39,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,webmanifest}'],
+        // v2 (D60) лежит в dist/v2 в той же области service worker: legacy не кэширует её файлы
+        // и не отдаёт свою index.html на её адрес
+        globIgnores: ['**/node_modules/**/*', 'v2/**'],
+        navigateFallbackDenylist: [/\/v2(\/|\?|$)/],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         skipWaiting: true,

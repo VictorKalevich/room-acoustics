@@ -153,11 +153,11 @@ npm run dev         # сервер разработки (добавьте -- --h
 npm run build       # статическая сборка в dist/
 ```
 
-Новая версия Room Acoustics v2 разрабатывается в ветке `redesign/v2`. Спецификация — [059](specs/059-v2-foundation/spec.md), правила — раздел v2 в [AGENTS.md](AGENTS.md). Её оболочка запускается отдельно от действующего приложения:
+Новая версия Room Acoustics v2 — отдельное приложение в `src/v2`. Спецификация — [059](specs/059-v2-foundation/spec.md), правила — раздел v2 в [AGENTS.md](AGENTS.md). Она опубликована рядом с действующим приложением по адресу https://victorkalevich.github.io/room-acoustics/v2/ (D60): `npm run build` собирает её в `dist/v2`. Локально v2 запускается отдельно:
 
 ```bash
 npm run dev:v2      # оболочка v2: http://localhost:5174/ (без PWA и service worker)
-npm run build:v2    # проверочная сборка v2 в dist-v2/ (не публикуется)
+npm run build:v2    # проверочная сборка v2 в dist-v2/ (для e2e v2; публикуется dist/v2 из npm run build)
 npm run preview:v2  # просмотр dist-v2 на порту 4174
 npm run e2e:v2      # сценарии v2: desktop и эмуляция iPhone (Chromium)
 npm run e2e:v2:safari  # те же сценарии в WebKit (эмуляция, не физический iPhone)
@@ -208,9 +208,9 @@ npm run e2e:v2:safari  # те же сценарии в WebKit (эмуляция,
 3. Workflow уже есть в проекте — `.github/workflows/deploy.yml`. При каждом push в `main` он
    проверяет код (lint, unit-тесты, сборка, сквозные сценарии в эмуляции iPhone) и, если проверки
    прошли, публикует приложение. Те же сценарии на движке Safari идут отдельной задачей для
-   сведения и публикацию не останавливают. Публикация — только из `main`: при ручном запуске
-   на другой ветке выполняются проверки, без деплоя. Ветку `redesign/v2` проверяет отдельный
-   `.github/workflows/v2-check.yml`, он ничего не публикует.
+   сведения и публикацию не останавливают. Публикуется `dist/` вместе с `dist/v2`.
+   Проверка ветки у публикации и отдельный `.github/workflows/v2-check.yml` готовы в локальном
+   коммите V2-004, но в `main` пока не перенесены (R06).
 4. Откройте адрес вида `https://<логин>.github.io/<репозиторий>/` в Safari на iPhone →
    «Поделиться» → «На экран „Домой“».
 
