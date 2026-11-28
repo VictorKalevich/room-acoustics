@@ -1,5 +1,7 @@
 // Настройка аудиосистемы (V2-040): эквалайзер (биквады RBJ, экспорт), кроссовер, сумма двух источников,
 // стереотреугольник, запас по звуковому давлению (оценка, не гарантия), направленность упрощённой модели.
+// Экспертный уровень (V2-053): звенья сверх RBJ и порядок цепочки, групповая задержка, FIR, семейства кроссовера
+// Bessel, Чебышёв I/II, эллиптический, фазовая коррекция кроссовера и замера с фазой (dsp.tsx).
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import {
   Button, DataTable, FrequencyChart, IconButton, KeyValue, MetricCard, Notice, NumberField, SegmentedControl, SelectField, Switch, TextField, useToast, type Column, type Series,
@@ -7,13 +9,20 @@ import {
 import { exportREW } from '../../../../core/eq';
 import { speedOfSound } from '../../../../core/physics';
 import {
-  CROSSOVER_ORDERS, EQ_HAS_GAIN, EQ_TYPES, beamwidth6, crossoverResponse, delayMs, distanceForAngle, eqChain, eqIssues, exportApo, exportBiquads, logFreqs,
-  pistonDb, splBudget, stereoTriangle, twoSourceSum, type CrossoverFamily, type EqFilter, type EqType,
+  EQ_HAS_GAIN, EQ_TYPES, beamwidth6, crossoverResponse, delayMs, distanceForAngle, eqChain, eqIssues, exportApo, exportBiquads, logFreqs,
+  pistonDb, splBudget, stereoTriangle, twoSourceSum, type EqFilter, type EqType,
 } from '../../../application/tools';
 import { listCategory, putEntry } from '../../../storage/library';
 import { useApp } from '../../../shared/context';
 import { downloadText, safeFileName } from '../../../shared/files';
 import { Block, FromRoom, Inputs, SaveResult, cm, freq, hz, meters, n0, n1, n2 } from './common';
+import { effectiveComplexity } from '../../../application/settings';
+import { visibleAt } from '../../../domain/complexity';
+import {
+  EXTRA_TYPES, XOVER_DEFAULTS, XOVER_LABEL, XOVER_ORDERS, chainAt, chainResponse, exportApoChain, exportChainBiquads, groupDelayMs, isEq, itemIssues, newExtra, usesAttenuation, usesRipple,
+  xoverFilter, xoverIssues, xoverSum, type ChainItem, type ExtraType, type XoverFamily,
+} from '../../../application/iir';
+import { EXTRA_LABEL, ExtraFields, FirBlock, MeasuredPhaseBlock, PhaseCorrectionBlock } from './dsp';
 
 const EQ_LABEL: Record<EqType, string> = {
   peaking: 'Пиковый', lowshelf: 'Полка НЧ', highshelf: 'Полка ВЧ', lowpass: 'ФНЧ', highpass: 'ФВЧ', bandpass: 'Полосовой', notch: 'Режекторный', allpass: 'Фазовый',
@@ -21,12 +30,14 @@ const EQ_LABEL: Record<EqType, string> = {
 const RATES = [44100, 48000, 96000];
 const MAX_FILTERS = 20;
 
-interface EqPreset { id: string; name: string; kind: 'eq'; filters: EqFilter[]; fs: number; createdAt: string }
+interface EqPreset { id: string; name: string; kind: 'eq'; filters: ChainItem[]; fs: number; createdAt: string }
 
 export function EqualizerTool() {
-  const { db, clock } = useApp();
+  const { db, clock, settings } = useApp();
   const toast = useToast();
-  const [filters, setFilters] = useState<EqFilter[]>([{ id: 'f1', type: 'peaking', f: 63, gainDb: -6, q: 4, enabled: true }]);
+  const expert = visibleAt('expert', effectiveComplexity(settings, 'tools'));
+  const [filters, setFilters] = useState<ChainItem[]>([{ id: 'f1', type: 'peaking', f: 63, gainDb: -6, q: 4, enabled: true }]);
+  const [extra, setExtra] = useState<ExtraType>('delay');
   const [fs, setFs] = useState(48000);
   const [name, setName] = useState('Эквалайзер');
   const [presets, setPresets] = useState<EqPreset[]>([]);
@@ -34,29 +45,51 @@ export function EqualizerTool() {
   const reload = useCallback(() => listCategory(db, 'presets').then((l) => setPresets((l as unknown as EqPreset[]).filter((p) => p.kind === 'eq' && Array.isArray(p.filters))), () => undefined), [db]);
   useEffect(() => { void reload(); }, [reload]);
   const freqs = useMemo(() => logFreqs(10, Math.min(20000, fs * 0.45), 48), [fs]);
-  const chain = useMemo(() => eqChain(filters, freqs, fs), [filters, freqs, fs]);
+  const eqs = filters.filter(isEq);
+  const hasExtras = eqs.length < filters.length;
+  const chain = useMemo(() => (hasExtras ? chainResponse(filters, freqs, fs) : eqChain(eqs, freqs, fs)), [filters, freqs, fs]); // eslint-disable-line react-hooks/exhaustive-deps
+  const gd = useMemo(() => (expert ? chainResponse(filters, freqs, fs).map((r) => r.gdMs) : []), [expert, filters, freqs, fs]);
   const boost = Math.max(0, ...chain.map((r) => r.db));
   const preamp = -Math.ceil(boost * 10) / 10;
-  const upd = (id: string, patch: Partial<EqFilter>) => setFilters(filters.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  const upd = (id: string, patch: Partial<EqFilter>) => setFilters(filters.map((p) => (p.id === id && isEq(p) ? { ...p, ...patch } : p)));
+  const put = (x: ChainItem) => setFilters(filters.map((p) => (p.id === x.id ? x : p)));
+  const move = (i: number, d: -1 | 1) => { const n = [...filters]; [n[i], n[i + d]] = [n[i + d], n[i]]; setFilters(n); };
   const add = () => setFilters([...filters, { id: `f${Date.now().toString(36)}${filters.length}`, type: 'peaking', f: 100, gainDb: 0, q: 1, enabled: true }]);
   const allPeaking = filters.every((p) => p.type === 'peaking');
+  const biq = hasExtras ? exportChainBiquads(filters, fs) : null;
   const file = safeFileName(name);
   return (
     <div class="al-stack al-stack--16">
-      <Block title="Фильтры" subtitle="Порядок не важен: характеристика — произведение фильтров">
+      <Block title="Фильтры" subtitle={expert ? 'Характеристика — произведение звеньев и от порядка не зависит; порядок важен для запаса по перегрузке между звеньями и для экспорта' : 'Порядок не важен: характеристика — произведение фильтров'}>
         <Inputs>
           <TextField label="Название" value={name} onInput={setName} maxLength={80} />
           <SelectField label="Частота дискретизации" value={String(fs)} options={RATES.map((r) => ({ value: String(r), label: `${n1(r / 1000)} кГц` }))} onChange={(v) => setFs(Number(v))} />
         </Inputs>
         <ol role="list" class="al-stack al-stack--12" aria-label="Цепочка фильтров">
           {filters.map((p, i) => {
+            const head = (
+              <div class="al-row al-row--between">
+                <Switch label={isEq(p) ? `Фильтр ${i + 1}` : `Звено ${i + 1}: ${EXTRA_LABEL[p.type]}`} checked={p.enabled} onChange={(enabled) => put({ ...p, enabled })} />
+                <div class="al-row">
+                  {expert && <Button small variant="ghost" disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Звено ${i + 1} выше`}>Выше</Button>}
+                  {expert && <Button small variant="ghost" disabled={i === filters.length - 1} onClick={() => move(i, 1)} aria-label={`Звено ${i + 1} ниже`}>Ниже</Button>}
+                  <IconButton icon="trash" label={`Удалить ${isEq(p) ? 'фильтр' : 'звено'} ${i + 1}`} onClick={() => setFilters(filters.filter((x) => x.id !== p.id))} />
+                </div>
+              </div>
+            );
+            if (!isEq(p)) {
+              return (
+                <li key={p.id} class="al-stack al-stack--8">
+                  {head}
+                  <ExtraFields x={p} set={put} />
+                  {itemIssues(p, fs).map((x) => <Notice key={x} tone="danger">{x}</Notice>)}
+                </li>
+              );
+            }
             const issues = eqIssues(p, fs);
             return (
               <li key={p.id} class="al-stack al-stack--8">
-                <div class="al-row al-row--between">
-                  <Switch label={`Фильтр ${i + 1}`} checked={p.enabled} onChange={(enabled) => upd(p.id, { enabled })} />
-                  <IconButton icon="trash" label={`Удалить фильтр ${i + 1}`} onClick={() => setFilters(filters.filter((x) => x.id !== p.id))} />
-                </div>
+                {head}
                 <Inputs>
                   <SelectField label="Тип" value={p.type} options={EQ_TYPES.map((t) => ({ value: t, label: EQ_LABEL[t] }))} onChange={(type) => upd(p.id, { type })} />
                   <NumberField label="Частота" unit="Гц" value={p.f} min={1} max={fs / 2} decimals={1} onCommit={(f) => upd(p.id, { f })} error={issues.find((x) => x.startsWith('Частота')) ?? null} />
@@ -69,6 +102,12 @@ export function EqualizerTool() {
           })}
         </ol>
         <div class="al-row"><Button small icon="plus" onClick={add} disabled={filters.length >= MAX_FILTERS}>Добавить фильтр</Button></div>
+        {expert && (
+          <div class="al-row al-row--bottom">
+            <SelectField<ExtraType> label="Другое звено" value={extra} onChange={setExtra} options={EXTRA_TYPES.map((t) => ({ value: t, label: EXTRA_LABEL[t] }))} />
+            <Button small icon="plus" disabled={filters.length >= MAX_FILTERS} onClick={() => setFilters([...filters, newExtra(`x${Date.now().toString(36)}${filters.length}`, extra)])}>Добавить звено</Button>
+          </div>
+        )}
       </Block>
       <Block title="Суммарная АЧХ эквалайзера">
         <FrequencyChart title="Суммарная АЧХ эквалайзера" fMin={freqs[0]} fMax={freqs[freqs.length - 1]} series={[{ id: 'eq', label: 'Расчёт', kind: 'calculated', x: freqs, y: chain.map((r) => r.db) }]} />
@@ -76,14 +115,22 @@ export function EqualizerTool() {
       <Block title="Фаза эквалайзера">
         <FrequencyChart title="Фаза эквалайзера" yUnit="°" yRange={[-180, 180]} fMin={freqs[0]} fMax={freqs[freqs.length - 1]} series={[{ id: 'ph', label: 'Расчёт', kind: 'calculated', x: freqs, y: chain.map((r) => r.phaseDeg) }]} />
       </Block>
+      {expert && (
+        <Block title="Групповая задержка цепочки">
+          <FrequencyChart title="Групповая задержка цепочки" yUnit="мс" fMin={freqs[0]} fMax={freqs[freqs.length - 1]} series={[{ id: 'gd', label: 'Расчёт', kind: 'calculated', x: freqs, y: gd }]} />
+        </Block>
+      )}
+      {expert && <FirBlock h={(f) => chainAt(filters, f, fs)} hKey={`${fs}|${JSON.stringify(filters)}`} fs={fs} name={file} />}
       <Block title="Экспорт и библиотека">
         <KeyValue items={[['Наибольший подъём', `${n1(boost)} дБ`], ['Предусилитель против перегрузки', `${n1(preamp)} дБ`]]} />
         <div class="al-row">
-          <Button small icon="download" onClick={() => downloadText(`${file}_EqualizerAPO.txt`, exportApo(filters, preamp), 'text/plain')}>Equalizer APO</Button>
-          <Button small icon="download" onClick={() => downloadText(`${file}_biquads_${fs}.txt`, exportBiquads(filters, fs), 'text/plain')}>Коэффициенты биквадов</Button>
-          {allPeaking && <Button small icon="download" onClick={() => downloadText(`${file}_REW.txt`, exportREW(filters.filter((p) => p.enabled)), 'text/plain')}>REW</Button>}
+          <Button small icon="download" onClick={() => downloadText(`${file}_EqualizerAPO.txt`, hasExtras ? exportApoChain(filters, preamp) : exportApo(eqs, preamp), 'text/plain')}>Equalizer APO</Button>
+          <Button small icon="download" onClick={() => downloadText(`${file}_biquads_${fs}.txt`, biq ? biq.text : exportBiquads(eqs, fs), 'text/plain')}>Коэффициенты биквадов</Button>
+          {allPeaking && <Button small icon="download" onClick={() => downloadText(`${file}_REW.txt`, exportREW(eqs.filter((p) => p.enabled)), 'text/plain')}>REW</Button>}
         </div>
         {!allPeaking && <p class="al-text-secondary">Файл REW — только для пиковых фильтров.</p>}
+        {biq && biq.delays.length > 0 && <p class="al-text-secondary">{`В коэффициентах биквадов задержек нет: ${biq.delays.map((x) => `${n2(x)} мс`).join(', ')} — задайте их в устройстве отдельно.`}</p>}
+        {hasExtras && <p class="al-text-small al-text-secondary">Equalizer APO: усиление — строкой Preamp, задержка — Delay, полярность и свой биквад — фильтром IIR с коэффициентами. Совместимость этих строк с конкретной версией не проверялась на устройстве.</p>}
         <div class="al-row al-row--bottom">
           <Button small icon="download" onClick={() => {
             const rec: EqPreset = { id: clock.newId(), name: name.trim() || 'Эквалайзер', kind: 'eq', filters, fs, createdAt: clock.now() };
@@ -99,18 +146,31 @@ export function EqualizerTool() {
   );
 }
 
+const xdb = (v: { re: number; im: number }) => 20 * Math.log10(Math.max(1e-12, Math.hypot(v.re, v.im)));
+
 export function CrossoverTool() {
-  const [family, setFamily] = useState<CrossoverFamily>('linkwitz-riley');
+  const { settings } = useApp();
+  const expert = visibleAt('expert', effectiveComplexity(settings, 'tools'));
+  const [familySel, setFamily] = useState<XoverFamily>('linkwitz-riley');
+  const family: XoverFamily = expert || familySel === 'butterworth' || familySel === 'linkwitz-riley' ? familySel : 'linkwitz-riley';
   const [order, setOrder] = useState(4);
   const [fc, setFc] = useState(80);
   const [invert, setInvert] = useState(false);
-  const orders = CROSSOVER_ORDERS[family];
-  const ord = orders.includes(order) ? order : orders[orders.length - 1];
+  const [params, setParams] = useState(XOVER_DEFAULTS);
+  const orders = XOVER_ORDERS[family];
+  const ord = orders.includes(order) ? order : orders.includes(4) ? 4 : orders[orders.length - 1];
+  const issues = xoverIssues(family, ord, params);
+  const p = issues.length ? XOVER_DEFAULTS : params;
   const freqs = useMemo(() => logFreqs(fc / 10, Math.min(20000, fc * 10), 48), [fc]);
-  const resp = crossoverResponse(family, ord, fc, freqs, invert);
-  const flatness = (inv: boolean) => Math.max(...crossoverResponse(family, ord, fc, freqs, inv).map((r) => Math.abs(r.sum)));
+  const respOf = (fs: readonly number[], inv: boolean) => (family === 'butterworth' || family === 'linkwitz-riley'
+    ? crossoverResponse(family, ord, fc, fs, inv)
+    : fs.map((f) => { const hp = xoverFilter(family, ord, p, 'hp', fc, f); return { lp: xdb(xoverFilter(family, ord, p, 'lp', fc, f)), hp: xdb(hp), sum: xdb(xoverSum(family, ord, p, fc, f, inv)) }; }));
+  const resp = respOf(freqs, invert);
+  const flatness = (inv: boolean) => Math.max(...respOf(freqs, inv).map((r) => Math.abs(r.sum)));
   const better = flatness(true) < flatness(false) - 0.1;
-  const [atFc] = crossoverResponse(family, ord, fc, [fc], invert);
+  const [atFc] = respOf([fc], invert);
+  const sumAt = (f: number) => xoverSum(family, ord, p, fc, f, invert);
+  const label = `${family === 'linkwitz-riley' ? 'LR' : family === 'butterworth' ? 'BW' : XOVER_LABEL[family]}${ord}`;
   const series: Series[] = [
     { id: 'lp', label: 'Низкие частоты', kind: 'calculated', x: freqs, y: resp.map((r) => r.lp) },
     { id: 'hp', label: 'Высокие частоты', kind: 'calculated', variant: 2, x: freqs, y: resp.map((r) => r.hp) },
@@ -119,11 +179,17 @@ export function CrossoverTool() {
   return (
     <div class="al-stack al-stack--16">
       <Block title="Кроссовер" subtitle="Полосы с общей точкой: идеальные фильтры без задержки между излучателями">
-        <SegmentedControl label="Семейство" value={family} onChange={setFamily} options={[{ value: 'linkwitz-riley', label: 'Linkwitz–Riley' }, { value: 'butterworth', label: 'Butterworth' }]} />
+        {expert
+          ? <SelectField<XoverFamily> label="Семейство" value={family} onChange={setFamily} options={(Object.keys(XOVER_LABEL) as XoverFamily[]).map((f) => ({ value: f, label: XOVER_LABEL[f] }))} />
+          : <SegmentedControl label="Семейство" value={family} onChange={setFamily} options={[{ value: 'linkwitz-riley', label: 'Linkwitz–Riley' }, { value: 'butterworth', label: 'Butterworth' }]} />}
         <Inputs>
-          <SelectField label="Порядок" value={String(ord)} options={orders.map((o) => ({ value: String(o), label: `${o}-й (${o * 6} дБ/окт)` }))} onChange={(v) => setOrder(Number(v))} />
+          <SelectField label="Порядок" value={String(ord)} options={orders.map((o) => ({ value: String(o), label: family === 'linkwitz-riley' || family === 'butterworth' ? `${o}-й (${o * 6} дБ/окт)` : `${o}-й` }))} onChange={(v) => setOrder(Number(v))} />
           <NumberField label="Частота раздела" unit="Гц" value={fc} min={20} max={10000} decimals={0} onCommit={setFc} />
+          {usesRipple(family) && <NumberField label="Пульсации в полосе" unit="дБ" value={params.ripple} min={0.01} max={2} decimals={2} onCommit={(ripple) => setParams({ ...params, ripple })} />}
+          {usesAttenuation(family) && <NumberField label="Подавление" unit="дБ" value={params.attenuation} min={20} max={100} decimals={0} onCommit={(attenuation) => setParams({ ...params, attenuation })} />}
         </Inputs>
+        {issues.map((x) => <Notice key={x} tone="danger">{x}</Notice>)}
+        {expert && family !== 'linkwitz-riley' && family !== 'butterworth' && <p class="al-text-small al-text-secondary">Каждая полоса — −3 дБ на частоте раздела. Это электрический фильтр: акустический кроссовер — он вместе с АЧХ и задержкой излучателей; сумма полос этих семейств не ровная.</p>}
         <Switch label="Высокочастотная полоса в противофазе" checked={invert} onChange={setInvert} />
       </Block>
       <Block title="Полосы и сумма кроссовера">
@@ -139,12 +205,20 @@ export function CrossoverTool() {
           {better ? 'У этого кроссовера полосы на частоте раздела сдвинуты на 180°: без инверсии сумма проваливается.' : 'Сумма ровнее без инверсии полярности высокой полосы.'}
         </Notice>
       </Block>
-      <div class="al-row"><SaveResult tool="crossover" name={`Кроссовер ${family === 'linkwitz-riley' ? 'LR' : 'BW'}${ord}, ${hz(fc)}`} data={() => ({ input: { family, order: ord, fc, invertHigh: invert }, result: { atFc, maxDeviationDb: flatness(invert) } })} /></div>
+      {expert && (
+        <Block title="Групповая задержка суммы">
+          <FrequencyChart title="Групповая задержка суммы кроссовера" yUnit="мс" fMin={freqs[0]} fMax={freqs[freqs.length - 1]} series={[{ id: 'gd', label: 'Сумма', kind: 'calculated', x: freqs, y: freqs.map((f) => groupDelayMs(sumAt, f)) }]} />
+        </Block>
+      )}
+      {expert && <PhaseCorrectionBlock key={String(fc)} h={sumAt} hKey={`${family}|${ord}|${fc}|${invert}|${p.ripple}|${p.attenuation}`} name={`Кроссовер_${label}_${Math.round(fc)}Гц`} f1={Math.max(20, fc / 8)} f2={Math.min(20000, fc * 8)} />}
+      <div class="al-row"><SaveResult tool="crossover" name={`Кроссовер ${label}, ${hz(fc)}`} data={() => ({ input: { family, order: ord, fc, invertHigh: invert, ...(usesRipple(family) ? { rippleDb: p.ripple } : {}), ...(usesAttenuation(family) ? { attenuationDb: p.attenuation } : {}) }, result: { atFc, maxDeviationDb: flatness(invert) } })} /></div>
     </div>
   );
 }
 
 export function PhaseDelayTool() {
+  const { settings } = useApp();
+  const expert = visibleAt('expert', effectiveComplexity(settings, 'tools'));
   const [gain, setGain] = useState(0);
   const [ms, setMs] = useState(2);
   const [invert, setInvert] = useState(false);
@@ -182,6 +256,7 @@ export function PhaseDelayTool() {
         ]} />
         <p class="al-text-secondary">{invert ? 'В противофазе источники гасят друг друга на низких частотах, где задержка мала по сравнению с периодом.' : 'Провалы повторяются через каждые 1/задержку Гц: задержкой или полярностью их можно сдвинуть выше рабочей полосы сабвуфера.'}</p>
       </Block>
+      {expert && <MeasuredPhaseBlock />}
       <div class="al-row"><SaveResult tool="phase-delay" name={`Два источника: ${n2(ms)} мс${invert ? ', противофаза' : ''}`} data={() => ({ input: { gainDb: gain, ms, invert }, result: { firstNotchHz: first, depthDb: depth } })} /></div>
     </div>
   );
