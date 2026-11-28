@@ -169,7 +169,7 @@ function DspBody({ d }: { d: AdviceData }) {
                 <Button small icon="download" onClick={() => downloadText(`${name}.csv`, ['f_hz;gain_db;q', ...peq.map((p) => `${p.f};${p.gainDb};${p.q}`)].join('\n') + '\n', 'text/csv')}>CSV</Button>
               </div>
               <Switch label="CamillaDSP: раздел частот LR4 на сабвуфер и колонки" checked={xo} onChange={setXo} hint="Только если раздел частот делает CamillaDSP, а не ресивер." />
-              <p class="al-text-small al-text-secondary">{`Предусилитель ${n1(preamp)} дБ записан в файл Equalizer APO; в остальные форматы его вносят вручную. В CamillaDSP — также задержки, уровни и фильтры сабвуферов этой конфигурации. FIR — те же фильтры импульсной характеристикой (ядро dsp.ts); линейная фаза добавляет задержку ${n1(linearPhaseLength(peq, fs) / 2 / fs * 1000)} мс.`}</p>
+              <p class="al-text-small al-text-secondary">{`Peace работает поверх Equalizer APO и читает тот же файл. Отдельного файла для Roon нет: совместимость формата не подтверждена. Предусилитель ${n1(preamp)} дБ записан в файл Equalizer APO; в остальные форматы его вносят вручную. В CamillaDSP — также задержки, уровни и фильтры сабвуферов этой конфигурации. FIR — те же фильтры импульсной характеристикой (ядро dsp.ts); линейная фаза добавляет задержку ${n1(linearPhaseLength(peq, fs) / 2 / fs * 1000)} мс.`}</p>
               <div class="al-row">
                 <Button small onClick={() => void putEntry(db, 'presets', { id: clock.newId(), name: `${room.name}: коррекция по ${sourceText}`, kind: 'eq', filters: filters.filter((p) => p.enabled), fs, createdAt: clock.now(), roomId: room.id }).then(
                   () => toast.show('Сохранено в «Мои данные» → «Пресеты DSP»; откройте в инструменте «Эквалайзер»'),
