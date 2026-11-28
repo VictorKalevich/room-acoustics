@@ -1,0 +1,68 @@
+/* Acoustic Lab: составные блоки экранов v2 (каталог, экраны этапов 4–11). */
+.shell {
+  max-width: 640px;
+  margin: var(--al-space-16) auto;
+  padding: var(--al-space-24);
+  background: var(--al-color-surface);
+  border: var(--al-border-width) solid var(--al-color-border);
+  border-radius: var(--al-radius-12);
+}
+.shell__page { padding: max(var(--al-space-16), env(safe-area-inset-top)) max(var(--al-space-16), env(safe-area-inset-right)) max(var(--al-space-16), env(safe-area-inset-bottom)) max(var(--al-space-16), env(safe-area-inset-left)); }
+.shell__stage { margin: 0 0 var(--al-space-8); font-size: var(--al-text-small); font-weight: var(--al-weight-medium); color: var(--al-color-accent); }
+.shell__title { margin: 0 0 var(--al-space-16); font-size: var(--al-text-headline); font-weight: var(--al-weight-semibold); line-height: var(--al-line-tight); }
+.shell__status { margin: 0 0 var(--al-space-8); }
+.shell__note { margin: 0; font-size: var(--al-text-small); color: var(--al-color-text-secondary); }
+
+/* Каталог дизайн-системы */
+.al-catalog { display: flex; flex-direction: column; gap: var(--al-space-32); }
+.al-swatches { display: grid; gap: var(--al-space-8); grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+.al-swatch { display: flex; align-items: center; gap: var(--al-space-12); padding: var(--al-space-8); border: var(--al-border-width) solid var(--al-color-border); border-radius: var(--al-radius-8); background: var(--al-color-surface); font-size: var(--al-text-caption); min-width: 0; }
+.al-swatch__chip { width: 32px; height: 32px; flex: none; border-radius: var(--al-radius-8); border: var(--al-border-width) solid var(--al-color-border); }
+.al-swatch__text { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.al-space-demo { display: flex; align-items: center; gap: var(--al-space-12); font-size: var(--al-text-caption); }
+.al-space-demo__bar { height: 12px; background: var(--al-color-accent); border-radius: var(--al-radius-8); }
+
+/* Выбор варианта карточкой (первый запуск, уровень сложности) */
+.al-choices { display: flex; flex-direction: column; gap: var(--al-space-12); margin: 0; padding: 0; border: 0; min-width: 0; }
+.al-choice { position: relative; display: flex; align-items: flex-start; gap: var(--al-space-12); padding: var(--al-space-16); border: var(--al-border-width) solid var(--al-color-border); border-radius: var(--al-radius-12); background: var(--al-color-surface); cursor: pointer; }
+.al-choice:hover { background: var(--al-color-surface-hover); }
+.al-choice input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.al-choice:has(input:checked) { border-color: var(--al-color-accent); background: var(--al-color-accent-soft); }
+.al-choice:has(input:focus-visible) { outline: var(--al-focus-width) solid var(--al-color-focus); outline-offset: 2px; }
+.al-choice__body { display: flex; flex-direction: column; gap: var(--al-space-4); flex: 1 1 auto; min-width: 0; }
+.al-choice__title { font-size: var(--al-text-lead); font-weight: var(--al-weight-semibold); }
+.al-choice__text { font-size: var(--al-text-small); color: var(--al-color-text-secondary); }
+.al-choice__mark { flex: none; color: var(--al-color-accent); visibility: hidden; }
+.al-choice:has(input:checked) .al-choice__mark { visibility: visible; }
+
+/* Плитки разделов и инструментов */
+.al-tiles { display: grid; gap: var(--al-space-12); grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.al-tiles--2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.al-tile { position: relative; display: flex; flex-direction: column; gap: var(--al-space-8); min-width: 0; padding: var(--al-space-16); border: var(--al-border-width) solid var(--al-color-border); border-radius: var(--al-radius-12); background: var(--al-color-surface); color: inherit; text-decoration: none; }
+a.al-tile:hover { background: var(--al-color-surface-hover); }
+.al-tile--feature { padding: var(--al-space-24); gap: var(--al-space-12); }
+.al-tile__head { display: flex; align-items: center; gap: var(--al-space-12); min-width: 0; }
+.al-tile__icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: var(--al-touch-min); height: var(--al-touch-min); border-radius: var(--al-radius-8); background: var(--al-color-accent-soft); color: var(--al-color-accent); }
+.al-tile__title { font-weight: var(--al-weight-semibold); overflow-wrap: anywhere; }
+.al-tile__text { font-size: var(--al-text-small); color: var(--al-color-text-secondary); }
+.al-tile__link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.al-tile__link { color: inherit; text-decoration: none; }
+.al-tile__link:focus-visible { outline: none; }
+.al-tile:has(.al-tile__link:focus-visible) { outline: var(--al-focus-width) solid var(--al-color-focus); outline-offset: 2px; }
+.al-tile__aside { position: relative; z-index: 1; margin-left: auto; }
+
+/* Строка списка с действиями: на узком экране действия переносятся под текст */
+.al-list__link { color: inherit; text-decoration: none; border-radius: var(--al-radius-8); }
+.al-list__link:hover .al-list__title { color: var(--al-color-accent); }
+.al-list__item--wrap { flex-wrap: wrap; }
+.al-list__item--wrap .al-list__text { flex: 1 1 200px; }
+
+/* Списки объектов редактора модели (V2-023): выбранный объект, свойства которого открыты рядом. */
+button.al-list__item[aria-pressed='true'] { background: var(--al-color-accent-soft); }
+
+/* Различия конфигураций (V2-028, V2-029): области и изменения в них. */
+.al-changes { display: flex; flex-direction: column; gap: var(--al-space-12); margin: 0; }
+.al-changes__group { display: flex; flex-direction: column; gap: var(--al-space-4); }
+.al-changes__area { font-size: var(--al-text-caption); font-weight: var(--al-weight-medium); color: var(--al-color-text-secondary); }
+.al-changes__item { margin: 0; font-size: var(--al-text-small); overflow-wrap: anywhere; }
+.al-steps { display: flex; flex-direction: column; gap: var(--al-space-4); margin: 0; padding-left: var(--al-space-24); font-size: var(--al-text-small); overflow-wrap: anywhere; }

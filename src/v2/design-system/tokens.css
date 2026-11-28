@@ -1,0 +1,158 @@
+/* Acoustic Lab (D58, docs/acoustic-lab.md) — токены v2. Литералы цветов, размеров и шрифта — только здесь.
+   Темы (V2-012): без data-theme или data-theme="system" — по системе; data-theme="light" и "dark" — явный выбор.
+   Блоки тёмной темы для системного и явного выбора одинаковы: это проверяет tests/v2/design-system.test.ts. */
+:root {
+  /* Утверждённые цвета, светлая тема */
+  --al-color-background: #F4F6F8;
+  --al-color-surface: #FFFFFF;
+  --al-color-text: #17252E;
+  --al-color-text-secondary: #536573;
+  --al-color-border: #DCE3E8;
+  --al-color-accent: #087F75;
+  --al-color-on-accent: #FFFFFF;
+  --al-color-current: #536F8D;
+  --al-color-experimental: #087F75;
+  --al-color-measured: #255EAB;
+  --al-color-predicted: #7654A5;
+  --al-color-warning: #9A610B;
+  --al-color-danger: #B83C4B;
+
+  /* Объекты плана: светлая тема утверждена, тёмная — решение R13 */
+  --al-plan-source: #536F8D;
+  --al-plan-listener: #255EAB;
+  --al-plan-absorber: #087F75;
+  --al-plan-bass-trap: #D49A49;
+  --al-plan-diffuser: #9172BB;
+  --al-plan-interior: #70818F;
+
+  --al-shadow-raised: 0 1px 2px rgb(23 37 46 / 6%), 0 4px 16px rgb(23 37 46 / 6%);
+  --al-shadow-overlay: 0 8px 32px rgb(23 37 46 / 18%);
+  --al-scrim: rgb(16 23 30 / 40%);
+  color-scheme: light;
+
+  /* Производные цвета: смешение утверждённых, без новых литералов */
+  --al-color-surface-muted: color-mix(in srgb, var(--al-color-text) 4%, var(--al-color-surface));
+  --al-color-surface-hover: color-mix(in srgb, var(--al-color-text) 7%, var(--al-color-surface));
+  --al-color-accent-soft: color-mix(in srgb, var(--al-color-accent) 14%, var(--al-color-surface));
+  --al-color-warning-soft: color-mix(in srgb, var(--al-color-warning) 14%, var(--al-color-surface));
+  --al-color-danger-soft: color-mix(in srgb, var(--al-color-danger) 14%, var(--al-color-surface));
+  --al-color-measured-soft: color-mix(in srgb, var(--al-color-measured) 14%, var(--al-color-surface));
+  --al-color-predicted-soft: color-mix(in srgb, var(--al-color-predicted) 14%, var(--al-color-surface));
+  --al-color-current-soft: color-mix(in srgb, var(--al-color-current) 14%, var(--al-color-surface));
+  --al-color-focus: color-mix(in srgb, var(--al-color-accent) 45%, transparent);
+  --al-color-grid: color-mix(in srgb, var(--al-color-border) 70%, var(--al-color-surface));
+  /* Несколько рядов одного вида на графике: цвета объектов плана, у каждой темы свои */
+  --al-color-series-2: var(--al-plan-bass-trap);
+  --al-color-series-3: var(--al-plan-absorber);
+  --al-color-series-4: var(--al-plan-interior);
+
+  /* Шрифт (V2-011): Inter Variable из @fontsource-variable/inter, подключается в main.tsx */
+  --al-font-body: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --al-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Типографика (R11): шкала 12–32 px */
+  --al-text-caption: 12px;
+  --al-text-small: 14px;
+  --al-text-body: 16px;
+  --al-text-lead: 18px;
+  --al-text-title: 22px;
+  --al-text-headline: 28px;
+  --al-text-metric: 32px;
+  --al-line-tight: 1.2;
+  --al-line-snug: 1.35;
+  --al-line-body: 1.5;
+  --al-weight-regular: 400;
+  --al-weight-medium: 500;
+  --al-weight-semibold: 600;
+  --al-weight-bold: 700;
+  --al-tracking-tight: -0.01em;
+  --al-tracking-caps: 0.04em;
+
+  /* Отступы, радиусы, размеры элементов — утверждённая шкала */
+  --al-space-0: 0;
+  --al-space-4: 4px;
+  --al-space-8: 8px;
+  --al-space-12: 12px;
+  --al-space-16: 16px;
+  --al-space-24: 24px;
+  --al-space-32: 32px;
+  --al-radius-8: 8px;
+  --al-radius-12: 12px;
+  --al-radius-16: 16px;
+  --al-radius-full: 999px;
+  --al-control-height: 48px;
+  --al-control-height-small: 36px;
+  --al-touch-min: 44px;
+  --al-border-width: 1px;
+  --al-focus-width: 3px;
+  --al-icon: 20px;
+  --al-icon-small: 16px;
+
+  /* Раскладка */
+  --al-content-max: 1200px;
+  --al-reading-max: 720px;
+  --al-sidebar-width: 248px;
+  --al-panel-width: 360px;
+  --al-tabbar-height: 64px;
+
+  --al-duration-fast: 120ms;
+  --al-duration: 200ms;
+  --al-ease: cubic-bezier(0.2, 0, 0, 1);
+  --al-z-nav: 10;
+  --al-z-sheet: 40;
+  --al-z-toast: 50;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --al-color-background: #10171E;
+    --al-color-surface: #19242D;
+    --al-color-text: #E9F0F4;
+    --al-color-text-secondary: #A0B2BF;
+    --al-color-border: #34444F;
+    --al-color-accent: #53D5C1;
+    --al-color-on-accent: #102B29;
+    --al-color-current: #A3B8D2;
+    --al-color-experimental: #53D5C1;
+    --al-color-measured: #80B5FF;
+    --al-color-predicted: #C2A1F4;
+    --al-color-warning: #F2BA61;
+    --al-color-danger: #FF9CA6;
+    --al-plan-source: #A3B8D2;
+    --al-plan-listener: #80B5FF;
+    --al-plan-absorber: #53D5C1;
+    --al-plan-bass-trap: #E8B66F;
+    --al-plan-diffuser: #B99BE6;
+    --al-plan-interior: #93A3AF;
+    --al-shadow-raised: 0 1px 2px rgb(0 0 0 / 30%), 0 4px 16px rgb(0 0 0 / 24%);
+    --al-shadow-overlay: 0 8px 32px rgb(0 0 0 / 50%);
+    --al-scrim: rgb(0 0 0 / 55%);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --al-color-background: #10171E;
+  --al-color-surface: #19242D;
+  --al-color-text: #E9F0F4;
+  --al-color-text-secondary: #A0B2BF;
+  --al-color-border: #34444F;
+  --al-color-accent: #53D5C1;
+  --al-color-on-accent: #102B29;
+  --al-color-current: #A3B8D2;
+  --al-color-experimental: #53D5C1;
+  --al-color-measured: #80B5FF;
+  --al-color-predicted: #C2A1F4;
+  --al-color-warning: #F2BA61;
+  --al-color-danger: #FF9CA6;
+  --al-plan-source: #A3B8D2;
+  --al-plan-listener: #80B5FF;
+  --al-plan-absorber: #53D5C1;
+  --al-plan-bass-trap: #E8B66F;
+  --al-plan-diffuser: #B99BE6;
+  --al-plan-interior: #93A3AF;
+  --al-shadow-raised: 0 1px 2px rgb(0 0 0 / 30%), 0 4px 16px rgb(0 0 0 / 24%);
+  --al-shadow-overlay: 0 8px 32px rgb(0 0 0 / 50%);
+  --al-scrim: rgb(0 0 0 / 55%);
+  color-scheme: dark;
+}

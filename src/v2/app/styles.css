@@ -1,0 +1,8 @@
+/* Вход стилей v2: только Acoustic Lab, без стилей и шрифтов legacy (D58). */
+@import '../design-system/tokens.css';
+@import '../design-system/base.css';
+@import '../design-system/controls.css';
+@import '../design-system/surfaces.css';
+@import '../design-system/data.css';
+@import '../design-system/layout.css';
+@import '../design-system/screens.css';

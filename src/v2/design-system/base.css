@@ -1,0 +1,92 @@
+/* Acoustic Lab: основа страницы, текстовые стили, фокус, доступность (V2-011, V2-013). */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  background: var(--al-color-background);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  font-family: var(--al-font-body);
+  font-size: var(--al-text-body);
+  line-height: var(--al-line-body);
+  font-weight: var(--al-weight-regular);
+  color: var(--al-color-text);
+  background: var(--al-color-background);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+img, svg { display: block; max-width: 100%; }
+h1, h2, h3, h4, p, ul, ol, dl, figure { margin: 0; }
+ul[role='list'], ol[role='list'] { padding: 0; list-style: none; }
+
+:focus-visible {
+  outline: var(--al-focus-width) solid var(--al-color-focus);
+  outline-offset: var(--al-space-0);
+}
+
+.al-visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.al-skip-link {
+  position: absolute;
+  left: var(--al-space-8);
+  top: var(--al-space-8);
+  z-index: var(--al-z-toast);
+  padding: var(--al-space-8) var(--al-space-16);
+  border-radius: var(--al-radius-8);
+  background: var(--al-color-accent);
+  color: var(--al-color-on-accent);
+  transform: translateY(-200%);
+}
+.al-skip-link:focus { transform: none; }
+
+/* Текстовые стили */
+.al-text-headline { font-size: var(--al-text-headline); line-height: var(--al-line-tight); font-weight: var(--al-weight-semibold); letter-spacing: var(--al-tracking-tight); }
+.al-text-title { font-size: var(--al-text-title); line-height: var(--al-line-tight); font-weight: var(--al-weight-semibold); letter-spacing: var(--al-tracking-tight); }
+.al-text-lead { font-size: var(--al-text-lead); line-height: var(--al-line-snug); font-weight: var(--al-weight-medium); }
+.al-text-body { font-size: var(--al-text-body); line-height: var(--al-line-body); }
+.al-text-small { font-size: var(--al-text-small); line-height: var(--al-line-snug); }
+.al-text-caption { font-size: var(--al-text-caption); line-height: var(--al-line-snug); }
+.al-text-overline { font-size: var(--al-text-caption); line-height: var(--al-line-snug); font-weight: var(--al-weight-semibold); letter-spacing: var(--al-tracking-caps); text-transform: uppercase; color: var(--al-color-text-secondary); }
+.al-text-secondary { color: var(--al-color-text-secondary); }
+.al-text-danger { color: var(--al-color-danger); }
+.al-text-warning { color: var(--al-color-warning); }
+.al-num { font-variant-numeric: tabular-nums; }
+.al-mono { font-family: var(--al-font-mono); font-size: var(--al-text-small); }
+
+/* Раскладка */
+.al-stack { display: flex; flex-direction: column; gap: var(--al-space-16); }
+.al-stack--8 { gap: var(--al-space-8); }
+.al-stack--12 { gap: var(--al-space-12); }
+.al-stack--16 { gap: var(--al-space-16); }
+.al-stack--24 { gap: var(--al-space-24); }
+.al-stack--32 { gap: var(--al-space-32); }
+.al-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--al-space-8); }
+.al-row--12 { gap: var(--al-space-12); }
+.al-row--16 { gap: var(--al-space-16); }
+.al-row--between { justify-content: space-between; }
+.al-row--end { justify-content: flex-end; }
+.al-row--bottom { align-items: flex-end; }
+.al-row--nowrap { flex-wrap: nowrap; }
+.al-grow { flex: 1 1 auto; min-width: 0; }
+.al-grid { display: grid; gap: var(--al-space-16); grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
+.al-grid--wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+.al-grid--metrics { grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)); gap: var(--al-space-12); }
+.al-divider { height: var(--al-border-width); background: var(--al-color-border); border: 0; margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+}

@@ -7,6 +7,11 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "dev:v2": "vite --config vite.v2.config.ts",
+    "build:v2": "tsc --noEmit && vite build --config vite.v2.config.ts",
+    "preview:v2": "vite preview --config vite.v2.config.ts",
+    "e2e:v2": "playwright test --config playwright.v2.config.ts --project=v2-desktop --project=v2-iphone",
+    "e2e:v2:safari": "playwright test --config playwright.v2.config.ts --project=v2-safari",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "npm run fixtures && playwright test --project=iphone",
@@ -16,6 +21,7 @@
     "design:check": "node scripts/check-design-system.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/golos-text": "^5.3.0",
     "preact": "^11.2.0",
     "three": "^0.187.0"
