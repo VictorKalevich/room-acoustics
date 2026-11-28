@@ -50,3 +50,38 @@ test('059 · на простом уровне многослойного рас�
   await expect(page.getByRole('heading', { name: 'Результат' })).toBeVisible();
   await expect(page.getByRole('list', { name: 'Слои конструкции' })).toHaveCount(0);
 });
+
+test('059 · диффузор PRD, оценка рассеивания и изготовление панелей', async ({ page }) => {
+  await start(page, /Экспертный/);
+  await page.goto('./#/tools/diffuser');
+  await expect(page.getByRole('table', { name: 'Коэффициент диффузии по октавам' })).toBeVisible();
+  await page.getByRole('radio', { name: 'PRD (первообразный корень)' }).click();
+  await expect(page.getByRole('heading', { name: 'Диффузор первообразного корня' })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Глубины ячеек, см' }).getByRole('columnheader')).toHaveCount(6);
+  await page.getByRole('radio', { name: 'Skyline (блоки)' }).click();
+  await expect(page.getByText(/двумерная модель Skyline не сделана/)).toBeVisible();
+
+  await page.goto('./#/tools/absorber');
+  await expect(page.getByRole('heading', { name: 'Изготовление панелей' })).toBeVisible();
+  await expect(page.getByText('Стоимость материалов')).toBeVisible();
+  await expect(page.getByText(/Не указано: цена или число плит в упаковке, цена бруска, цена ткани, плотность плиты\. Неизвестное не считается нулём — стоимость и масса не рассчитаны/)).toBeVisible();
+  for (const [label, v] of [['Плит в упаковке', '8'], ['Цена упаковки', '2000'], ['Цена бруска рамки', '100'], ['Цена ткани', '300'], ['Плотность плиты', '40']]) {
+    await page.getByLabel(label).fill(v);
+    await page.getByLabel(label).press('Enter');
+  }
+  await expect(page.getByText(/Не указано:/)).toHaveCount(0);
+  await expect(page.getByText(/ ₽$/)).toBeVisible();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Карта раскроя, SVG' }).click();
+  expect((await download).suggestedFilename()).toMatch(/раскрой\.svg$/);
+});
+
+test('059 · на простом уровне PRD и изготовления нет', async ({ page }) => {
+  await start(page, /Простой/);
+  await page.goto('./#/tools/diffuser');
+  await expect(page.getByRole('radio', { name: 'QRD (ряд ячеек)' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'PRD (первообразный корень)' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Рассеивание (оценка)' })).toHaveCount(0);
+  await page.goto('./#/tools/absorber');
+  await expect(page.getByRole('heading', { name: 'Изготовление панелей' })).toHaveCount(0);
+});

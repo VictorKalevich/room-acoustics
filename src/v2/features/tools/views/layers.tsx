@@ -1,10 +1,14 @@
 // Многослойные конструкции и резонаторы с потерями (V2-052, экспертный уровень): редактор слоёв от комнаты к стене,
 // поглощение при нормальном падении и в диффузном поле методом матриц переноса (application/layers), импеданс,
 // применимость моделей, сравнение конструкций. Бесконечная плоская конструкция — ограничение показано на экране.
+// Там же — рассеивание одномерного диффузора (оценка Фраунгофера) и подготовка изготовления панелей.
 import { useMemo, useState } from 'preact/hooks';
 import { Button, DataTable, FrequencyChart, KeyValue, Notice, NumberField, SelectField, Switch, type SeriesVariant } from '../../../design-system';
 import { absorption, air, construction, octaveMean, OCTAVES, outOfRange, peak, perforation, type Absorption, type Layer, type PorousModel } from '../../../application/layers';
 import { logFreqs } from '../../../application/tools';
+import { latticeFloor, normalizedDiffusion } from '../../../application/diffusers';
+import { cutMapSvg, panelBom } from '../../../application/fabrication';
+import { downloadText, safeFileName } from '../../../shared/files';
 import { Block, SaveResult, cm, hz, n0, n1, n2 } from './common';
 
 const FREQS = logFreqs(50, 5000, 24);
@@ -87,9 +91,10 @@ function Results({ layers, r, title }: { layers: Layer[]; r: Absorption; title: 
       ]} />
       <KeyValue items={[
         ['Глубина конструкции', cm(k.depth)],
-        ['Поверхностная масса', k.mass === null ? '— (масса не у всех слоёв)' : `${n1(k.mass)} кг/м²`],
+        ['Поверхностная масса', k.mass === null ? '—' : `${n1(k.mass)} кг/м²`],
         ...(pk ? [['Максимум поглощения (диффузное поле)', `${n2(pk.value)} на ${hz(pk.f)}`] as [string, string], ['Полоса не ниже половины максимума', `${hz(pk.lo)}–${hz(pk.hi)}`] as [string, string]] : []),
       ]} />
+      {k.mass === null && <p class="al-text-small al-text-secondary">Поверхностная масса указана не у всех слоёв — масса конструкции не считается.</p>}
       <DataTable caption={`Поверхностный импеданс при нормальном падении: ${title}`} rowKey={(x) => String(x.f)} rows={zrows} columns={[
         { key: 'f', title: 'Частота', numeric: true, render: (x) => hz(x.f) },
         { key: 'r', title: 'Re Zs/ρc', numeric: true, render: (x) => n2(x.z.re / z0) },
@@ -182,6 +187,88 @@ export function ResonatorLosses({ front, depth, f0 }: { front: Layer; depth: num
       )}
       <Results layers={layers} r={r} title="резонатор" />
       {pk && <p class="al-text-small al-text-secondary">{`Простая оценка выше — ${hz(f0)}; с потерями и точной полостью максимум на ${hz(pk.f)}. ${LIMITS}`}</p>}
+    </Block>
+  );
+}
+
+/** Рассеивание одномерного диффузора (V2-052): нормированный коэффициент диффузии по частотам — оценка Фраунгофера. */
+export function DiffusionBlock({ depths, well, f0, fMax }: { depths: readonly number[]; well: number; f0: number; fMax: number }) {
+  const [periods, setPeriods] = useState(4);
+  const freqs = useMemo(() => logFreqs(100, 5000, 6), []);
+  const r = useMemo(() => freqs.map((f) => normalizedDiffusion(depths, well, periods, f)), [depths, well, periods, freqs]);
+  const oct = OCTAVES.filter((f) => f >= 125).map((f) => ({ f, ...normalizedDiffusion(depths, well, periods, f) }));
+  return (
+    <Block title="Рассеивание (оценка)" subtitle="Экспертный уровень. Модель Фраунгофера в дальнем поле: ячейки без потерь и перегородок, падение по нормали; коэффициент диффузии по AES-4id в 37 направлениях, нормированный к плоской панели той же ширины. Оценка, а не измерение по ISO 17497-2.">
+      <div class="al-grid al-grid--metrics">
+        <NumberField label="Периодов последовательности" value={periods} min={1} max={12} decimals={0} onCommit={setPeriods} hint={`Ширина диффузора ${n2(depths.length * well * periods)} м`} />
+      </div>
+      <FrequencyChart title="Нормированный коэффициент диффузии" yUnit="d" yRange={[0, 1]} fMin={100} fMax={5000}
+        series={[{ id: 'd', label: 'Диффузор', kind: 'calculated', x: freqs, y: r.map((x) => x.norm) }]} />
+      <DataTable caption="Коэффициент диффузии по октавам" rowKey={(x) => String(x.f)} rows={oct} columns={[
+        { key: 'f', title: 'Частота', numeric: true, render: (x) => hz(x.f) },
+        { key: 'd', title: 'Диффузор', numeric: true, render: (x) => n2(x.d) },
+        { key: 'p', title: 'Плоская панель', numeric: true, render: (x) => n2(x.flat) },
+        { key: 'n', title: 'Нормированный', numeric: true, render: (x) => n2(x.norm) },
+      ]} />
+      <p class="al-text-small al-text-secondary">{`Рабочая полоса — от расчётной ${hz(f0)} до предела по ширине ячейки ${hz(fMax)}. Пока период ${n2(depths.length * well)} м короче длины волны — ниже ${hz(latticeFloor(depths.length * well))}, — периодический диффузор отражает почти только зеркально, даже выше расчётной частоты. Периодический диффузор на частотах решётки рассеивает в отдельные лепестки — коэффициент там проседает; больше периодов — уже лепестки. Выше предела модель оптимистична: поперечные моды ячеек не учтены.`}</p>
+    </Block>
+  );
+}
+
+const mm = (v: number) => Math.round(v * 1000);
+
+/** Подготовка изготовления пористых панелей (V2-052): раскрой, ведомость, масса, стоимость, карта раскроя SVG. */
+export function FabricationBlock({ core }: { core: number }) {
+  const [w, setW] = useState(0.6);
+  const [h, setH] = useState(1.2);
+  const [count, setCount] = useState(4);
+  const [bw, setBw] = useState(1.2);
+  const [bh, setBh] = useState(0.6);
+  const [bt, setBt] = useState(0.05);
+  const [perPack, setPerPack] = useState<number | null>(null);
+  const [density, setDensity] = useState<number | null>(null);
+  const [pricePack, setPricePack] = useState<number | null>(null);
+  const [framePrice, setFramePrice] = useState<number | null>(null);
+  const [margin, setMargin] = useState(0.05);
+  const [fabricPrice, setFabricPrice] = useState<number | null>(null);
+  const b = panelBom({ width: w, height: h, count, core, board: { width: bw, height: bh, thickness: bt, perPack, density, pricePack }, framePrice, fabricMargin: margin, fabricPrice });
+  const title = `Панель ${mm(w)} × ${mm(h)} мм`;
+  const unknown = [...b.missing, ...(b.mass === null ? ['плотность плиты'] : [])];
+  return (
+    <Block title="Изготовление панелей" subtitle={`Экспертный уровень. Заполнение — пористый слой ${cm(core)} из расчёта выше. Раскрой — сеткой на плите, без ширины пропила; неизвестная цена или плотность не считается нулём.`}>
+      <div class="al-grid al-grid--metrics">
+        <NumberField label="Ширина панели" unit="см" value={w * 100} min={10} max={300} decimals={0} onCommit={(v) => setW(v / 100)} />
+        <NumberField label="Высота панели" unit="см" value={h * 100} min={10} max={300} decimals={0} onCommit={(v) => setH(v / 100)} />
+        <NumberField label="Количество панелей" value={count} min={1} max={200} decimals={0} onCommit={setCount} />
+        <NumberField label="Длина плиты" unit="см" value={bw * 100} min={10} max={300} decimals={0} onCommit={(v) => setBw(v / 100)} />
+        <NumberField label="Ширина плиты" unit="см" value={bh * 100} min={10} max={300} decimals={0} onCommit={(v) => setBh(v / 100)} />
+        <NumberField label="Толщина плиты" unit="см" value={bt * 100} min={1} max={30} decimals={1} onCommit={(v) => setBt(v / 100)} />
+        <NumberField label="Плит в упаковке" value={perPack} optional min={1} max={100} decimals={0} onCommit={(v) => setPerPack(opt(v))} />
+        <NumberField label="Плотность плиты" unit="кг/м³" value={density} optional min={1} max={500} decimals={0} onCommit={(v) => setDensity(opt(v))} />
+        <NumberField label="Цена упаковки" unit="₽" value={pricePack} optional min={0} max={1e6} decimals={0} onCommit={(v) => setPricePack(opt(v))} />
+        <NumberField label="Цена бруска рамки" unit="₽/м" value={framePrice} optional min={0} max={1e5} decimals={0} onCommit={(v) => setFramePrice(opt(v))} />
+        <NumberField label="Запас ткани на подгиб" unit="см" value={margin * 100} min={0} max={30} decimals={0} onCommit={(v) => setMargin(v / 100)} />
+        <NumberField label="Цена ткани" unit="₽/м²" value={fabricPrice} optional min={0} max={1e5} decimals={0} onCommit={(v) => setFabricPrice(opt(v))} />
+      </div>
+      <KeyValue items={[
+        ['Слоёв плиты в панели', String(b.layers)],
+        ['Кусков всего', String(b.pieces)],
+        ['Кусков на плите', b.assembled ? 'из частей' : `${b.plan.across} × ${b.plan.along}${b.plan.rotated ? ', повёрнуты' : ''}`],
+        ['Отход плиты', b.assembled ? '—' : `${n0(b.plan.waste * 100)} %`],
+        ['Плит', String(b.boards)],
+        ['Упаковок', b.packs === null ? '—' : String(b.packs)],
+        ['Брусок рамки', `${n1(b.frameLength)} м`],
+        ['Ткань', `${n1(b.fabricArea)} м²`],
+        ['Масса заполнения', b.mass === null ? '—' : `${n1(b.mass)} кг`],
+        ['Стоимость материалов', b.cost === null ? '—' : `${n0(b.cost)} ₽`],
+      ]} />
+      {b.assembled && <Notice tone="warning">Панель больше плиты: заполнение собирается из частей, плиты посчитаны по площади, карты раскроя нет.</Notice>}
+      {unknown.length > 0 && <p class="al-text-small al-text-secondary">{`Не указано: ${unknown.join(', ')}. Неизвестное не считается нулём — ${[b.cost === null && 'стоимость', b.mass === null && 'масса'].filter(Boolean).join(' и ')} не рассчитаны.`}</p>}
+      {Math.abs(b.layers * bt - core) > 0.005 && <Notice tone="warning">{`Плиты ${cm(bt)} не дают толщину ${cm(core)} ровно: ${b.layers} × ${cm(bt)} = ${cm(b.layers * bt)}. Поглощение рассчитано для ${cm(core)}.`}</Notice>}
+      <div class="al-row">
+        <Button small icon="download" disabled={b.assembled} onClick={() => downloadText(`${safeFileName(title)}_раскрой.svg`, cutMapSvg(w, h, bw, bh, b.plan, title), 'image/svg+xml')}>Карта раскроя, SVG</Button>
+      </div>
+      <p class="al-text-small al-text-secondary">Акустическая эффективность не доказывает безопасность: проверьте горючесть материалов и ткани, защиту от выделения волокон, крепления и массу панели для стены или потолка.</p>
     </Block>
   );
 }

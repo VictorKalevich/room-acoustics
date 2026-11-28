@@ -13,7 +13,8 @@ import { listCategory } from '../../../storage/library';
 import { useApp } from '../../../shared/context';
 import { effectiveComplexity } from '../../../application/settings';
 import { visibleAt } from '../../../domain/complexity';
-import { LayersBlock, ResonatorLosses } from './layers';
+import { DiffusionBlock, FabricationBlock, LayersBlock, ResonatorLosses } from './layers';
+import { prd } from '../../../application/diffusers';
 import { Block, Inputs, SaveResult, cm, freq, hz, meters, n0, n1, n2 } from './common';
 
 const OCT = [63, 125, 250, 500, 1000, 2000, 4000];
@@ -53,6 +54,7 @@ export function AbsorberTool() {
         <p class="al-text-secondary">Оценка по типичным данным пористых материалов, а не по паспорту конкретного: для точности возьмите данные изготовителя.</p>
       </Block>
       <div class="al-row"><SaveResult tool="absorber" name={`Панель ${cm(t)}${gap ? ` + зазор ${cm(gap)}` : ''}`} data={() => ({ input: { thickness: t, gap, area }, result: { alpha, lowLimitHz: low } })} /></div>
+      {expert && <FabricationBlock core={t} />}
       {expert && <LayersBlock initial={[{ kind: 'porous', thickness: t, sigma: 10_000, model: 'delany-bazley', density: null }, ...(gap > 0 ? [{ kind: 'air' as const, thickness: gap }] : [])]} />}
     </div>
   );
@@ -118,40 +120,47 @@ export function BassTrapTool() {
   );
 }
 
-type DiffKind = 'qrd' | 'skyline';
+type DiffKind = 'qrd' | 'skyline' | 'prd';
 
 export function DiffuserTool() {
+  const { settings } = useApp();
+  const expert = visibleAt('expert', effectiveComplexity(settings, 'tools'));
   const [kind, setKind] = useState<DiffKind>('qrd');
   const [N, setN] = useState<(typeof PRIMES)[number]>(7);
   const [f0, setF0] = useState(500);
   const [well, setWell] = useState(0.05);
-  const q = qrd(N, f0, well, 20, kind === 'skyline');
+  const shown: DiffKind = kind === 'prd' && !expert ? 'qrd' : kind;
+  const p = prd(N, f0, well);
+  const q = shown === 'prd' ? { depths: [p.depths], maxDepth: p.maxDepth, fMax: p.fMax, period: p.period, step: p.step } : qrd(N, f0, well, 20, shown === 'skyline');
+  const cells = q.depths[0].length;
   const rows = q.depths.map((row, i) => ({ i, row }));
   const cols: Column<(typeof rows)[number]>[] = [
     ...(kind === 'skyline' ? [{ key: 'r', title: 'Ряд', numeric: true, render: (x: (typeof rows)[number]) => String(x.i + 1) }] : []),
-    ...Array.from({ length: N }, (_, j) => ({ key: `c${j}`, title: String(j + 1), numeric: true, render: (x: (typeof rows)[number]) => n1(x.row[j] * 100) })),
+    ...Array.from({ length: cells }, (_, j) => ({ key: `c${j}`, title: String(j + 1), numeric: true, render: (x: (typeof rows)[number]) => n1(x.row[j] * 100) })),
   ];
   return (
     <div class="al-stack al-stack--16">
-      <Block title="Диффузор квадратичных вычетов" subtitle="Глубины ячеек по последовательности n² mod N">
-        <SegmentedControl label="Вид" value={kind} onChange={setKind} options={[{ value: 'qrd', label: 'QRD (ряд ячеек)' }, { value: 'skyline', label: 'Skyline (блоки)' }]} />
+      <Block title={shown === 'prd' ? 'Диффузор первообразного корня' : 'Диффузор квадратичных вычетов'} subtitle={shown === 'prd' ? `Глубины ячеек по последовательности ${p.g}ⁿ mod N, n = 1…N − 1; на расчётной частоте подавлено зеркальное отражение` : 'Глубины ячеек по последовательности n² mod N'}>
+        <SegmentedControl label="Вид" value={shown} onChange={setKind} options={[{ value: 'qrd', label: 'QRD (ряд ячеек)' }, { value: 'skyline', label: 'Skyline (блоки)' }, ...(expert ? [{ value: 'prd' as const, label: 'PRD (первообразный корень)' }] : [])]} />
         <Inputs>
-          <SelectField label="Простое число N" value={String(N)} options={PRIMES.map((p) => ({ value: String(p), label: String(p) }))} onChange={(v) => setN(Number(v) as (typeof PRIMES)[number])} />
+          <SelectField label="Простое число N" value={String(N)} options={PRIMES.map((x) => ({ value: String(x), label: String(x) }))} onChange={(v) => setN(Number(v) as (typeof PRIMES)[number])} />
           <NumberField label="Расчётная частота" unit="Гц" value={f0} min={100} max={3000} decimals={0} onCommit={setF0} hint="Ниже неё диффузор рассеивает слабо" />
-          <NumberField label={kind === 'qrd' ? 'Ширина ячейки' : 'Сторона блока'} unit="см" value={well * 100} min={1} max={30} decimals={1} onCommit={(v) => setWell(v / 100)} />
+          <NumberField label={shown === 'skyline' ? 'Сторона блока' : 'Ширина ячейки'} unit="см" value={well * 100} min={1} max={30} decimals={1} onCommit={(v) => setWell(v / 100)} />
         </Inputs>
       </Block>
       <div class="al-grid al-grid--metrics" role="list" aria-label="Результат">
         <div role="listitem"><MetricCard label="Рассеивает от" value={n0(f0)} unit="Гц" note="Расчётная частота" /></div>
         <div role="listitem"><MetricCard label="Рассеивает до" value={q.fMax >= 1000 ? n1(q.fMax / 1000) : n0(q.fMax)} unit={q.fMax >= 1000 ? 'кГц' : 'Гц'} note="Ограничено шириной ячейки" /></div>
         <div role="listitem"><MetricCard label="Наибольшая глубина" value={n1(q.maxDepth * 100)} unit="см" /></div>
-        <div role="listitem"><MetricCard label="Период" value={n1(q.period * 100)} unit="см" note={kind === 'skyline' ? `Блок ${N} × ${N}` : `${N} ячеек`} /></div>
+        <div role="listitem"><MetricCard label="Период" value={n1(q.period * 100)} unit="см" note={shown === 'skyline' ? `Блок ${N} × ${N}` : `${cells} ячеек`} /></div>
       </div>
-      <Block title={kind === 'qrd' ? 'Глубины ячеек, см' : 'Высоты блоков, см'}>
-        <DataTable caption={kind === 'qrd' ? 'Глубины ячеек, см' : 'Высоты блоков, см'} columns={cols} rows={rows} rowKey={(x) => String(x.i)} />
+      <Block title={shown === 'skyline' ? 'Высоты блоков, см' : 'Глубины ячеек, см'}>
+        <DataTable caption={shown === 'skyline' ? 'Высоты блоков, см' : 'Глубины ячеек, см'} columns={cols} rows={rows} rowKey={(x) => String(x.i)} />
       </Block>
       <p class="al-text-secondary">Толщина перегородок не учитывается; для QRD её обычно берут 2–5 мм и не включают в ширину ячейки.</p>
-      <div class="al-row"><SaveResult tool="diffuser" name={`${kind === 'qrd' ? 'QRD' : 'Skyline'} N = ${N}, ${n0(f0)} Гц`} data={() => ({ input: { kind, N, f0, well }, result: q })} /></div>
+      {expert && shown !== 'skyline' && <DiffusionBlock depths={q.depths[0]} well={well} f0={f0} fMax={q.fMax} />}
+      {expert && shown === 'skyline' && <p class="al-text-small al-text-secondary">Оценка рассеивания — только для одномерных диффузоров (QRD, PRD): двумерная модель Skyline не сделана.</p>}
+      <div class="al-row"><SaveResult tool="diffuser" name={`${shown === 'qrd' ? 'QRD' : shown === 'prd' ? 'PRD' : 'Skyline'} N = ${N}, ${n0(f0)} Гц`} data={() => ({ input: { kind: shown, N, f0, well }, result: q })} /></div>
     </div>
   );
 }
