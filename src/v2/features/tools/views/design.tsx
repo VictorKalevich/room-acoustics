@@ -1,5 +1,6 @@
 // Проектирование конструкций (V2-039): пористые панели и ловушки — поглощение ядра (porousAlpha, porousLowLimit);
 // резонаторы и диффузоры — стандартные соотношения из application/tools (R33); упрощения названы на экране (R35).
+// Экспертный уровень (V2-052): многослойные конструкции и резонаторы с потерями методом матриц переноса (layers.tsx).
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { BarChart, DataTable, FrequencyChart, KeyValue, MetricCard, Notice, NumberField, SegmentedControl, SelectField, type Column, type SeriesVariant } from '../../../design-system';
 import { MATERIALS } from '../../../../core/materials';
@@ -10,6 +11,9 @@ import type { OctaveValues } from '../../../../core/types';
 import { PRIMES, helmholtz, membrane, perforated, qrd } from '../../../application/tools';
 import { listCategory } from '../../../storage/library';
 import { useApp } from '../../../shared/context';
+import { effectiveComplexity } from '../../../application/settings';
+import { visibleAt } from '../../../domain/complexity';
+import { LayersBlock, ResonatorLosses } from './layers';
 import { Block, Inputs, SaveResult, cm, freq, hz, meters, n0, n1, n2 } from './common';
 
 const OCT = [63, 125, 250, 500, 1000, 2000, 4000];
@@ -21,6 +25,8 @@ function AlphaChart({ title, alpha }: { title: string; alpha: OctaveValues }) {
 }
 
 export function AbsorberTool() {
+  const { settings } = useApp();
+  const expert = visibleAt('expert', effectiveComplexity(settings, 'tools'));
   const [t, setT] = useState(0.1);
   const [gap, setGap] = useState(0);
   const [area, setArea] = useState(1.2 * 0.6);
@@ -47,6 +53,7 @@ export function AbsorberTool() {
         <p class="al-text-secondary">Оценка по типичным данным пористых материалов, а не по паспорту конкретного: для точности возьмите данные изготовителя.</p>
       </Block>
       <div class="al-row"><SaveResult tool="absorber" name={`Панель ${cm(t)}${gap ? ` + зазор ${cm(gap)}` : ''}`} data={() => ({ input: { thickness: t, gap, area }, result: { alpha, lowLimitHz: low } })} /></div>
+      {expert && <LayersBlock initial={[{ kind: 'porous', thickness: t, sigma: 10_000, model: 'delany-bazley', density: null }, ...(gap > 0 ? [{ kind: 'air' as const, thickness: gap }] : [])]} />}
     </div>
   );
 }
@@ -152,6 +159,8 @@ export function DiffuserTool() {
 type ResKind = 'helmholtz' | 'perforated' | 'membrane';
 
 export function ResonatorTool() {
+  const { settings } = useApp();
+  const expert = visibleAt('expert', effectiveComplexity(settings, 'tools'));
   const [kind, setKind] = useState<ResKind>('membrane');
   const [neckD, setNeckD] = useState(0.05);
   const [neckL, setNeckL] = useState(0.1);
@@ -198,6 +207,8 @@ export function ResonatorTool() {
           : 'Частота с концевой поправкой горла 1,7·r (горло с фланцем); размеры полости должны быть много меньше длины волны.'}
         {` Проверьте результат измерением: ширина полосы зависит от потерь, которые здесь не считаются (${freq(f0)}).`}
       </Notice>
+      {expert && kind !== 'helmholtz' && <ResonatorLosses key={kind} f0={f0} depth={depth} front={kind === 'perforated' ? { kind: 'perforated', thickness: plate, holeDiameter: holeD, pitch } : { kind: 'membrane', surfaceMass: mass }} />}
+      {expert && kind === 'helmholtz' && <p class="al-text-small al-text-secondary">Одиночный резонатор Гельмгольца — не плоская конструкция: метод матриц переноса к нему не применяется; массив горл на панели считайте как перфорированный лист.</p>}
       <div class="al-row"><SaveResult tool="resonator" name={`Резонатор: ${hz(f0)}`} data={() => ({ input: { kind, neckD, neckL, vol, holeD, pitch, plate, depth, mass }, result: { f0, porosity: perf.porosity } })} /></div>
     </div>
   );
