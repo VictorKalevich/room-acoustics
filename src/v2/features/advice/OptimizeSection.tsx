@@ -2,6 +2,7 @@
 // найденный вариант; он временный, по желанию сохраняется отчётом прогона и переносится только в эксперимент после
 // подтверждения. Варианты, которые двигают закреплённое или запрещённое ограничениями, не применяются (R44).
 // V2-050 (продвинутый уровень): поиск с учётом закреплений, фронт Парето «оценка — перестановка», чувствительность.
+// V2-054 (экспертный уровень): неопределённость варианта и совместный подбор (JointBlocks.tsx).
 import { useState } from 'preact/hooks';
 import { Badge, Button, ConfirmDialog, DataTable, FrequencyChart, KeyValue, Notice, useToast, type Series } from '../../design-system';
 import { evalPpo } from '../../../core/precision';
@@ -24,6 +25,7 @@ import { addOptimizationRun } from '../../storage/history';
 import { Block, analysisStatus, hz, n0, n1, n2 } from '../analysis/common';
 import { useJob } from '../analysis/useJob';
 import type { AdviceData } from './useAdvice';
+import { JointBlock, UncertaintyBlock } from './JointBlocks';
 
 export function OptimizeSection({ d }: { d: AdviceData }) {
   const { settings } = useApp();
@@ -203,7 +205,8 @@ function SubAlignment({ d, i, kind }: { d: AdviceData; i: CoreInputs; kind: Subs
 
 /** Поиск с учётом закреплений и фронт Парето (V2-050). */
 function ParetoBlock({ d, i }: { d: AdviceData; i: CoreInputs }) {
-  const { compute } = useApp();
+  const { compute, settings } = useApp();
+  const expert = visibleAt('expert', effectiveComplexity(settings, 'advice'));
   const c = d.edit.config;
   const room = d.h.room!;
   const space = searchSpace(c, room.goals, i);
@@ -246,7 +249,9 @@ function ParetoBlock({ d, i }: { d: AdviceData; i: CoreInputs }) {
             ]} />
             {chosen.penalties.map((x) => <p key={x} class="al-text-small al-text-secondary">{`Правило расстановки: ${x}`}</p>)}
             <SensitivityBlock key={chosen.key} p={chosen} i={i} evaluate={evaluate} name={name} title={label(chosen)} />
+            {expert && <UncertaintyBlock key={chosen.key} i={i} a={r.baseline} b={chosen} title={label(chosen)} />}
             <div class="al-row"><Button variant="primary" small icon="flask" disabled={chosen.shift === 0} onClick={() => setAsk(chosen)}>Перенести в эксперимент</Button></div>
+            {expert && <JointBlock i={i} c={c} points={front} label={label} apply={apply} confirm={confirmText(d)} />}
           </>
         )}
       {ask && (
